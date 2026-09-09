@@ -33,7 +33,7 @@ Uma plataforma completa de gerenciamento de finanças pessoais, construída com 
 - **GitHub Actions** - CI/CD
 - **GHCR** - Registry de containers
 - **Coolify** - Deploy e gerenciamento
-- **pnpm Workspaces** - Monorepo
+- **npm Workspaces** - Monorepo
 
 ## 📁 Estrutura do Projeto
 
@@ -57,7 +57,7 @@ oxedindin/
 ### Pré-requisitos
 
 - Node.js 20+
-- pnpm 9+
+- npm 10+
 - Docker & Docker Compose
 - PostgreSQL 16+ (ou use o docker-compose)
 - Redis 7+ (ou use o docker-compose)
@@ -77,16 +77,16 @@ cp .env.example .env
 docker compose up -d postgres redis
 
 # Instale dependências
-pnpm install
+npm install
 
 # Gere o Prisma Client
-pnpm db:generate
+npm run db:generate
 
 # Execute as migrações
-pnpm db:migrate
+npm run db:migrate
 
 # Inicie em modo desenvolvimento
-pnpm dev
+npm run dev
 ```
 
 A aplicação estará disponível em:
@@ -99,30 +99,30 @@ A aplicação estará disponível em:
 
 ```bash
 # Desenvolvimento
-pnpm dev              # Inicia frontend e backend
-pnpm dev:backend      # Apenas backend
-pnpm dev:frontend     # Apenas frontend
+npm run dev              # Inicia frontend e backend
+npm run dev:backend      # Apenas backend
+npm run dev:frontend     # Apenas frontend
 
 # Build
-pnpm build            # Build de todos os pacotes
-pnpm build:backend    # Build do backend
-pnpm build:frontend   # Build do frontend
+npm run build            # Build de todos os pacotes
+npm run build:backend    # Build do backend
+npm run build:frontend   # Build do frontend
 
 # Banco de dados
-pnpm db:generate      # Gera Prisma Client
-pnpm db:push          # Push schema para DB (dev)
-pnpm db:migrate       # Executa migrações
-pnpm db:migrate:deploy # Deploy migrações (prod)
-pnpm db:studio        # Abre Prisma Studio
-pnpm db:seed          # Popula dados de exemplo
+npm run db:generate      # Gera Prisma Client
+npm run db:push          # Push schema para DB (dev)
+npm run db:migrate       # Executa migrações
+npm run db:migrate:deploy # Deploy migrações (prod)
+npm run db:studio        # Abre Prisma Studio
+npm run db:seed          # Popula dados de exemplo
 
 # Testes
-pnpm test             # Testes unitários
-pnpm test:e2e         # Testes E2E (frontend)
+npm run test             # Testes unitários
+npm run test:e2e         # Testes E2E (frontend)
 
 # Docker
-pnpm docker:build     # Build da imagem Docker
-pnpm docker:run       # Executa container localmente
+npm run docker:build     # Build da imagem Docker
+npm run docker:run       # Executa container localmente
 ```
 
 ## 🏗️ Deploy em Produção

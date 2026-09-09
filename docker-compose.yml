@@ -61,7 +61,7 @@ services:
     volumes:
       - ./packages/backend:/app/packages/backend
       - ./packages/shared:/app/packages/shared
-    command: sh -c "pnpm db:push && pnpm dev"
+    command: sh -c "npm run db:push && npm run dev"
 
   frontend:
     build:
@@ -77,7 +77,7 @@ services:
     volumes:
       - ./packages/frontend:/app/packages/frontend
       - ./packages/shared:/app/packages/shared
-    command: sh -c "pnpm dev --host"
+    command: sh -c "npm run dev -- --host"
 
 volumes:
   postgres_data:

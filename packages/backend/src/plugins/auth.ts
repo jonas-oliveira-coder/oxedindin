@@ -10,25 +10,7 @@ declare module 'fastify' {
 export default fp(async (app) => {
   app.decorateRequest('authUser', null);
 
-  app.addHook('preHandler', async (request, reply) => {
-    const publicPaths = [
-      '/api/v1/auth/register',
-      '/api/v1/auth/login',
-      '/api/v1/auth/refresh',
-      '/api/v1/auth/passkey/register/start',
-      '/api/v1/auth/passkey/register/finish',
-      '/api/v1/auth/passkey/login/start',
-      '/api/v1/auth/passkey/login/finish',
-      '/api/v1/auth/password/forgot',
-      '/api/v1/auth/password/reset',
-      '/health',
-      '/docs',
-    ];
-
-    if (publicPaths.some((p) => request.url.startsWith(p))) {
-      return;
-    }
-
+  const authenticate = async (request: any, reply: any) => {
     try {
       const token = request.cookies?.accessToken || request.headers.authorization?.replace('Bearer ', '');
 
@@ -49,10 +31,34 @@ export default fp(async (app) => {
       }
 
       request.authUser = session.user;
-      (request.authUser as any).session = session;
+      request.authUser.session = session;
     } catch (err: any) {
       if (err.statusCode === 401) throw err;
       throw app.httpErrors.unauthorized('Invalid token');
     }
+  };
+
+  app.decorate('authenticate', authenticate);
+
+  app.addHook('preHandler', async (request, reply) => {
+    const publicPaths = [
+      '/api/v1/auth/register',
+      '/api/v1/auth/login',
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/passkey/register/start',
+      '/api/v1/auth/passkey/register/finish',
+      '/api/v1/auth/passkey/login/start',
+      '/api/v1/auth/passkey/login/finish',
+      '/api/v1/auth/password/forgot',
+      '/api/v1/auth/password/reset',
+      '/health',
+      '/docs',
+    ];
+
+    if (publicPaths.some((p) => request.url.startsWith(p))) {
+      return;
+    }
+
+    await authenticate(request, reply);
   });
 });

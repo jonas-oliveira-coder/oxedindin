@@ -1,4 +1,4 @@
-import { argon2 } from '@node-rs/argon2';
+import { hash, verify } from '@node-rs/argon2';
 import { generateRegistrationOptions, generateAuthenticationOptions, verifyRegistrationResponse, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { PrismaClient, User, Session, Passkey } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
@@ -8,7 +8,7 @@ export class AuthService {
   constructor(private app: FastifyInstance, private prisma: PrismaClient) {}
 
   async hashPassword(password: string): Promise<string> {
-    return argon2.hash(password, {
+    return hash(password, {
       memoryCost: 65536,
       timeCost: 3,
       parallelism: 4,
@@ -17,7 +17,7 @@ export class AuthService {
   }
 
   async verifyPassword(password: string, hash: string): Promise<boolean> {
-    return argon2.verify(hash, password);
+    return verify(hash, password);
   }
 
   async createSession(userId: string, ip?: string, userAgent?: string, deviceName?: string): Promise<{ session: Session; accessToken: string; refreshToken: string }> {
@@ -64,7 +64,7 @@ export class AuthService {
   }
 
   private async hashToken(token: string): Promise<string> {
-    return argon2.hash(token, {
+    return hash(token, {
       memoryCost: 32768,
       timeCost: 2,
       parallelism: 2,
@@ -73,7 +73,7 @@ export class AuthService {
   }
 
   async verifyTokenHash(token: string, hash: string): Promise<boolean> {
-    return argon2.verify(hash, token);
+    return verify(hash, token);
   }
 
   async registerPasskeyStart(userId: string) {

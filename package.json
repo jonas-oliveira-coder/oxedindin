@@ -2,20 +2,23 @@
   "name": "oxedindin",
   "version": "0.0.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "pnpm --filter ./packages/* dev",
-    "dev:backend": "pnpm --filter @oxedindin/backend dev",
-    "dev:frontend": "pnpm --filter @oxedindin/frontend dev",
-    "build": "pnpm --filter ./packages/* build",
-    "build:backend": "pnpm --filter @oxedindin/backend build",
-    "build:frontend": "pnpm --filter @oxedindin/frontend build",
-    "lint": "pnpm --filter ./packages/* lint",
-    "test": "pnpm --filter ./packages/* test",
-    "test:e2e": "pnpm --filter @oxedindin/frontend test:e2e",
-    "db:generate": "pnpm --filter @oxedindin/backend db:generate",
-    "db:push": "pnpm --filter @oxedindin/backend db:push",
-    "db:migrate": "pnpm --filter @oxedindin/backend db:migrate",
-    "db:studio": "pnpm --filter @oxedindin/backend db:studio",
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:backend": "npm run dev --workspace=@oxedindin/backend",
+    "dev:frontend": "npm run dev --workspace=@oxedindin/frontend",
+    "build": "npm run build --workspaces --if-present",
+    "build:backend": "npm run build --workspace=@oxedindin/backend",
+    "build:frontend": "npm run build --workspace=@oxedindin/frontend",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace=@oxedindin/frontend",
+    "db:generate": "npm run db:generate --workspace=@oxedindin/backend",
+    "db:push": "npm run db:push --workspace=@oxedindin/backend",
+    "db:migrate": "npm run db:migrate --workspace=@oxedindin/backend",
+    "db:studio": "npm run db:studio --workspace=@oxedindin/backend",
     "docker:build": "docker build -t oxedindin:latest .",
     "docker:run": "docker run --rm -p 3000:3000 oxedindin:latest"
   },
@@ -25,7 +28,6 @@
   },
   "engines": {
     "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
-  },
-  "packageManager": "pnpm@9.4.0"
+    "npm": ">=10.0.0"
+  }
 }

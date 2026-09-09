@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import autoload from '@fastify/autoload';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { env } from './utils/env.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,6 +27,8 @@ const app = Fastify({
     },
   },
 });
+
+app.setValidatorCompiler(validatorCompiler);
 
 // Store env in app for access in plugins
 (app as any).config = { env };

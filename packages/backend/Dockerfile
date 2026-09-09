@@ -5,15 +5,15 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json package-lock.json* ./
 COPY packages/backend/package.json ./packages/backend/
 COPY packages/shared/package.json ./packages/shared/
 
-RUN corepack enable pnpm && pnpm install --frozen-lockfile
+RUN npm ci --workspaces --include-workspace-root --filter @oxedindin/backend...
 
 # Generate Prisma Client
 COPY packages/backend/prisma ./packages/backend/prisma/
-RUN cd packages/backend && pnpm db:generate
+RUN cd packages/backend && npm run db:generate
 
 # Build the application
 FROM base AS builder
@@ -25,7 +25,7 @@ COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_module
 
 COPY . .
 
-RUN corepack enable pnpm && pnpm --filter @oxedindin/backend build
+RUN npm run build --workspace=@oxedindin/backend
 
 # Production image
 FROM base AS runner
