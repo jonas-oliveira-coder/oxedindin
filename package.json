@@ -1,0 +1,31 @@
+{
+  "name": "oxedindin",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter ./packages/* dev",
+    "dev:backend": "pnpm --filter @oxedindin/backend dev",
+    "dev:frontend": "pnpm --filter @oxedindin/frontend dev",
+    "build": "pnpm --filter ./packages/* build",
+    "build:backend": "pnpm --filter @oxedindin/backend build",
+    "build:frontend": "pnpm --filter @oxedindin/frontend build",
+    "lint": "pnpm --filter ./packages/* lint",
+    "test": "pnpm --filter ./packages/* test",
+    "test:e2e": "pnpm --filter @oxedindin/frontend test:e2e",
+    "db:generate": "pnpm --filter @oxedindin/backend db:generate",
+    "db:push": "pnpm --filter @oxedindin/backend db:push",
+    "db:migrate": "pnpm --filter @oxedindin/backend db:migrate",
+    "db:studio": "pnpm --filter @oxedindin/backend db:studio",
+    "docker:build": "docker build -t oxedindin:latest .",
+    "docker:run": "docker run --rm -p 3000:3000 oxedindin:latest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.4.0"
+}

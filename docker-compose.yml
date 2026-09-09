@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oxedindin-postgres
+    environment:
+      POSTGRES_USER: oxedindin
+      POSTGRES_PASSWORD: oxedindin
+      POSTGRES_DB: oxedindin
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oxedindin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: oxedindin-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: oxedindin-backend
+    environment:
+      DATABASE_URL: postgresql://oxedindin:oxedindin@postgres:5432/oxedindin?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-min-32-chars-long-change-in-production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-min-32-chars-long-change-in-production}
+      COOKIE_SECRET: ${COOKIE_SECRET:-your-super-secret-cookie-key-min-32-chars-long-change-in-production}
+      CORS_ORIGIN: http://localhost:5173
+      API_URL: http://localhost:3000
+      WEB_AUTHN_RP_ID: localhost
+      WEB_AUTHN_RP_NAME: OxeDinDin
+      WEB_AUTHN_ORIGIN: http://localhost:5173
+      FRONTEND_URL: http://localhost:5173
+      NODE_ENV: development
+      PORT: 3000
+      LOG_LEVEL: debug
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./packages/backend:/app/packages/backend
+      - ./packages/shared:/app/packages/shared
+    command: sh -c "pnpm db:push && pnpm dev"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+    container_name: oxedindin-frontend
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./packages/frontend:/app/packages/frontend
+      - ./packages/shared:/app/packages/shared
+    command: sh -c "pnpm dev --host"
+
+volumes:
+  postgres_data:
+  redis_data:
