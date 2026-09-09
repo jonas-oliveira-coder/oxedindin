@@ -1,12 +1,14 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import { user } from '../../db/schema';
 
 const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const user = request.authUser!;
-    const settings = (user.settings as any) || {};
+    const userData = request.authUser!;
+    const settings = (userData.settings as Record<string, unknown>) || {};
 
     return {
       theme: settings.theme || 'system',
@@ -27,7 +29,7 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
         language: z.literal('pt-BR').optional(),
         currency: z.literal('BRL').optional(),
         dateFormat: z.string().optional(),
-        firstDayOfWeek: z.enum([0, 1]).optional(),
+        firstDayOfWeek: z.enum(['0', '1']).optional(),
         defaultAccountId: z.string().cuid().nullable().optional(),
         defaultCardId: z.string().cuid().nullable().optional(),
         dashboardLayout: z.array(z.string()).optional(),
@@ -35,14 +37,13 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const user = request.authUser!;
-    const currentSettings = (user.settings as any) || {};
+    const userData = request.authUser!;
+    const currentSettings = (userData.settings as Record<string, unknown>) || {};
     const newSettings = { ...currentSettings, ...request.body };
 
-    await app.prisma.user.update({
-      where: { id: user.id },
-      data: { settings: newSettings },
-    });
+    await app.db.update(user)
+      .set({ settings: newSettings })
+      .where(eq(user.id, userData.id));
 
     return {
       theme: newSettings.theme || 'system',

@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, asc, count } from 'drizzle-orm';
 import { createPersonSchema, paginationSchema } from '../../types/schemas.js';
+import { person, debt, sharedDebt, user } from '../../db/schema';
 
 const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -10,18 +12,19 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit } = request.query;
     const userId = request.authUser!.id;
 
-    const [people, total] = await Promise.all([
-      app.prisma.person.findMany({
-        where: { userId },
-        orderBy: { name: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      app.prisma.person.count({ where: { userId } }),
+    const [peopleData, totalResult] = await Promise.all([
+      app.db.select().from(person)
+        .where(eq(person.userId, userId))
+        .orderBy(asc(person.name))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(person).where(eq(person.userId, userId)),
     ]);
 
+    const total = totalResult[0]?.count || 0;
+
     return {
-      data: people,
+      data: peopleData,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   });
@@ -31,44 +34,65 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
     preHandler: [app.authenticate],
   }, async (request, reply) => {
     if (request.body.email) {
-      const existing = await app.prisma.person.findFirst({
-        where: { userId: request.authUser!.id, email: request.body.email },
-      });
+      const [existing] = await app.db.select()
+        .from(person)
+        .where(and(eq(person.userId, request.authUser!.id), eq(person.email, request.body.email)))
+        .limit(1);
       if (existing) throw app.httpErrors.conflict('Person with this email already exists');
     }
 
-    const person = await app.prisma.person.create({
-      data: { ...request.body, userId: request.authUser!.id },
-    });
+    const [newPerson] = await app.db.insert(person).values({
+      ...request.body,
+      userId: request.authUser!.id,
+    }).returning();
 
     await app.auditLog({
       userId: request.authUser!.id,
       action: 'PERSON_CREATED',
       entityType: 'Person',
-      entityId: person.id,
+      entityId: newPerson.id,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
-    return reply.status(201).send(person);
+    return reply.status(201).send(newPerson);
   });
 
   app.get('/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const person = await app.prisma.person.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-      include: {
-        debts: { include: { sharedDebts: true } },
-        sharedDebts: { include: { debt: true, creditor: true } },
-      },
-    });
+    const [personRecord] = await app.db.select()
+      .from(person)
+      .where(and(eq(person.id, request.params.id), eq(person.userId, request.authUser!.id)))
+      .limit(1);
 
-    if (!person) throw app.httpErrors.notFound('Person not found');
+    if (!personRecord) throw app.httpErrors.notFound('Person not found');
 
-    return person;
+    const debtsData = await app.db.select({
+      ...debt,
+      sharedDebts: sharedDebt,
+    })
+      .from(debt)
+      .leftJoin(sharedDebt, eq(debt.id, sharedDebt.debtId))
+      .where(eq(debt.relatedPersonId, personRecord.id));
+
+    const sharedDebtsData = await app.db.select({
+      ...sharedDebt,
+      debt: debt,
+      creditor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
+    })
+      .from(sharedDebt)
+      .leftJoin(debt, eq(sharedDebt.debtId, debt.id))
+      .leftJoin(user, eq(sharedDebt.creditorUserId, user.id))
+      .where(eq(sharedDebt.personId, personRecord.id));
+
+    return {
+      ...personRecord,
+      debts: debtsData,
+      sharedDebts: sharedDebtsData,
+    };
   });
 
   app.patch('/:id', {
@@ -85,42 +109,44 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.person.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(person)
+      .where(and(eq(person.id, request.params.id), eq(person.userId, request.authUser!.id)))
+      .limit(1);
     if (!existing) throw app.httpErrors.notFound('Person not found');
 
     if (request.body.email && request.body.email !== existing.email) {
-      const duplicate = await app.prisma.person.findFirst({
-        where: { userId: request.authUser!.id, email: request.body.email },
-      });
+      const [duplicate] = await app.db.select()
+        .from(person)
+        .where(and(eq(person.userId, request.authUser!.id), eq(person.email, request.body.email)))
+        .limit(1);
       if (duplicate) throw app.httpErrors.conflict('Person with this email already exists');
     }
 
-    const person = await app.prisma.person.update({
-      where: { id: request.params.id },
-      data: request.body,
-    });
+    const [updatedPerson] = await app.db.update(person)
+      .set(request.body)
+      .where(eq(person.id, request.params.id))
+      .returning();
 
     await app.auditLog({
       userId: request.authUser!.id,
       action: 'PERSON_UPDATED',
       entityType: 'Person',
-      entityId: person.id,
+      entityId: updatedPerson.id,
       oldData: existing,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
-    return person;
+    return updatedPerson;
   });
 
   app.delete('/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    await app.prisma.person.delete({ where: { id: request.params.id } });
+    await app.db.delete(person).where(eq(person.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,

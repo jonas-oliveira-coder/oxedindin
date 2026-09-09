@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, gte, lte, desc, count } from 'drizzle-orm';
 import { createAccountSchema, updateAccountSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
+import { bankAccount, transaction, category } from '../../db/schema';
 
 const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -12,22 +14,20 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, startDate, endDate } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId };
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
-    }
+    const conditions = [eq(bankAccount.userId, userId)];
+    if (startDate) conditions.push(gte(bankAccount.createdAt, new Date(startDate)));
+    if (endDate) conditions.push(lte(bankAccount.createdAt, new Date(endDate)));
 
-    const [accounts, total] = await Promise.all([
-      app.prisma.bankAccount.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      app.prisma.bankAccount.count({ where }),
+    const [accounts, totalResult] = await Promise.all([
+      app.db.select().from(bankAccount)
+        .where(and(...conditions))
+        .orderBy(desc(bankAccount.createdAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(bankAccount).where(and(...conditions)),
     ]);
+
+    const total = totalResult[0]?.count || 0;
 
     return {
       data: accounts.map((a) => ({
@@ -43,14 +43,13 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: createAccountSchema,
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const account = await app.prisma.bankAccount.create({
-      data: {
-        ...request.body,
-        userId: request.authUser!.id,
-        initialBalanceCents: request.body.initialBalance,
-        balanceCents: request.body.initialBalance,
-      },
-    });
+    const body = request.body;
+    const [account] = await app.db.insert(bankAccount).values({
+      ...body,
+      userId: request.authUser!.id,
+      initialBalanceCents: body.initialBalance,
+      balanceCents: body.initialBalance,
+    }).returning();
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -75,9 +74,10 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const account = await app.prisma.bankAccount.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [account] = await app.db.select()
+      .from(bankAccount)
+      .where(and(eq(bankAccount.id, request.params.id), eq(bankAccount.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!account) {
       throw app.httpErrors.notFound('Account not found');
@@ -102,30 +102,36 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
   }, async (request, reply) => {
     const { page, limit, startDate, endDate, categoryId, type } = request.query;
 
-    const where: any = { accountId: request.params.id, userId: request.authUser!.id };
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
-    }
-    if (categoryId) where.categoryId = categoryId;
-    if (type) where.type = type;
+    const conditions = [
+      eq(transaction.accountId, request.params.id),
+      eq(transaction.userId, request.authUser!.id),
+    ];
+    if (startDate) conditions.push(gte(transaction.date, new Date(startDate)));
+    if (endDate) conditions.push(lte(transaction.date, new Date(endDate)));
+    if (categoryId) conditions.push(eq(transaction.categoryId, categoryId));
+    if (type) conditions.push(eq(transaction.type, type));
 
-    const [transactions, total] = await Promise.all([
-      app.prisma.transaction.findMany({
-        where,
-        orderBy: { date: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { category: true },
-      }),
-      app.prisma.transaction.count({ where }),
+    const [transactions, totalResult] = await Promise.all([
+      app.db.select({
+        ...transaction,
+        category: category,
+      })
+        .from(transaction)
+        .leftJoin(category, eq(transaction.categoryId, category.id))
+        .where(and(...conditions))
+        .orderBy(desc(transaction.date))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(transaction).where(and(...conditions)),
     ]);
+
+    const total = totalResult[0]?.count || 0;
 
     return {
       data: transactions.map((t) => ({
-        ...t,
-        amount: { cents: Number(t.amountCents), currency: 'BRL' as const },
+        ...t.transaction,
+        amount: { cents: Number(t.transaction.amountCents), currency: 'BRL' as const },
+        category: t.category,
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -135,18 +141,19 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: updateAccountSchema,
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.bankAccount.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(bankAccount)
+      .where(and(eq(bankAccount.id, request.params.id), eq(bankAccount.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!existing) {
       throw app.httpErrors.notFound('Account not found');
     }
 
-    const account = await app.prisma.bankAccount.update({
-      where: { id: request.params.id },
-      data: request.body,
-    });
+    const [account] = await app.db.update(bankAccount)
+      .set(request.body)
+      .where(eq(bankAccount.id, request.params.id))
+      .returning();
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -172,18 +179,19 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.bankAccount.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(bankAccount)
+      .where(and(eq(bankAccount.id, request.params.id), eq(bankAccount.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!existing) {
       throw app.httpErrors.notFound('Account not found');
     }
 
-    const account = await app.prisma.bankAccount.update({
-      where: { id: request.params.id },
-      data: { status: 'INACTIVE' },
-    });
+    const [account] = await app.db.update(bankAccount)
+      .set({ status: 'INACTIVE' })
+      .where(eq(bankAccount.id, request.params.id))
+      .returning();
 
     await app.auditLog({
       userId: request.authUser!.id,

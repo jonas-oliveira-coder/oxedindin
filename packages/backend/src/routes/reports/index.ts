@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, gte, lte, asc, count, sum, sql, inArray, not, isNull } from 'drizzle-orm';
 import { reportFiltersSchema } from '../../types/schemas.js';
+import { transaction, category, bankAccount, creditCard, installment, installmentPlan, recurringBill, debt, person, invoice, bill } from '../../db/schema';
 
 function getMonthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -20,33 +22,36 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { startDate, endDate, categoryIds, accountIds, cardIds, transactionTypes } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId, type: 'EXPENSE' };
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
-    }
-    if (categoryIds) where.categoryId = { in: categoryIds };
-    if (accountIds) where.accountId = { in: accountIds };
-    if (cardIds) where.cardId = { in: cardIds };
-    if (transactionTypes) where.type = { in: transactionTypes };
+    const conditions = [
+      eq(transaction.userId, userId),
+      eq(transaction.type, 'EXPENSE'),
+    ];
+    if (startDate) conditions.push(gte(transaction.date, new Date(startDate)));
+    if (endDate) conditions.push(lte(transaction.date, new Date(endDate)));
+    if (categoryIds) conditions.push(inArray(transaction.categoryId, categoryIds));
+    if (accountIds) conditions.push(inArray(transaction.accountId, accountIds));
+    if (cardIds) conditions.push(inArray(transaction.cardId, cardIds));
+    if (transactionTypes) conditions.push(inArray(transaction.type, transactionTypes));
 
-    const transactions = await app.prisma.transaction.findMany({
-      where,
-      include: { category: true },
-    });
+    const transactionsData = await app.db.select({
+      ...transaction,
+      category: category,
+    })
+      .from(transaction)
+      .leftJoin(category, eq(transaction.categoryId, category.id))
+      .where(and(...conditions));
 
     const categoryMap = new Map<string, { total: number; count: number; category: any }>();
     let grandTotal = 0;
 
-    for (const t of transactions) {
-      const catId = t.categoryId || 'uncategorized';
+    for (const t of transactionsData) {
+      const catId = t.transaction.categoryId || 'uncategorized';
       const cat = t.category || { name: 'Sem categoria', color: '#6B7280' };
       const existing = categoryMap.get(catId) || { total: 0, count: 0, category: cat };
-      existing.total += Number(t.amountCents);
+      existing.total += Number(t.transaction.amountCents);
       existing.count += 1;
       categoryMap.set(catId, existing);
-      grandTotal += Number(t.amountCents);
+      grandTotal += Number(t.transaction.amountCents);
     }
 
     return Array.from(categoryMap.entries()).map(([categoryId, data]) => ({
@@ -66,21 +71,18 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { startDate, endDate, interval } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId };
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
-    }
+    const conditions = [eq(transaction.userId, userId)];
+    if (startDate) conditions.push(gte(transaction.date, new Date(startDate)));
+    if (endDate) conditions.push(lte(transaction.date, new Date(endDate)));
 
-    const transactions = await app.prisma.transaction.findMany({
-      where,
-      orderBy: { date: 'asc' },
-    });
+    const transactionsData = await app.db.select()
+      .from(transaction)
+      .where(and(...conditions))
+      .orderBy(asc(transaction.date));
 
     const periodMap = new Map<string, { expenses: number; income: number }>();
 
-    for (const t of transactions) {
+    for (const t of transactionsData) {
       let key: string;
       const date = new Date(t.date);
 
@@ -117,29 +119,32 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { startDate, endDate, categoryIds, accountIds, cardIds, transactionTypes } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId, type: 'EXPENSE' };
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
-    }
-    if (categoryIds) where.categoryId = { in: categoryIds };
-    if (accountIds) where.accountId = { in: accountIds };
-    if (cardIds) where.cardId = { in: cardIds };
-    if (transactionTypes) where.type = { in: transactionTypes };
+    const conditions = [
+      eq(transaction.userId, userId),
+      eq(transaction.type, 'EXPENSE'),
+    ];
+    if (startDate) conditions.push(gte(transaction.date, new Date(startDate)));
+    if (endDate) conditions.push(lte(transaction.date, new Date(endDate)));
+    if (categoryIds) conditions.push(inArray(transaction.categoryId, categoryIds));
+    if (accountIds) conditions.push(inArray(transaction.accountId, accountIds));
+    if (cardIds) conditions.push(inArray(transaction.cardId, cardIds));
+    if (transactionTypes) conditions.push(inArray(transaction.type, transactionTypes));
 
-    const transactions = await app.prisma.transaction.findMany({
-      where,
-      include: { account: true },
-    });
+    const transactionsData = await app.db.select({
+      ...transaction,
+      account: bankAccount,
+    })
+      .from(transaction)
+      .leftJoin(bankAccount, eq(transaction.accountId, bankAccount.id))
+      .where(and(...conditions));
 
     const accountMap = new Map<string, { total: number; count: number; name: string }>();
 
-    for (const t of transactions) {
-      const accId = t.accountId || 'no-account';
+    for (const t of transactionsData) {
+      const accId = t.transaction.accountId || 'no-account';
       const name = t.account?.name || 'Sem conta';
       const existing = accountMap.get(accId) || { total: 0, count: 0, name };
-      existing.total += Number(t.amountCents);
+      existing.total += Number(t.transaction.amountCents);
       existing.count += 1;
       accountMap.set(accId, existing);
     }
@@ -159,29 +164,33 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { startDate, endDate, categoryIds, accountIds, cardIds, transactionTypes } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId, type: 'EXPENSE', cardId: { not: null } };
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
-    }
-    if (categoryIds) where.categoryId = { in: categoryIds };
-    if (accountIds) where.accountId = { in: accountIds };
-    if (cardIds) where.cardId = { in: cardIds };
-    if (transactionTypes) where.type = { in: transactionTypes };
+    const conditions = [
+      eq(transaction.userId, userId),
+      eq(transaction.type, 'EXPENSE'),
+      not(isNull(transaction.cardId)),
+    ];
+    if (startDate) conditions.push(gte(transaction.date, new Date(startDate)));
+    if (endDate) conditions.push(lte(transaction.date, new Date(endDate)));
+    if (categoryIds) conditions.push(inArray(transaction.categoryId, categoryIds));
+    if (accountIds) conditions.push(inArray(transaction.accountId, accountIds));
+    if (cardIds) conditions.push(inArray(transaction.cardId, cardIds));
+    if (transactionTypes) conditions.push(inArray(transaction.type, transactionTypes));
 
-    const transactions = await app.prisma.transaction.findMany({
-      where,
-      include: { card: true },
-    });
+    const transactionsData = await app.db.select({
+      ...transaction,
+      card: creditCard,
+    })
+      .from(transaction)
+      .leftJoin(creditCard, eq(transaction.cardId, creditCard.id))
+      .where(and(...conditions));
 
     const cardMap = new Map<string, { total: number; count: number; name: string }>();
 
-    for (const t of transactions) {
-      const cardId = t.cardId!;
+    for (const t of transactionsData) {
+      const cardId = t.transaction.cardId!;
       const name = t.card?.name || 'Cartão desconhecido';
       const existing = cardMap.get(cardId) || { total: 0, count: 0, name };
-      existing.total += Number(t.amountCents);
+      existing.total += Number(t.transaction.amountCents);
       existing.count += 1;
       cardMap.set(cardId, existing);
     }
@@ -201,20 +210,24 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { startDate, endDate } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId, type: 'EXPENSE' };
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
-    }
+    const conditions = [
+      eq(transaction.userId, userId),
+      eq(transaction.type, 'EXPENSE'),
+    ];
+    if (startDate) conditions.push(gte(transaction.date, new Date(startDate)));
+    if (endDate) conditions.push(lte(transaction.date, new Date(endDate)));
 
-    const [transactions, installments, recurringBills] = await Promise.all([
-      app.prisma.transaction.findMany({ where }),
-      app.prisma.installment.findMany({
-        where: { plan: { userId }, status: { in: ['PENDING', 'PAID'] } },
-        include: { plan: true },
-      }),
-      app.prisma.recurringBill.findMany({ where: { userId, status: 'ACTIVE' } }),
+    const [transactionsData, installmentsData, recurringBillsData] = await Promise.all([
+      app.db.select().from(transaction).where(and(...conditions)),
+      app.db.select({
+        ...installment,
+        plan: installmentPlan,
+      })
+        .from(installment)
+        .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+        .where(and(eq(installmentPlan.userId, userId), inArray(installment.status, ['PENDING', 'PAID']))),
+      app.db.select().from(recurringBill)
+        .where(and(eq(recurringBill.userId, userId), eq(recurringBill.status, 'ACTIVE'))),
     ]);
 
     let variable = 0;
@@ -222,17 +235,17 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     let installmentTotal = 0;
     let recurringTotal = 0;
 
-    for (const t of transactions) {
+    for (const t of transactionsData) {
       if (!t.installmentPlanId && !t.recurringBillId) {
         variable += Number(t.amountCents);
       }
     }
 
-    for (const i of installments) {
-      installmentTotal += Number(i.amountCents);
+    for (const i of installmentsData) {
+      installmentTotal += Number(i.installment.amountCents);
     }
 
-    for (const r of recurringBills) {
+    for (const r of recurringBillsData) {
       recurringTotal += Number(r.amountCents);
     }
 
@@ -255,22 +268,42 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const now = new Date();
     const end = endDate ? new Date(endDate) : addMonths(now, months);
 
-    const installments = await app.prisma.installment.findMany({
-      where: {
-        plan: { userId },
-        status: { in: ['PENDING', 'OVERDUE'] },
-        dueDate: { gte: now, lte: end },
+    const cardIds = await app.db.select({ id: creditCard.id })
+      .from(creditCard)
+      .where(eq(creditCard.userId, userId));
+    const cardIdArray = cardIds.map(c => c.id);
+
+    const planIds = await app.db.select({ id: installmentPlan.id })
+      .from(installmentPlan)
+      .where(inArray(installmentPlan.cardId, cardIdArray));
+    const planIdArray = planIds.map(p => p.id);
+
+    const installmentsData = await app.db.select({
+      ...installment,
+      plan: {
+        ...installmentPlan,
+        card: creditCard,
       },
-      include: { plan: { include: { card: true } }, invoice: true },
-      orderBy: { dueDate: 'asc' },
-    });
+      invoice: invoice,
+    })
+      .from(installment)
+      .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+      .leftJoin(creditCard, eq(installmentPlan.cardId, creditCard.id))
+      .leftJoin(invoice, eq(installment.invoiceId, invoice.id))
+      .where(and(
+        inArray(installment.planId, planIdArray),
+        inArray(installment.status, ['PENDING', 'OVERDUE']),
+        gte(installment.dueDate, now),
+        lte(installment.dueDate, end)
+      ))
+      .orderBy(asc(installment.dueDate));
 
     const byMonth = new Map<string, { total: number; count: number }>();
 
-    for (const i of installments) {
-      const key = getMonthKey(new Date(i.dueDate));
+    for (const i of installmentsData) {
+      const key = getMonthKey(new Date(i.installment.dueDate));
       const existing = byMonth.get(key) || { total: 0, count: 0 };
-      existing.total += Number(i.amountCents);
+      existing.total += Number(i.installment.amountCents);
       existing.count += 1;
       byMonth.set(key, existing);
     }
@@ -290,34 +323,40 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   }, async (request, reply) => {
     const userId = request.authUser!.id;
 
-    const [toPay, toReceive] = await Promise.all([
-      app.prisma.debt.findMany({
-        where: { userId, status: { in: ['ACTIVE', 'OVERDUE'] } },
-        orderBy: { dueDate: 'asc' },
-        include: { relatedPerson: true },
-      }),
-      app.prisma.debt.findMany({
-        where: { relatedPerson: { userId }, status: { in: ['ACTIVE', 'OVERDUE'] } },
-        orderBy: { dueDate: 'asc' },
-        include: { relatedPerson: true, sharedDebts: true },
-      }),
+    const [toPayData, toReceiveData] = await Promise.all([
+      app.db.select({
+        ...debt,
+        relatedPerson: person,
+      })
+        .from(debt)
+        .leftJoin(person, eq(debt.relatedPersonId, person.id))
+        .where(and(eq(debt.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE'])))
+        .orderBy(asc(debt.dueDate)),
+      app.db.select({
+        ...debt,
+        relatedPerson: person,
+      })
+        .from(debt)
+        .innerJoin(person, eq(debt.relatedPersonId, person.id))
+        .where(and(eq(person.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE'])))
+        .orderBy(asc(debt.dueDate)),
     ]);
 
     return {
-      toPay: toPay.map((d) => ({
-        id: d.id,
-        description: d.description,
-        total: { cents: Number(d.totalAmountCents), currency: 'BRL' as const },
-        remaining: { cents: Number(d.remainingAmountCents), currency: 'BRL' as const },
-        dueDate: d.dueDate.toISOString(),
+      toPay: toPayData.map((d) => ({
+        id: d.debt.id,
+        description: d.debt.description,
+        total: { cents: Number(d.debt.totalAmountCents), currency: 'BRL' as const },
+        remaining: { cents: Number(d.debt.remainingAmountCents), currency: 'BRL' as const },
+        dueDate: d.debt.dueDate.toISOString(),
         relatedPerson: d.relatedPerson?.name,
       })),
-      toReceive: toReceive.map((d) => ({
-        id: d.id,
-        description: d.description,
-        total: { cents: Number(d.totalAmountCents), currency: 'BRL' as const },
-        remaining: { cents: Number(d.remainingAmountCents), currency: 'BRL' as const },
-        dueDate: d.dueDate.toISOString(),
+      toReceive: toReceiveData.map((d) => ({
+        id: d.debt.id,
+        description: d.debt.description,
+        total: { cents: Number(d.debt.totalAmountCents), currency: 'BRL' as const },
+        remaining: { cents: Number(d.debt.remainingAmountCents), currency: 'BRL' as const },
+        dueDate: d.debt.dueDate.toISOString(),
         relatedPerson: d.relatedPerson?.name,
       })),
     };
@@ -332,19 +371,19 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const now = new Date();
     const end = addMonths(now, months);
 
-    const cards = await app.prisma.creditCard.findMany({ where: { userId } });
+    const cards = await app.db.select().from(creditCard).where(eq(creditCard.userId, userId));
 
     const result = [];
     for (const card of cards) {
-      const invoices = await app.prisma.invoice.findMany({
-        where: { cardId: card.id, periodStart: { lte: end } },
-        orderBy: { periodStart: 'asc' },
-      });
+      const invoicesData = await app.db.select()
+        .from(invoice)
+        .where(and(eq(invoice.cardId, card.id), lte(invoice.periodStart, end)))
+        .orderBy(asc(invoice.periodStart));
 
       result.push({
         cardId: card.id,
         cardName: card.name,
-        invoices: invoices.map((i) => ({
+        invoices: invoicesData.map((i) => ({
           id: i.id,
           period: `${i.periodStart.toISOString().slice(0, 7)}`,
           total: { cents: Number(i.totalCents), currency: 'BRL' as const },
@@ -373,16 +412,23 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
       monthsList.push(getMonthKey(d));
     }
 
-    const [bills, installments, invoices] = await Promise.all([
-      app.prisma.bill.findMany({
-        where: { userId, status: { in: ['PENDING', 'OVERDUE'] }, dueDate: { lte: end } },
-      }),
-      app.prisma.installment.findMany({
-        where: { plan: { userId }, status: { in: ['PENDING', 'OVERDUE'] }, dueDate: { lte: end } },
-      }),
-      app.prisma.invoice.findMany({
-        where: { card: { userId }, status: { in: ['OPEN', 'CLOSED', 'PARTIALLY_PAID', 'OVERDUE'] }, dueDate: { lte: end } },
-      }),
+    const [billsData, installmentsData, invoicesData] = await Promise.all([
+      app.db.select().from(bill)
+        .where(and(eq(bill.userId, userId), inArray(bill.status, ['PENDING', 'OVERDUE']), lte(bill.dueDate, end))),
+      app.db.select({
+        ...installment,
+        plan: installmentPlan,
+      })
+        .from(installment)
+        .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+        .where(and(eq(installmentPlan.userId, userId), inArray(installment.status, ['PENDING', 'OVERDUE']), lte(installment.dueDate, end))),
+      app.db.select({
+        ...invoice,
+        card: creditCard,
+      })
+        .from(invoice)
+        .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
+        .where(and(eq(creditCard.userId, userId), inArray(invoice.status, ['OPEN', 'CLOSED', 'PARTIALLY_PAID', 'OVERDUE']), lte(invoice.dueDate, end))),
     ]);
 
     const monthData = new Map<string, { bills: number; installments: number; cards: number }>();
@@ -391,22 +437,22 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
       monthData.set(m, { bills: 0, installments: 0, cards: 0 });
     }
 
-    for (const b of bills) {
+    for (const b of billsData) {
       const key = getMonthKey(new Date(b.dueDate));
       const data = monthData.get(key);
       if (data) data.bills += Number(b.amountCents);
     }
 
-    for (const i of installments) {
-      const key = getMonthKey(new Date(i.dueDate));
+    for (const i of installmentsData) {
+      const key = getMonthKey(new Date(i.installment.dueDate));
       const data = monthData.get(key);
-      if (data) data.installments += Number(i.amountCents);
+      if (data) data.installments += Number(i.installment.amountCents);
     }
 
-    for (const inv of invoices) {
-      const key = getMonthKey(new Date(inv.dueDate));
+    for (const inv of invoicesData) {
+      const key = getMonthKey(new Date(inv.invoice.dueDate));
       const data = monthData.get(key);
-      if (data) data.cards += Number(inv.remainingCents);
+      if (data) data.cards += Number(inv.invoice.remainingCents);
     }
 
     const monthsResult = Array.from(monthData.entries()).map(([month, data]) => ({
@@ -435,114 +481,110 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
     const [
-      accounts,
-      cards,
+      accountsData,
+      cardsData,
       expensesAgg,
       incomeAgg,
-      pendingBills,
-      debts,
-      owedDebts,
-      currentInvoices,
-      upcomingInvoices,
-      upcomingBills,
-      upcomingInstallments,
+      pendingBillsAgg,
+      debtsAgg,
+      owedDebtsAgg,
+      currentInvoicesData,
+      upcomingInvoicesData,
+      upcomingBillsData,
+      upcomingInstallmentsData,
     ] = await Promise.all([
-      app.prisma.bankAccount.findMany({ where: { userId, status: 'ACTIVE' } }),
-      app.prisma.creditCard.findMany({ where: { userId, status: 'ACTIVE' } }),
-      app.prisma.transaction.aggregate({
-        where: { userId, type: 'EXPENSE', date: { gte: startOfMonth, lte: endOfMonth } },
-        _sum: { amountCents: true },
-      }),
-      app.prisma.transaction.aggregate({
-        where: { userId, type: 'INCOME', date: { gte: startOfMonth, lte: endOfMonth } },
-        _sum: { amountCents: true },
-      }),
-      app.prisma.bill.aggregate({
-        where: { userId, status: { in: ['PENDING', 'OVERDUE'] } },
-        _sum: { amountCents: true },
-      }),
-      app.prisma.debt.aggregate({
-        where: { userId, status: { in: ['ACTIVE', 'OVERDUE'] } },
-        _sum: { remainingAmountCents: true },
-      }),
-      app.prisma.debt.aggregate({
-        where: { relatedPerson: { userId }, status: { in: ['ACTIVE', 'OVERDUE'] } },
-        _sum: { remainingAmountCents: true },
-      }),
-      app.prisma.invoice.findMany({
-        where: {
-          card: { userId },
-          periodStart: { lte: now },
-          periodEnd: { gte: now },
-        },
-        include: { card: true },
-      }),
-      app.prisma.invoice.findMany({
-        where: {
-          card: { userId },
-          periodStart: { gt: now },
-        },
-        orderBy: { periodStart: 'asc' },
-        take: 5,
-        include: { card: true },
-      }),
-      app.prisma.bill.findMany({
-        where: { userId, status: { in: ['PENDING', 'OVERDUE'] }, dueDate: { gte: now } },
-        orderBy: { dueDate: 'asc' },
-        take: 10,
-      }),
-      app.prisma.installment.findMany({
-        where: { plan: { userId }, status: { in: ['PENDING', 'OVERDUE'] }, dueDate: { gte: now } },
-        orderBy: { dueDate: 'asc' },
-        take: 10,
-        include: { plan: true },
-      }),
+      app.db.select().from(bankAccount).where(and(eq(bankAccount.userId, userId), eq(bankAccount.status, 'ACTIVE'))),
+      app.db.select().from(creditCard).where(and(eq(creditCard.userId, userId), eq(creditCard.status, 'ACTIVE'))),
+      app.db.select({ sum: sum(transaction.amountCents) })
+        .from(transaction)
+        .where(and(eq(transaction.userId, userId), eq(transaction.type, 'EXPENSE'), gte(transaction.date, startOfMonth), lte(transaction.date, endOfMonth))),
+      app.db.select({ sum: sum(transaction.amountCents) })
+        .from(transaction)
+        .where(and(eq(transaction.userId, userId), eq(transaction.type, 'INCOME'), gte(transaction.date, startOfMonth), lte(transaction.date, endOfMonth))),
+      app.db.select({ sum: sum(bill.amountCents) })
+        .from(bill)
+        .where(and(eq(bill.userId, userId), inArray(bill.status, ['PENDING', 'OVERDUE']))),
+      app.db.select({ sum: sum(debt.remainingAmountCents) })
+        .from(debt)
+        .where(and(eq(debt.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE']))),
+      app.db.select({ sum: sum(debt.remainingAmountCents) })
+        .from(debt)
+        .innerJoin(person, eq(debt.relatedPersonId, person.id))
+        .where(and(eq(person.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE']))),
+      app.db.select({
+        ...invoice,
+        card: creditCard,
+      })
+        .from(invoice)
+        .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
+        .where(and(eq(creditCard.userId, userId), lte(invoice.periodStart, now), gte(invoice.periodEnd, now))),
+      app.db.select({
+        ...invoice,
+        card: creditCard,
+      })
+        .from(invoice)
+        .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
+        .where(and(eq(creditCard.userId, userId), gt(invoice.periodStart, now)))
+        .orderBy(asc(invoice.periodStart))
+        .limit(5),
+      app.db.select().from(bill)
+        .where(and(eq(bill.userId, userId), inArray(bill.status, ['PENDING', 'OVERDUE']), gte(bill.dueDate, now)))
+        .orderBy(asc(bill.dueDate))
+        .limit(10),
+      app.db.select({
+        ...installment,
+        plan: installmentPlan,
+      })
+        .from(installment)
+        .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+        .where(and(eq(installmentPlan.userId, userId), inArray(installment.status, ['PENDING', 'OVERDUE']), gte(installment.dueDate, now)))
+        .orderBy(asc(installment.dueDate))
+        .limit(10),
     ]);
 
-    const totalBalance = accounts.reduce((sum, a) => sum + Number(a.balanceCents), 0);
+    const totalBalance = accountsData.reduce((sum, a) => sum + Number(a.balanceCents), 0);
 
-    const fixedExpenses = await app.prisma.recurringBill.aggregate({
-      where: { userId, status: 'ACTIVE' },
-      _sum: { amountCents: true },
-    });
+    const [fixedExpensesAgg] = await app.db.select({ sum: sum(recurringBill.amountCents) })
+      .from(recurringBill)
+      .where(and(eq(recurringBill.userId, userId), eq(recurringBill.status, 'ACTIVE')));
 
     return {
       totalBalance: { cents: totalBalance, currency: 'BRL' as const },
-      accountsBalance: accounts.map((a) => ({
+      accountsBalance: accountsData.map((a) => ({
         accountId: a.id,
         name: a.name,
         balance: { cents: Number(a.balanceCents), currency: 'BRL' as const },
       })),
-      totalExpensesMonth: { cents: Number(expensesAgg._sum.amountCents || 0), currency: 'BRL' as const },
-      totalIncomeMonth: { cents: Number(incomeAgg._sum.amountCents || 0), currency: 'BRL' as const },
-      pendingBillsTotal: { cents: Number(pendingBills._sum.amountCents || 0), currency: 'BRL' as const },
-      debtsTotal: { cents: Number(debts._sum.remainingAmountCents || 0), currency: 'BRL' as const },
-      owedTotal: { cents: Number(owedDebts._sum.remainingAmountCents || 0), currency: 'BRL' as const },
-      currentInvoices: currentInvoices.map((i) => ({
-        cardId: i.cardId,
-        name: i.card.name,
-        total: { cents: Number(i.totalCents), currency: 'BRL' as const },
-        dueDate: i.dueDate.toISOString(),
+      totalExpensesMonth: { cents: Number(expensesAgg[0]?.sum || 0), currency: 'BRL' as const },
+      totalIncomeMonth: { cents: Number(incomeAgg[0]?.sum || 0), currency: 'BRL' as const },
+      pendingBillsTotal: { cents: Number(pendingBillsAgg[0]?.sum || 0), currency: 'BRL' as const },
+      debtsTotal: { cents: Number(debtsAgg[0]?.sum || 0), currency: 'BRL' as const },
+      owedTotal: { cents: Number(owedDebtsAgg[0]?.sum || 0), currency: 'BRL' as const },
+      currentInvoices: currentInvoicesData.map((i) => ({
+        cardId: i.invoice.cardId,
+        name: i.card?.name || '',
+        total: { cents: Number(i.invoice.totalCents), currency: 'BRL' as const },
+        dueDate: i.invoice.dueDate.toISOString(),
       })),
-      upcomingInvoices: upcomingInvoices.map((i) => ({
-        cardId: i.cardId,
-        name: i.card.name,
-        estimatedTotal: { cents: Number(i.totalCents), currency: 'BRL' as const },
-        dueDate: i.dueDate.toISOString(),
+      upcomingInvoices: upcomingInvoicesData.map((i) => ({
+        cardId: i.invoice.cardId,
+        name: i.card?.name || '',
+        estimatedTotal: { cents: Number(i.invoice.totalCents), currency: 'BRL' as const },
+        dueDate: i.invoice.dueDate.toISOString(),
       })),
-      upcomingBills: upcomingBills.map((b) => ({
+      upcomingBills: upcomingBillsData.map((b) => ({
         id: b.id,
         description: b.description,
         amount: { cents: Number(b.amountCents), currency: 'BRL' as const },
         dueDate: b.dueDate.toISOString(),
       })),
-      upcomingInstallments: upcomingInstallments.map((i) => ({
-        planId: i.planId,
-        description: i.plan.description,
-        amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
-        dueDate: i.dueDate.toISOString(),
+      upcomingInstallments: upcomingInstallmentsData.map((i) => ({
+        planId: i.installment.planId,
+        description: i.plan?.description || '',
+        amount: { cents: Number(i.installment.amountCents), currency: 'BRL' as const },
+        dueDate: i.installment.dueDate.toISOString(),
       })),
-      fixedExpenses: { cents: Number(fixedExpenses._sum.amountCents || 0), currency: 'BRL' as const },
+      fixedExpenses: { cents: Number(fixedExpensesAgg[0]?.sum || 0), currency: 'BRL' as const },
       cashflowProjection: [],
     };
   });

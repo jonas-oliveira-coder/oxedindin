@@ -1,21 +1,27 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import {
+  user, bankAccount, creditCard, transaction, installmentPlan,
+  recurringBill, bill, debt, person, category, notification,
+  passkey, session, auditLog
+} from '../../db/schema';
 
 const userRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/me', {
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const user = request.authUser!;
+    const userData = request.authUser!;
     return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      emailVerified: user.emailVerified,
-      twoFactorEnabled: user.twoFactorEnabled,
-      settings: user.settings,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
+      id: userData.id,
+      email: userData.email,
+      name: userData.name,
+      avatarUrl: userData.avatarUrl,
+      emailVerified: userData.emailVerified,
+      twoFactorEnabled: userData.twoFactorEnabled,
+      settings: userData.settings,
+      createdAt: userData.createdAt.toISOString(),
+      updatedAt: userData.updatedAt.toISOString(),
     };
   });
 
@@ -28,38 +34,38 @@ const userRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const user = await app.prisma.user.update({
-      where: { id: request.authUser!.id },
-      data: request.body,
-    });
+    const [updatedUser] = await app.db.update(user)
+      .set(request.body)
+      .where(eq(user.id, request.authUser!.id))
+      .returning();
 
     await app.auditLog({
       userId: request.authUser!.id,
       action: 'USER_UPDATED',
       entityType: 'User',
-      entityId: user.id,
+      entityId: updatedUser.id,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
     return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      emailVerified: user.emailVerified,
-      twoFactorEnabled: user.twoFactorEnabled,
-      settings: user.settings,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
+      id: updatedUser.id,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      avatarUrl: updatedUser.avatarUrl,
+      emailVerified: updatedUser.emailVerified,
+      twoFactorEnabled: updatedUser.twoFactorEnabled,
+      settings: updatedUser.settings,
+      createdAt: updatedUser.createdAt.toISOString(),
+      updatedAt: updatedUser.updatedAt.toISOString(),
     };
   });
 
   app.delete('/me', {
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    await app.prisma.user.delete({ where: { id: request.authUser!.id } });
+    await app.db.delete(user).where(eq(user.id, request.authUser!.id));
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -97,20 +103,20 @@ const userRoutes: FastifyPluginAsyncZod = async (app) => {
       sessions,
       auditLogs,
     ] = await Promise.all([
-      app.prisma.bankAccount.findMany({ where: { userId } }),
-      app.prisma.creditCard.findMany({ where: { userId } }),
-      app.prisma.transaction.findMany({ where: { userId } }),
-      app.prisma.installmentPlan.findMany({ where: { userId } }),
-      app.prisma.recurringBill.findMany({ where: { userId } }),
-      app.prisma.bill.findMany({ where: { userId } }),
-      app.prisma.debt.findMany({ where: { userId } }),
-      app.prisma.debt.findMany({ where: { relatedPerson: { userId } } }),
-      app.prisma.person.findMany({ where: { userId } }),
-      app.prisma.category.findMany({ where: { userId } }),
-      app.prisma.notification.findMany({ where: { userId } }),
-      app.prisma.passkey.findMany({ where: { userId } }),
-      app.prisma.session.findMany({ where: { userId } }),
-      app.prisma.auditLog.findMany({ where: { userId } }),
+      app.db.select().from(bankAccount).where(eq(bankAccount.userId, userId)),
+      app.db.select().from(creditCard).where(eq(creditCard.userId, userId)),
+      app.db.select().from(transaction).where(eq(transaction.userId, userId)),
+      app.db.select().from(installmentPlan).where(eq(installmentPlan.userId, userId)),
+      app.db.select().from(recurringBill).where(eq(recurringBill.userId, userId)),
+      app.db.select().from(bill).where(eq(bill.userId, userId)),
+      app.db.select().from(debt).where(eq(debt.userId, userId)),
+      app.db.select().from(debt).where(eq(debt.creditorId, userId)),
+      app.db.select().from(person).where(eq(person.userId, userId)),
+      app.db.select().from(category).where(eq(category.userId, userId)),
+      app.db.select().from(notification).where(eq(notification.userId, userId)),
+      app.db.select().from(passkey).where(eq(passkey.userId, userId)),
+      app.db.select().from(session).where(eq(session.userId, userId)),
+      app.db.select().from(auditLog).where(eq(auditLog.userId, userId)),
     ]);
 
     return {

@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, gt, count, sql, desc, asc, inArray, lte } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
+import { invoice, creditCard, transaction, category, installment, installmentPlan, bankAccount } from '../../db/schema';
 
 const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -15,36 +17,76 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, cardId, status } = request.query;
     const userId = request.authUser!.id;
 
-    const cardWhere = cardId ? { id: cardId, userId } : { userId };
-    const cardIds = await app.prisma.creditCard.findMany({
-      where: cardWhere,
-      select: { id: true },
-    }).then((cards) => cards.map((c) => c.id));
+    const cardConditions = [eq(creditCard.userId, userId)];
+    if (cardId) cardConditions.push(eq(creditCard.id, cardId));
+    const cardIdsData = await app.db.select({ id: creditCard.id })
+      .from(creditCard)
+      .where(and(...cardConditions));
+    const cardIds = cardIdsData.map(c => c.id);
 
-    const where: any = { cardId: { in: cardIds } };
-    if (status) where.status = status;
+    const conditions = [inArray(invoice.cardId, cardIds)];
+    if (status) conditions.push(eq(invoice.status, status));
 
-    const [invoices, total] = await Promise.all([
-      app.prisma.invoice.findMany({
-        where,
-        orderBy: { periodStart: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { card: true, transactions: { include: { category: true } } },
-      }),
-      app.prisma.invoice.count({ where }),
+    const [invoicesData, totalResult] = await Promise.all([
+      app.db.select({
+        ...invoice,
+        card: creditCard,
+        transactions: {
+          id: transaction.id,
+          userId: transaction.userId,
+          accountId: transaction.accountId,
+          cardId: transaction.cardId,
+          installmentPlanId: transaction.installmentPlanId,
+          invoiceId: transaction.invoiceId,
+          description: transaction.description,
+          amountCents: transaction.amountCents,
+          type: transaction.type,
+          categoryId: transaction.categoryId,
+          date: transaction.date,
+          paymentMethod: transaction.paymentMethod,
+          notes: transaction.notes,
+          createdAt: transaction.createdAt,
+          updatedAt: transaction.updatedAt,
+          category: category,
+        },
+      })
+        .from(invoice)
+        .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
+        .leftJoin(transaction, eq(invoice.id, transaction.invoiceId))
+        .leftJoin(category, eq(transaction.categoryId, category.id))
+        .where(and(...conditions))
+        .orderBy(desc(invoice.periodStart))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(invoice).where(and(...conditions)),
     ]);
 
+    const total = totalResult[0]?.count || 0;
+
+    // Group transactions by invoice
+    const invoiceMap = new Map<string, any>();
+    for (const i of invoicesData) {
+      if (!invoiceMap.has(i.invoice.id)) {
+        invoiceMap.set(i.invoice.id, {
+          ...i.invoice,
+          card: i.card,
+          transactions: [],
+        });
+      }
+      if (i.transactions.id) {
+        invoiceMap.get(i.invoice.id).transactions.push({
+          ...i.transactions,
+          amount: { cents: Number(i.transactions.amountCents), currency: 'BRL' as const },
+        });
+      }
+    }
+
     return {
-      data: invoices.map((i) => ({
+      data: Array.from(invoiceMap.values()).map((i) => ({
         ...i,
         total: { cents: Number(i.totalCents), currency: 'BRL' as const },
         paid: { cents: Number(i.paidCents), currency: 'BRL' as const },
         remaining: { cents: Number(i.remainingCents), currency: 'BRL' as const },
-        transactions: i.transactions.map((t) => ({
-          ...t,
-          amount: { cents: Number(t.amountCents), currency: 'BRL' as const },
-        })),
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -56,19 +98,17 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
     const userId = request.authUser!.id;
     const now = new Date();
 
-    const cards = await app.prisma.creditCard.findMany({
-      where: { userId, status: 'ACTIVE' },
-    });
+    const cards = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.userId, userId), eq(creditCard.status, 'ACTIVE')));
 
     const upcoming = [];
     for (const card of cards) {
-      const nextInvoice = await app.prisma.invoice.findFirst({
-        where: {
-          cardId: card.id,
-          periodStart: { gt: now },
-        },
-        orderBy: { periodStart: 'asc' },
-      });
+      const [nextInvoice] = await app.db.select()
+        .from(invoice)
+        .where(and(eq(invoice.cardId, card.id), gt(invoice.periodStart, now)))
+        .orderBy(asc(invoice.periodStart))
+        .limit(1);
 
       if (nextInvoice) {
         upcoming.push({
@@ -94,39 +134,59 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const invoice = await app.prisma.invoice.findFirst({
-      where: { id: request.params.id },
-      include: {
-        card: true,
-        transactions: { include: { category: true } },
-        installments: { include: { plan: true } },
-      },
-    });
+    const [invoiceData] = await app.db.select({
+      ...invoice,
+      card: creditCard,
+    })
+      .from(invoice)
+      .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
+      .where(eq(invoice.id, request.params.id))
+      .limit(1);
 
-    if (!invoice) {
+    if (!invoiceData) {
       throw app.httpErrors.notFound('Invoice not found');
     }
 
-    const card = await app.prisma.creditCard.findFirst({
-      where: { id: invoice.cardId, userId: request.authUser!.id },
-    });
+    const [card] = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.id, invoiceData.invoice.cardId), eq(creditCard.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!card) {
       throw app.httpErrors.forbidden('Access denied');
     }
 
+    const transactionsData = await app.db.select({
+      ...transaction,
+      category: category,
+    })
+      .from(transaction)
+      .leftJoin(category, eq(transaction.categoryId, category.id))
+      .where(eq(transaction.invoiceId, invoiceData.invoice.id));
+
+    const installmentsData = await app.db.select({
+      ...installment,
+      plan: installmentPlan,
+    })
+      .from(installment)
+      .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+      .where(eq(installment.invoiceId, invoiceData.invoice.id));
+
     return {
-      ...invoice,
-      total: { cents: Number(invoice.totalCents), currency: 'BRL' as const },
-      paid: { cents: Number(invoice.paidCents), currency: 'BRL' as const },
-      remaining: { cents: Number(invoice.remainingCents), currency: 'BRL' as const },
-      transactions: invoice.transactions.map((t) => ({
-        ...t,
-        amount: { cents: Number(t.amountCents), currency: 'BRL' as const },
+      ...invoiceData.invoice,
+      card: invoiceData.card,
+      total: { cents: Number(invoiceData.invoice.totalCents), currency: 'BRL' as const },
+      paid: { cents: Number(invoiceData.invoice.paidCents), currency: 'BRL' as const },
+      remaining: { cents: Number(invoiceData.invoice.remainingCents), currency: 'BRL' as const },
+      transactions: transactionsData.map((t) => ({
+        ...t.transaction,
+        amount: { cents: Number(t.transaction.amountCents), currency: 'BRL' as const },
+        category: t.category,
       })),
-      installments: invoice.installments.map((i) => ({
-        ...i,
-        amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
+      installments: installmentsData.map((i) => ({
+        ...i.installment,
+        amount: { cents: Number(i.installment.amountCents), currency: 'BRL' as const },
+        plan: i.plan,
       })),
     };
   });
@@ -146,82 +206,86 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
     const { amount, accountId, date, notes } = request.body;
     const userId = request.authUser!.id;
 
-    const invoice = await app.prisma.invoice.findFirst({
-      where: { id: request.params.id },
-      include: { card: true },
-    });
+    const [invoiceData] = await app.db.select({
+      ...invoice,
+      card: creditCard,
+    })
+      .from(invoice)
+      .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
+      .where(eq(invoice.id, request.params.id))
+      .limit(1);
 
-    if (!invoice) {
+    if (!invoiceData) {
       throw app.httpErrors.notFound('Invoice not found');
     }
 
-    const card = await app.prisma.creditCard.findFirst({
-      where: { id: invoice.cardId, userId },
-    });
+    const [card] = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.id, invoiceData.invoice.cardId), eq(creditCard.userId, userId)))
+      .limit(1);
 
     if (!card) {
       throw app.httpErrors.forbidden('Access denied');
     }
 
-    if (amount > Number(invoice.remainingCents)) {
+    if (amount > Number(invoiceData.invoice.remainingCents)) {
       throw app.httpErrors.badRequest('Payment amount exceeds remaining balance');
     }
 
     if (accountId) {
-      const account = await app.prisma.bankAccount.findFirst({
-        where: { id: accountId, userId },
-      });
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
+        .limit(1);
       if (!account) throw app.httpErrors.badRequest('Account not found');
 
-      await app.prisma.bankAccount.update({
-        where: { id: accountId },
-        data: { balanceCents: { decrement: amount } },
-      });
+      await app.db.update(bankAccount)
+        .set({ balanceCents: sql`${bankAccount.balanceCents} - ${amount}` })
+        .where(eq(bankAccount.id, accountId));
     }
 
-    const newPaid = Number(invoice.paidCents) + amount;
-    const newRemaining = Number(invoice.totalCents) - newPaid;
-    const newStatus = newRemaining === 0 ? 'PAID' : newPaid > 0 ? 'PARTIALLY_PAID' : invoice.status;
+    const newPaid = Number(invoiceData.invoice.paidCents) + amount;
+    const newRemaining = Number(invoiceData.invoice.totalCents) - newPaid;
+    const newStatus = newRemaining === 0 ? 'PAID' : newPaid > 0 ? 'PARTIALLY_PAID' : invoiceData.invoice.status;
 
-    await app.prisma.invoice.update({
-      where: { id: invoice.id },
-      data: {
+    await app.db.update(invoice)
+      .set({
         paidCents: newPaid,
         remainingCents: newRemaining,
         status: newStatus,
-      },
-    });
+      })
+      .where(eq(invoice.id, invoiceData.invoice.id));
 
-    await app.prisma.creditCard.update({
-      where: { id: card.id },
-      data: { availableLimitCents: { increment: amount } },
-    });
+    await app.db.update(creditCard)
+      .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${amount}` })
+      .where(eq(creditCard.id, card.id));
 
-    await app.prisma.transaction.create({
-      data: {
-        userId,
-        description: `Pagamento fatura ${card.name} (${invoice.periodStart.toISOString().slice(0, 7)})`,
-        amountCents: amount,
-        type: 'EXPENSE',
-        date: date ? new Date(date) : new Date(),
-        paymentMethod: 'BANK_TRANSFER',
-        accountId,
-        cardId: card.id,
-        notes: notes || `Pagamento de fatura - ${invoice.periodStart.toISOString().slice(0, 7)}`,
-      },
+    await app.db.insert(transaction).values({
+      userId,
+      description: `Pagamento fatura ${card.name} (${invoiceData.invoice.periodStart.toISOString().slice(0, 7)})`,
+      amountCents: amount,
+      type: 'EXPENSE',
+      date: date ? new Date(date) : new Date(),
+      paymentMethod: 'BANK_TRANSFER',
+      accountId,
+      cardId: card.id,
+      notes: notes || `Pagamento de fatura - ${invoiceData.invoice.periodStart.toISOString().slice(0, 7)}`,
     });
 
     await app.auditLog({
       userId,
       action: 'INVOICE_PAID',
       entityType: 'Invoice',
-      entityId: invoice.id,
+      entityId: invoiceData.invoice.id,
       newData: { amount, accountId },
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
-    const updatedInvoice = await app.prisma.invoice.findUnique({ where: { id: invoice.id } });
+    const [updatedInvoice] = await app.db.select()
+      .from(invoice)
+      .where(eq(invoice.id, invoiceData.invoice.id))
+      .limit(1);
 
     return {
       ...updatedInvoice!,

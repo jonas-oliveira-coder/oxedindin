@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, gte, lte, desc, count, sql, ilike } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
+import { auditLog, session } from '../../db/schema';
 
 const securityRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/audit-log', {
@@ -17,24 +19,22 @@ const securityRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, action, entityType, startDate, endDate } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId };
-    if (action) where.action = { contains: action, mode: 'insensitive' };
-    if (entityType) where.entityType = entityType;
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
-    }
+    const conditions = [eq(auditLog.userId, userId)];
+    if (action) conditions.push(ilike(auditLog.action, `%${action}%`));
+    if (entityType) conditions.push(eq(auditLog.entityType, entityType));
+    if (startDate) conditions.push(gte(auditLog.createdAt, new Date(startDate)));
+    if (endDate) conditions.push(lte(auditLog.createdAt, new Date(endDate)));
 
-    const [logs, total] = await Promise.all([
-      app.prisma.auditLog.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      app.prisma.auditLog.count({ where }),
+    const [logs, totalResult] = await Promise.all([
+      app.db.select().from(auditLog)
+        .where(and(...conditions))
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(auditLog).where(and(...conditions)),
     ]);
+
+    const total = totalResult[0]?.count || 0;
 
     return {
       data: logs,
@@ -45,10 +45,13 @@ const securityRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/devices', {
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const sessions = await app.prisma.session.findMany({
-      where: { userId: request.authUser!.id, revokedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    });
+    const sessions = await app.db.select().from(session)
+      .where(and(
+        eq(session.userId, request.authUser!.id),
+        isNull(session.revokedAt),
+        gt(session.expiresAt, new Date())
+      ))
+      .orderBy(desc(session.createdAt));
 
     return sessions.map((s) => ({
       id: s.id,

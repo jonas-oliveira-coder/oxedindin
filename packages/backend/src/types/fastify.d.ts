@@ -1,5 +1,5 @@
 import 'fastify';
-import { User, Session } from '@prisma/client';
+import { User, Session } from '../db/schema/tables';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -26,7 +26,7 @@ declare module 'fastify' {
         FRONTEND_URL: string;
       };
     };
-    prisma: import('@prisma/client').PrismaClient;
+    db: import('../db').DB;
     authService: import('../services/auth.service').AuthService;
     auditLog: (input: {
       userId: string;

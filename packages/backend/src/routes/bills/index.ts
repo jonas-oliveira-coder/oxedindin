@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, gte, lte, asc, count, sql, desc } from 'drizzle-orm';
 import { createRecurringBillSchema, createBillSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
+import { recurringBill, bill, bankAccount, creditCard, category, transaction, user } from '../../db/schema';
 
 function getNextDueDate(frequency: string, dueDay: number, fromDate: Date): Date {
   const next = new Date(fromDate);
@@ -46,24 +48,36 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, status } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId };
-    if (status) where.status = status;
+    const conditions = [eq(recurringBill.userId, userId)];
+    if (status) conditions.push(eq(recurringBill.status, status));
 
-    const [bills, total] = await Promise.all([
-      app.prisma.recurringBill.findMany({
-        where,
-        orderBy: { nextDueDate: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { category: true, account: true, card: true },
-      }),
-      app.prisma.recurringBill.count({ where }),
+    const [billsData, totalResult] = await Promise.all([
+      app.db.select({
+        ...recurringBill,
+        category: category,
+        account: bankAccount,
+        card: creditCard,
+      })
+        .from(recurringBill)
+        .leftJoin(category, eq(recurringBill.categoryId, category.id))
+        .leftJoin(bankAccount, eq(recurringBill.accountId, bankAccount.id))
+        .leftJoin(creditCard, eq(recurringBill.cardId, creditCard.id))
+        .where(and(...conditions))
+        .orderBy(asc(recurringBill.nextDueDate))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(recurringBill).where(and(...conditions)),
     ]);
 
+    const total = totalResult[0]?.count || 0;
+
     return {
-      data: bills.map((b) => ({
-        ...b,
-        amount: { cents: Number(b.amountCents), currency: 'BRL' as const },
+      data: billsData.map((b) => ({
+        ...b.recurringBill,
+        category: b.category,
+        account: b.account,
+        card: b.card,
+        amount: { cents: Number(b.recurringBill.amountCents), currency: 'BRL' as const },
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -77,52 +91,74 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     const userId = request.authUser!.id;
 
     if (accountId) {
-      const account = await app.prisma.bankAccount.findFirst({ where: { id: accountId, userId } });
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
+        .limit(1);
       if (!account) throw app.httpErrors.badRequest('Account not found');
     }
     if (cardId) {
-      const card = await app.prisma.creditCard.findFirst({ where: { id: cardId, userId } });
+      const [card] = await app.db.select()
+        .from(creditCard)
+        .where(and(eq(creditCard.id, cardId), eq(creditCard.userId, userId)))
+        .limit(1);
       if (!card) throw app.httpErrors.badRequest('Card not found');
     }
     if (categoryId) {
-      const category = await app.prisma.category.findFirst({ where: { id: categoryId, userId } });
-      if (!category) throw app.httpErrors.badRequest('Category not found');
+      const [cat] = await app.db.select()
+        .from(category)
+        .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
+        .limit(1);
+      if (!cat) throw app.httpErrors.badRequest('Category not found');
     }
 
     const nextDueDate = getNextDueDate(frequency, dueDay, new Date(startDate));
 
-    const bill = await app.prisma.recurringBill.create({
-      data: {
-        userId,
-        description,
-        amountCents: amount,
-        categoryId,
-        frequency,
-        dueDay,
-        startDate: new Date(startDate),
-        endDate: endDate ? new Date(endDate) : null,
-        nextDueDate,
-        dateType: dateType || 'FIXED',
-        accountId,
-        cardId,
-        status: 'ACTIVE',
-      },
-      include: { category: true, account: true, card: true },
-    });
+    const [newBill] = await app.db.insert(recurringBill).values({
+      userId,
+      description,
+      amountCents: amount,
+      categoryId,
+      frequency,
+      dueDay,
+      startDate: new Date(startDate),
+      endDate: endDate ? new Date(endDate) : null,
+      nextDueDate,
+      dateType: dateType || 'FIXED',
+      accountId,
+      cardId,
+      status: 'ACTIVE',
+    }).returning();
+
+    const [billWithRelations] = await app.db.select({
+      ...recurringBill,
+      category: category,
+      account: bankAccount,
+      card: creditCard,
+    })
+      .from(recurringBill)
+      .leftJoin(category, eq(recurringBill.categoryId, category.id))
+      .leftJoin(bankAccount, eq(recurringBill.accountId, bankAccount.id))
+      .leftJoin(creditCard, eq(recurringBill.cardId, creditCard.id))
+      .where(eq(recurringBill.id, newBill.id))
+      .limit(1);
 
     await app.auditLog({
       userId,
       action: 'RECURRING_BILL_CREATED',
       entityType: 'RecurringBill',
-      entityId: bill.id,
+      entityId: newBill.id,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
     return reply.status(201).send({
-      ...bill,
-      amount: { cents: Number(bill.amountCents), currency: 'BRL' as const },
+      ...billWithRelations!.recurringBill,
+      category: billWithRelations!.category,
+      account: billWithRelations!.account,
+      card: billWithRelations!.card,
+      amount: { cents: Number(billWithRelations!.recurringBill.amountCents), currency: 'BRL' as const },
     });
   });
 
@@ -130,14 +166,28 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const bill = await app.prisma.recurringBill.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-      include: { category: true, account: true, card: true },
-    });
+    const [billWithRelations] = await app.db.select({
+      ...recurringBill,
+      category: category,
+      account: bankAccount,
+      card: creditCard,
+    })
+      .from(recurringBill)
+      .leftJoin(category, eq(recurringBill.categoryId, category.id))
+      .leftJoin(bankAccount, eq(recurringBill.accountId, bankAccount.id))
+      .leftJoin(creditCard, eq(recurringBill.cardId, creditCard.id))
+      .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
+      .limit(1);
 
-    if (!bill) throw app.httpErrors.notFound('Recurring bill not found');
+    if (!billWithRelations) throw app.httpErrors.notFound('Recurring bill not found');
 
-    return { ...bill, amount: { cents: Number(bill.amountCents), currency: 'BRL' as const } };
+    return {
+      ...billWithRelations.recurringBill,
+      category: billWithRelations.category,
+      account: billWithRelations.account,
+      card: billWithRelations.card,
+      amount: { cents: Number(billWithRelations.recurringBill.amountCents), currency: 'BRL' as const },
+    };
   });
 
   app.patch('/recurring/:id', {
@@ -158,39 +208,57 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.recurringBill.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(recurringBill)
+      .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
+      .limit(1);
     if (!existing) throw app.httpErrors.notFound('Recurring bill not found');
 
-    const bill = await app.prisma.recurringBill.update({
-      where: { id: request.params.id },
-      data: request.body,
-      include: { category: true, account: true, card: true },
-    });
+    const [updatedBill] = await app.db.update(recurringBill)
+      .set(request.body)
+      .where(eq(recurringBill.id, request.params.id))
+      .returning();
+
+    const [billWithRelations] = await app.db.select({
+      ...recurringBill,
+      category: category,
+      account: bankAccount,
+      card: creditCard,
+    })
+      .from(recurringBill)
+      .leftJoin(category, eq(recurringBill.categoryId, category.id))
+      .leftJoin(bankAccount, eq(recurringBill.accountId, bankAccount.id))
+      .leftJoin(creditCard, eq(recurringBill.cardId, creditCard.id))
+      .where(eq(recurringBill.id, updatedBill.id))
+      .limit(1);
 
     await app.auditLog({
       userId: request.authUser!.id,
       action: 'RECURRING_BILL_UPDATED',
       entityType: 'RecurringBill',
-      entityId: bill.id,
+      entityId: updatedBill.id,
       oldData: existing,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
-    return { ...bill, amount: { cents: Number(bill.amountCents), currency: 'BRL' as const } };
+    return {
+      ...billWithRelations!.recurringBill,
+      category: billWithRelations!.category,
+      account: billWithRelations!.account,
+      card: billWithRelations!.card,
+      amount: { cents: Number(billWithRelations!.recurringBill.amountCents), currency: 'BRL' as const },
+    };
   });
 
   app.delete('/recurring/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    await app.prisma.recurringBill.update({
-      where: { id: request.params.id },
-      data: { status: 'INACTIVE' },
-    });
+    await app.db.update(recurringBill)
+      .set({ status: 'INACTIVE' })
+      .where(eq(recurringBill.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -208,41 +276,39 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const recurringBill = await app.prisma.recurringBill.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
-    if (!recurringBill) throw app.httpErrors.notFound('Recurring bill not found');
+    const [recurringBillRecord] = await app.db.select()
+      .from(recurringBill)
+      .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
+      .limit(1);
+    if (!recurringBillRecord) throw app.httpErrors.notFound('Recurring bill not found');
 
-    const bill = await app.prisma.bill.create({
-      data: {
-        userId: request.authUser!.id,
-        recurringBillId: recurringBill.id,
-        description: recurringBill.description,
-        amountCents: recurringBill.amountCents,
-        categoryId: recurringBill.categoryId,
-        dueDate: recurringBill.nextDueDate,
-        status: 'PENDING',
-        accountId: recurringBill.accountId,
-      },
-    });
+    const [newBill] = await app.db.insert(bill).values({
+      userId: request.authUser!.id,
+      recurringBillId: recurringBillRecord.id,
+      description: recurringBillRecord.description,
+      amountCents: recurringBillRecord.amountCents,
+      categoryId: recurringBillRecord.categoryId,
+      dueDate: recurringBillRecord.nextDueDate,
+      status: 'PENDING',
+      accountId: recurringBillRecord.accountId,
+    }).returning();
 
     const nextDueDate = getNextDueDate(
-      recurringBill.frequency,
-      recurringBill.dueDay,
-      recurringBill.nextDueDate
+      recurringBillRecord.frequency,
+      recurringBillRecord.dueDay,
+      recurringBillRecord.nextDueDate
     );
 
     const updateData: any = { nextDueDate };
-    if (recurringBill.endDate && nextDueDate > recurringBill.endDate) {
+    if (recurringBillRecord.endDate && nextDueDate > recurringBillRecord.endDate) {
       updateData.status = 'ENDED';
     }
 
-    await app.prisma.recurringBill.update({
-      where: { id: recurringBill.id },
-      data: updateData,
-    });
+    await app.db.update(recurringBill)
+      .set(updateData)
+      .where(eq(recurringBill.id, recurringBillRecord.id));
 
-    return { ...bill, amount: { cents: Number(bill.amountCents), currency: 'BRL' as const } };
+    return { ...newBill, amount: { cents: Number(newBill.amountCents), currency: 'BRL' as const } };
   });
 
   app.get('/', {
@@ -256,29 +322,38 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, startDate, endDate, status } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId };
-    if (startDate || endDate) {
-      where.dueDate = {};
-      if (startDate) where.dueDate.gte = new Date(startDate);
-      if (endDate) where.dueDate.lte = new Date(endDate);
-    }
-    if (status) where.status = status;
+    const conditions = [eq(bill.userId, userId)];
+    if (startDate) conditions.push(gte(bill.dueDate, new Date(startDate)));
+    if (endDate) conditions.push(lte(bill.dueDate, new Date(endDate)));
+    if (status) conditions.push(eq(bill.status, status));
 
-    const [bills, total] = await Promise.all([
-      app.prisma.bill.findMany({
-        where,
-        orderBy: { dueDate: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { category: true, account: true, recurringBill: true },
-      }),
-      app.prisma.bill.count({ where }),
+    const [billsData, totalResult] = await Promise.all([
+      app.db.select({
+        ...bill,
+        category: category,
+        account: bankAccount,
+        recurringBill: recurringBill,
+      })
+        .from(bill)
+        .leftJoin(category, eq(bill.categoryId, category.id))
+        .leftJoin(bankAccount, eq(bill.accountId, bankAccount.id))
+        .leftJoin(recurringBill, eq(bill.recurringBillId, recurringBill.id))
+        .where(and(...conditions))
+        .orderBy(asc(bill.dueDate))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(bill).where(and(...conditions)),
     ]);
 
+    const total = totalResult[0]?.count || 0;
+
     return {
-      data: bills.map((b) => ({
-        ...b,
-        amount: { cents: Number(b.amountCents), currency: 'BRL' as const },
+      data: billsData.map((b) => ({
+        ...b.bill,
+        category: b.category,
+        account: b.account,
+        recurringBill: b.recurringBill,
+        amount: { cents: Number(b.bill.amountCents), currency: 'BRL' as const },
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -292,54 +367,82 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     const userId = request.authUser!.id;
 
     if (accountId) {
-      const account = await app.prisma.bankAccount.findFirst({ where: { id: accountId, userId } });
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
+        .limit(1);
       if (!account) throw app.httpErrors.badRequest('Account not found');
     }
     if (categoryId) {
-      const category = await app.prisma.category.findFirst({ where: { id: categoryId, userId } });
-      if (!category) throw app.httpErrors.badRequest('Category not found');
+      const [cat] = await app.db.select()
+        .from(category)
+        .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
+        .limit(1);
+      if (!cat) throw app.httpErrors.badRequest('Category not found');
     }
 
-    const bill = await app.prisma.bill.create({
-      data: {
-        userId,
-        description,
-        amountCents: amount,
-        categoryId,
-        dueDate: new Date(dueDate),
-        paymentMethod,
-        accountId,
-        notes,
-        status: 'PENDING',
-      },
-      include: { category: true, account: true },
-    });
+    const [newBill] = await app.db.insert(bill).values({
+      userId,
+      description,
+      amountCents: amount,
+      categoryId,
+      dueDate: new Date(dueDate),
+      paymentMethod,
+      accountId,
+      notes,
+      status: 'PENDING',
+    }).returning();
+
+    const [billWithRelations] = await app.db.select({
+      ...bill,
+      category: category,
+      account: bankAccount,
+    })
+      .from(bill)
+      .leftJoin(category, eq(bill.categoryId, category.id))
+      .leftJoin(bankAccount, eq(bill.accountId, bankAccount.id))
+      .where(eq(bill.id, newBill.id))
+      .limit(1);
 
     await app.auditLog({
       userId,
       action: 'BILL_CREATED',
       entityType: 'Bill',
-      entityId: bill.id,
+      entityId: newBill.id,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
-    return reply.status(201).send({ ...bill, amount: { cents: Number(bill.amountCents), currency: 'BRL' as const } });
+    return reply.status(201).send({ ...billWithRelations!.bill, category: billWithRelations!.category, account: billWithRelations!.account, amount: { cents: Number(billWithRelations!.bill.amountCents), currency: 'BRL' as const } });
   });
 
   app.get('/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const bill = await app.prisma.bill.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-      include: { category: true, account: true, recurringBill: true },
-    });
+    const [billWithRelations] = await app.db.select({
+      ...bill,
+      category: category,
+      account: bankAccount,
+      recurringBill: recurringBill,
+    })
+      .from(bill)
+      .leftJoin(category, eq(bill.categoryId, category.id))
+      .leftJoin(bankAccount, eq(bill.accountId, bankAccount.id))
+      .leftJoin(recurringBill, eq(bill.recurringBillId, recurringBill.id))
+      .where(and(eq(bill.id, request.params.id), eq(bill.userId, request.authUser!.id)))
+      .limit(1);
 
-    if (!bill) throw app.httpErrors.notFound('Bill not found');
+    if (!billWithRelations) throw app.httpErrors.notFound('Bill not found');
 
-    return { ...bill, amount: { cents: Number(bill.amountCents), currency: 'BRL' as const } };
+    return {
+      ...billWithRelations.bill,
+      category: billWithRelations.category,
+      account: billWithRelations.account,
+      recurringBill: billWithRelations.recurringBill,
+      amount: { cents: Number(billWithRelations.bill.amountCents), currency: 'BRL' as const },
+    };
   });
 
   app.patch('/:id', {
@@ -358,29 +461,48 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.bill.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(bill)
+      .where(and(eq(bill.id, request.params.id), eq(bill.userId, request.authUser!.id)))
+      .limit(1);
     if (!existing) throw app.httpErrors.notFound('Bill not found');
 
-    const bill = await app.prisma.bill.update({
-      where: { id: request.params.id },
-      data: request.body,
-      include: { category: true, account: true, recurringBill: true },
-    });
+    const [updatedBill] = await app.db.update(bill)
+      .set(request.body)
+      .where(eq(bill.id, request.params.id))
+      .returning();
+
+    const [billWithRelations] = await app.db.select({
+      ...bill,
+      category: category,
+      account: bankAccount,
+      recurringBill: recurringBill,
+    })
+      .from(bill)
+      .leftJoin(category, eq(bill.categoryId, category.id))
+      .leftJoin(bankAccount, eq(bill.accountId, bankAccount.id))
+      .leftJoin(recurringBill, eq(bill.recurringBillId, recurringBill.id))
+      .where(eq(bill.id, updatedBill.id))
+      .limit(1);
 
     await app.auditLog({
       userId: request.authUser!.id,
       action: 'BILL_UPDATED',
       entityType: 'Bill',
-      entityId: bill.id,
+      entityId: updatedBill.id,
       oldData: existing,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
-    return { ...bill, amount: { cents: Number(bill.amountCents), currency: 'BRL' as const } };
+    return {
+      ...billWithRelations!.bill,
+      category: billWithRelations!.category,
+      account: billWithRelations!.account,
+      recurringBill: billWithRelations!.recurringBill,
+      amount: { cents: Number(billWithRelations!.bill.amountCents), currency: 'BRL' as const },
+    };
   });
 
   app.post('/:id/pay', {
@@ -397,45 +519,58 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { accountId, date, paymentMethod } = request.body;
     const userId = request.authUser!.id;
 
-    const existing = await app.prisma.bill.findFirst({
-      where: { id: request.params.id, userId },
-    });
+    const [existing] = await app.db.select()
+      .from(bill)
+      .where(and(eq(bill.id, request.params.id), eq(bill.userId, userId)))
+      .limit(1);
     if (!existing) throw app.httpErrors.notFound('Bill not found');
     if (existing.status === 'PAID') throw app.httpErrors.badRequest('Bill already paid');
 
     if (accountId) {
-      const account = await app.prisma.bankAccount.findFirst({ where: { id: accountId, userId } });
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
+        .limit(1);
       if (!account) throw app.httpErrors.badRequest('Account not found');
 
-      await app.prisma.bankAccount.update({
-        where: { id: accountId },
-        data: { balanceCents: { decrement: existing.amountCents } },
-      });
+      await app.db.update(bankAccount)
+        .set({ balanceCents: sql`${bankAccount.balanceCents} - ${existing.amountCents}` })
+        .where(eq(bankAccount.id, accountId));
     }
 
-    const bill = await app.prisma.bill.update({
-      where: { id: request.params.id },
-      data: {
+    const [updatedBill] = await app.db.update(bill)
+      .set({
         status: 'PAID',
         paidAt: date ? new Date(date) : new Date(),
         paymentMethod: paymentMethod || existing.paymentMethod,
         accountId: accountId || existing.accountId,
-      },
-      include: { category: true, account: true, recurringBill: true },
-    });
+      })
+      .where(eq(bill.id, request.params.id))
+      .returning();
+
+    const [billWithRelations] = await app.db.select({
+      ...bill,
+      category: category,
+      account: bankAccount,
+      recurringBill: recurringBill,
+    })
+      .from(bill)
+      .leftJoin(category, eq(bill.categoryId, category.id))
+      .leftJoin(bankAccount, eq(bill.accountId, bankAccount.id))
+      .leftJoin(recurringBill, eq(bill.recurringBillId, recurringBill.id))
+      .where(eq(bill.id, updatedBill.id))
+      .limit(1);
 
     if (accountId) {
-      await app.prisma.transaction.create({
-        data: {
-          userId,
-          description: `Pagamento: ${bill.description}`,
-          amountCents: bill.amountCents,
-          type: 'EXPENSE',
-          date: date ? new Date(date) : new Date(),
-          paymentMethod: paymentMethod || 'BANK_TRANSFER',
-          accountId,
-          notes: `Pagamento de conta - ${bill.description}`,
-        },
+      await app.db.insert(transaction).values({
+        userId,
+        description: `Pagamento: ${billWithRelations!.bill.description}`,
+        amountCents: billWithRelations!.bill.amountCents,
+        type: 'EXPENSE',
+        date: date ? new Date(date) : new Date(),
+        paymentMethod: paymentMethod || 'BANK_TRANSFER',
+        accountId,
+        notes: `Pagamento de conta - ${billWithRelations!.bill.description}`,
       });
     }
 
@@ -443,23 +578,22 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       userId,
       action: 'BILL_PAID',
       entityType: 'Bill',
-      entityId: bill.id,
+      entityId: updatedBill.id,
       newData: { accountId, paymentMethod },
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
-    return { ...bill, amount: { cents: Number(bill.amountCents), currency: 'BRL' as const } };
+    return { ...billWithRelations!.bill, category: billWithRelations!.category, account: billWithRelations!.account, recurringBill: billWithRelations!.recurringBill, amount: { cents: Number(billWithRelations!.bill.amountCents), currency: 'BRL' as const } };
   });
 
   app.delete('/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    await app.prisma.bill.update({
-      where: { id: request.params.id },
-      data: { status: 'CANCELLED' },
-    });
+    await app.db.update(bill)
+      .set({ status: 'CANCELLED' })
+      .where(eq(bill.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,

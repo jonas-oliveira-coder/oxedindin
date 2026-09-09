@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
@@ -58,6 +58,16 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
 function AppRoutes() {
   return (
     <Routes>
@@ -89,15 +99,7 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={new (require('@tanstack/react-query').QueryClient)({
-      defaultOptions: {
-        queries: {
-          staleTime: 1000 * 60 * 5,
-          retry: 1,
-          refetchOnWindowFocus: false,
-        },
-      },
-    })}>
+    <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
           <AppRoutes />

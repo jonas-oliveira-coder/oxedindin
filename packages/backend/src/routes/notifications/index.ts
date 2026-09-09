@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, desc, count, sql } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
+import { notification, notificationPreferences } from '../../db/schema';
 
 const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -14,21 +16,22 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, read } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId };
-    if (read !== undefined) where.read = read;
+    const conditions = [eq(notification.userId, userId)];
+    if (read !== undefined) conditions.push(eq(notification.read, read));
 
-    const [notifications, total] = await Promise.all([
-      app.prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      app.prisma.notification.count({ where }),
+    const [notificationsData, totalResult] = await Promise.all([
+      app.db.select().from(notification)
+        .where(and(...conditions))
+        .orderBy(desc(notification.createdAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(notification).where(and(...conditions)),
     ]);
 
+    const total = totalResult[0]?.count || 0;
+
     return {
-      data: notifications,
+      data: notificationsData,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   });
@@ -37,16 +40,16 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const notification = await app.prisma.notification.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [notificationRecord] = await app.db.select()
+      .from(notification)
+      .where(and(eq(notification.id, request.params.id), eq(notification.userId, request.authUser!.id)))
+      .limit(1);
 
-    if (!notification) throw app.httpErrors.notFound('Notification not found');
+    if (!notificationRecord) throw app.httpErrors.notFound('Notification not found');
 
-    await app.prisma.notification.update({
-      where: { id: request.params.id },
-      data: { read: true },
-    });
+    await app.db.update(notification)
+      .set({ read: true })
+      .where(eq(notification.id, request.params.id));
 
     return { success: true };
   });
@@ -54,10 +57,9 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.patch('/read-all', {
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    await app.prisma.notification.updateMany({
-      where: { userId: request.authUser!.id, read: false },
-      data: { read: true },
-    });
+    await app.db.update(notification)
+      .set({ read: true })
+      .where(and(eq(notification.userId, request.authUser!.id), eq(notification.read, false)));
 
     return { success: true };
   });
@@ -65,14 +67,15 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/preferences', {
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    let prefs = await app.prisma.notificationPreferences.findUnique({
-      where: { userId: request.authUser!.id },
-    });
+    let [prefs] = await app.db.select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, request.authUser!.id))
+      .limit(1);
 
     if (!prefs) {
-      prefs = await app.prisma.notificationPreferences.create({
-        data: { userId: request.authUser!.id },
-      });
+      [prefs] = await app.db.insert(notificationPreferences).values({
+        userId: request.authUser!.id,
+      }).returning();
     }
 
     return prefs;
@@ -98,11 +101,23 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const prefs = await app.prisma.notificationPreferences.upsert({
-      where: { userId: request.authUser!.id },
-      create: { userId: request.authUser!.id, ...request.body },
-      update: request.body,
-    });
+    const [existing] = await app.db.select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, request.authUser!.id))
+      .limit(1);
+
+    let prefs;
+    if (existing) {
+      [prefs] = await app.db.update(notificationPreferences)
+        .set(request.body)
+        .where(eq(notificationPreferences.userId, request.authUser!.id))
+        .returning();
+    } else {
+      [prefs] = await app.db.insert(notificationPreferences).values({
+        userId: request.authUser!.id,
+        ...request.body,
+      }).returning();
+    }
 
     return prefs;
   });

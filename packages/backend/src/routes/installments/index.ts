@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, gte, lte, asc, count, sql, inArray, desc } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
+import { installment, installmentPlan, creditCard, invoice, bankAccount, transaction, category } from '../../db/schema';
 
 const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -15,30 +17,41 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, cardId, status } = request.query;
     const userId = request.authUser!.id;
 
-    const cardWhere = cardId ? { id: cardId, userId } : { userId };
-    const cardIds = await app.prisma.creditCard.findMany({
-      where: cardWhere,
-      select: { id: true },
-    }).then((cards) => cards.map((c) => c.id));
+    const cardConditions = [eq(creditCard.userId, userId)];
+    if (cardId) cardConditions.push(eq(creditCard.id, cardId));
+    const cardIds = await app.db.select({ id: creditCard.id })
+      .from(creditCard)
+      .where(and(...cardConditions));
 
-    const where: any = { plan: { cardId: { in: cardIds } } };
-    if (status) where.status = status;
+    const cardIdArray = cardIds.map(c => c.id);
 
-    const [installments, total] = await Promise.all([
-      app.prisma.installment.findMany({
-        where,
-        orderBy: { dueDate: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { plan: true, invoice: true },
-      }),
-      app.prisma.installment.count({ where }),
+    const conditions = [inArray(installmentPlan.cardId, cardIdArray)];
+    if (status) conditions.push(eq(installment.status, status));
+
+    const [installmentsData, totalResult] = await Promise.all([
+      app.db.select({
+        ...installment,
+        plan: installmentPlan,
+        invoice: invoice,
+      })
+        .from(installment)
+        .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+        .leftJoin(invoice, eq(installment.invoiceId, invoice.id))
+        .where(and(...conditions))
+        .orderBy(asc(installment.dueDate))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(installment).where(and(...conditions)),
     ]);
 
+    const total = totalResult[0]?.count || 0;
+
     return {
-      data: installments.map((i) => ({
-        ...i,
-        amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
+      data: installmentsData.map((i) => ({
+        ...i.installment,
+        amount: { cents: Number(i.installment.amountCents), currency: 'BRL' as const },
+        plan: i.plan,
+        invoice: i.invoice,
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -58,19 +71,41 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     const endDate = new Date();
     endDate.setMonth(endDate.getMonth() + months);
 
-    const installments = await app.prisma.installment.findMany({
-      where: {
-        plan: { userId },
-        status: { in: ['PENDING', 'OVERDUE'] },
-        dueDate: { gte: now, lte: endDate },
-      },
-      orderBy: { dueDate: 'asc' },
-      include: { plan: { include: { card: true } }, invoice: true },
-    });
+    const cardIds = await app.db.select({ id: creditCard.id })
+      .from(creditCard)
+      .where(eq(creditCard.userId, userId));
+    const cardIdArray = cardIds.map(c => c.id);
 
-    return installments.map((i) => ({
-      ...i,
-      amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
+    const planIds = await app.db.select({ id: installmentPlan.id })
+      .from(installmentPlan)
+      .where(inArray(installmentPlan.cardId, cardIdArray));
+    const planIdArray = planIds.map(p => p.id);
+
+    const installmentsData = await app.db.select({
+      ...installment,
+      plan: {
+        ...installmentPlan,
+        card: creditCard,
+      },
+      invoice: invoice,
+    })
+      .from(installment)
+      .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+      .leftJoin(creditCard, eq(installmentPlan.cardId, creditCard.id))
+      .leftJoin(invoice, eq(installment.invoiceId, invoice.id))
+      .where(and(
+        inArray(installment.planId, planIdArray),
+        inArray(installment.status, ['PENDING', 'OVERDUE']),
+        gte(installment.dueDate, now),
+        lte(installment.dueDate, endDate)
+      ))
+      .orderBy(asc(installment.dueDate));
+
+    return installmentsData.map((i) => ({
+      ...i.installment,
+      amount: { cents: Number(i.installment.amountCents), currency: 'BRL' as const },
+      plan: i.plan,
+      invoice: i.invoice,
     }));
   });
 
@@ -80,26 +115,45 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const plan = await app.prisma.installmentPlan.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-      include: {
-        card: true,
-        category: true,
-        installments: { include: { invoice: true }, orderBy: { number: 'asc' } },
-      },
-    });
+    const [plan] = await app.db.select()
+      .from(installmentPlan)
+      .where(and(eq(installmentPlan.id, request.params.id), eq(installmentPlan.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!plan) {
       throw app.httpErrors.notFound('Installment plan not found');
     }
 
+    const planWithCard = await app.db.select({
+      ...installmentPlan,
+      card: creditCard,
+      category: category,
+    })
+      .from(installmentPlan)
+      .leftJoin(creditCard, eq(installmentPlan.cardId, creditCard.id))
+      .leftJoin(category, eq(installmentPlan.categoryId, category.id))
+      .where(eq(installmentPlan.id, plan.id))
+      .limit(1);
+
+    const installmentsData = await app.db.select({
+      ...installment,
+      invoice: invoice,
+    })
+      .from(installment)
+      .leftJoin(invoice, eq(installment.invoiceId, invoice.id))
+      .where(eq(installment.planId, plan.id))
+      .orderBy(asc(installment.number));
+
     return {
-      ...plan,
-      totalAmount: { cents: Number(plan.totalAmountCents), currency: 'BRL' as const },
-      installmentValue: { cents: Number(plan.installmentValueCents), currency: 'BRL' as const },
-      installments: plan.installments.map((i) => ({
-        ...i,
-        amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
+      ...planWithCard[0].installmentPlan,
+      card: planWithCard[0].card,
+      category: planWithCard[0].category,
+      totalAmount: { cents: Number(planWithCard[0].installmentPlan.totalAmountCents), currency: 'BRL' as const },
+      installmentValue: { cents: Number(planWithCard[0].installmentPlan.installmentValueCents), currency: 'BRL' as const },
+      installments: installmentsData.map((i) => ({
+        ...i.installment,
+        amount: { cents: Number(i.installment.amountCents), currency: 'BRL' as const },
+        invoice: i.invoice,
       })),
     };
   });
@@ -114,25 +168,36 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.installmentPlan.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(installmentPlan)
+      .where(and(eq(installmentPlan.id, request.params.id), eq(installmentPlan.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!existing) {
       throw app.httpErrors.notFound('Installment plan not found');
     }
 
-    const plan = await app.prisma.installmentPlan.update({
-      where: { id: request.params.id },
-      data: request.body,
-      include: { card: true, category: true },
-    });
+    const [updatedPlan] = await app.db.update(installmentPlan)
+      .set(request.body)
+      .where(eq(installmentPlan.id, request.params.id))
+      .returning();
+
+    const [planWithRelations] = await app.db.select({
+      ...installmentPlan,
+      card: creditCard,
+      category: category,
+    })
+      .from(installmentPlan)
+      .leftJoin(creditCard, eq(installmentPlan.cardId, creditCard.id))
+      .leftJoin(category, eq(installmentPlan.categoryId, category.id))
+      .where(eq(installmentPlan.id, updatedPlan.id))
+      .limit(1);
 
     await app.auditLog({
       userId: request.authUser!.id,
       action: 'INSTALLMENT_PLAN_UPDATED',
       entityType: 'InstallmentPlan',
-      entityId: plan.id,
+      entityId: updatedPlan.id,
       oldData: existing,
       newData: request.body,
       ip: request.ip,
@@ -140,9 +205,11 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     });
 
     return {
-      ...plan,
-      totalAmount: { cents: Number(plan.totalAmountCents), currency: 'BRL' as const },
-      installmentValue: { cents: Number(plan.installmentValueCents), currency: 'BRL' as const },
+      ...planWithRelations![0].installmentPlan,
+      card: planWithRelations![0].card,
+      category: planWithRelations![0].category,
+      totalAmount: { cents: Number(planWithRelations![0].installmentPlan.totalAmountCents), currency: 'BRL' as const },
+      installmentValue: { cents: Number(planWithRelations![0].installmentPlan.installmentValueCents), currency: 'BRL' as const },
     };
   });
 
@@ -152,44 +219,55 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.installmentPlan.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-      include: { installments: true },
-    });
+    const [existing] = await app.db.select()
+      .from(installmentPlan)
+      .where(and(eq(installmentPlan.id, request.params.id), eq(installmentPlan.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!existing) {
       throw app.httpErrors.notFound('Installment plan not found');
     }
 
-    const pendingInstallments = existing.installments.filter(
-      (i) => i.status === 'PENDING' || i.status === 'OVERDUE'
-    );
+    const pendingInstallments = await app.db.select()
+      .from(installment)
+      .where(and(
+        eq(installment.planId, request.params.id),
+        inArray(installment.status, ['PENDING', 'OVERDUE'])
+      ));
 
-    for (const installment of pendingInstallments) {
-      if (installment.invoiceId) {
-        await app.prisma.invoice.update({
-          where: { id: installment.invoiceId },
-          data: {
-            totalCents: { decrement: installment.amountCents },
-            remainingCents: { decrement: installment.amountCents },
-          },
-        });
+    for (const installmentRecord of pendingInstallments) {
+      if (installmentRecord.invoiceId) {
+        await app.db.update(invoice)
+          .set({
+            totalCents: sql`${invoice.totalCents} - ${installmentRecord.amountCents}`,
+            remainingCents: sql`${invoice.remainingCents} - ${installmentRecord.amountCents}`,
+          })
+          .where(eq(invoice.id, installmentRecord.invoiceId));
       }
     }
 
-    await app.prisma.creditCard.update({
-      where: { id: existing.cardId },
-      data: { availableLimitCents: { increment: existing.totalAmountCents - (existing.installmentsCount - pendingInstallments.length) * existing.installmentValueCents } },
-    });
+    const paidInstallmentsCount = await app.db.select({ count: count() })
+      .from(installment)
+      .where(and(
+        eq(installment.planId, request.params.id),
+        eq(installment.status, 'PAID')
+      ));
 
-    await app.prisma.installmentPlan.update({
-      where: { id: request.params.id },
-      data: { installmentsCount: existing.installmentsCount - pendingInstallments.length },
-    });
+    const remainingAmount = Number(existing.totalAmountCents) - (Number(paidInstallmentsCount[0]?.count || 0) * Number(existing.installmentValueCents));
 
-    await app.prisma.installment.deleteMany({
-      where: { planId: request.params.id, id: { in: pendingInstallments.map((i) => i.id) } },
-    });
+    await app.db.update(creditCard)
+      .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${remainingAmount}` })
+      .where(eq(creditCard.id, existing.cardId));
+
+    await app.db.update(installmentPlan)
+      .set({ installmentsCount: existing.installmentsCount - pendingInstallments.length })
+      .where(eq(installmentPlan.id, request.params.id));
+
+    await app.db.delete(installment)
+      .where(and(
+        eq(installment.planId, request.params.id),
+        inArray(installment.id, pendingInstallments.map(i => i.id))
+      ));
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -221,84 +299,92 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { amount, accountId, date } = request.body;
     const userId = request.authUser!.id;
 
-    const installment = await app.prisma.installment.findFirst({
-      where: { planId, number, plan: { userId } },
-      include: { plan: { include: { card: true } }, invoice: true },
-    });
+    const [installmentRecord] = await app.db.select({
+      ...installment,
+      plan: {
+        ...installmentPlan,
+        card: creditCard,
+      },
+      invoice: invoice,
+    })
+      .from(installment)
+      .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+      .leftJoin(creditCard, eq(installmentPlan.cardId, creditCard.id))
+      .leftJoin(invoice, eq(installment.invoiceId, invoice.id))
+      .where(and(eq(installment.planId, planId), eq(installment.number, number), eq(installmentPlan.userId, userId)))
+      .limit(1);
 
-    if (!installment) {
+    if (!installmentRecord) {
       throw app.httpErrors.notFound('Installment not found');
     }
 
-    if (installment.status === 'PAID') {
+    if (installmentRecord.installment.status === 'PAID') {
       throw app.httpErrors.badRequest('Installment already paid');
     }
 
-    const paymentAmount = amount || Number(installment.amountCents);
+    const paymentAmount = amount || Number(installmentRecord.installment.amountCents);
 
     if (accountId) {
-      const account = await app.prisma.bankAccount.findFirst({
-        where: { id: accountId, userId },
-      });
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
+        .limit(1);
       if (!account) throw app.httpErrors.badRequest('Account not found');
 
-      await app.prisma.bankAccount.update({
-        where: { id: accountId },
-        data: { balanceCents: { decrement: paymentAmount } },
-      });
+      await app.db.update(bankAccount)
+        .set({ balanceCents: sql`${bankAccount.balanceCents} - ${paymentAmount}` })
+        .where(eq(bankAccount.id, accountId));
     }
 
-    await app.prisma.installment.update({
-      where: { id: installment.id },
-      data: {
+    await app.db.update(installment)
+      .set({
         status: 'PAID',
         paidAt: date ? new Date(date) : new Date(),
-      },
-    });
+      })
+      .where(eq(installment.id, installmentRecord.installment.id));
 
-    if (installment.invoiceId) {
-      const invoice = await app.prisma.invoice.findUnique({ where: { id: installment.invoiceId } });
-      if (invoice) {
-        const newPaid = Number(invoice.paidCents) + paymentAmount;
-        const newRemaining = Number(invoice.totalCents) - newPaid;
-        const newStatus = newRemaining === 0 ? 'PAID' : newPaid > 0 ? 'PARTIALLY_PAID' : invoice.status;
+    if (installmentRecord.installment.invoiceId) {
+      const [invoiceRecord] = await app.db.select()
+        .from(invoice)
+        .where(eq(invoice.id, installmentRecord.installment.invoiceId))
+        .limit(1);
+      if (invoiceRecord) {
+        const newPaid = Number(invoiceRecord.paidCents) + paymentAmount;
+        const newRemaining = Number(invoiceRecord.totalCents) - newPaid;
+        const newStatus = newRemaining === 0 ? 'PAID' : newPaid > 0 ? 'PARTIALLY_PAID' : invoiceRecord.status;
 
-        await app.prisma.invoice.update({
-          where: { id: invoice.id },
-          data: {
+        await app.db.update(invoice)
+          .set({
             paidCents: newPaid,
             remainingCents: newRemaining,
             status: newStatus,
-          },
-        });
+          })
+          .where(eq(invoice.id, invoiceRecord.id));
       }
     }
 
-    await app.prisma.creditCard.update({
-      where: { id: installment.plan.cardId },
-      data: { availableLimitCents: { increment: paymentAmount } },
-    });
+    await app.db.update(creditCard)
+      .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${paymentAmount}` })
+      .where(eq(creditCard.id, installmentRecord.plan.card.id));
 
-    await app.prisma.transaction.create({
-      data: {
-        userId,
-        description: `Pagamento parcela ${number}/${installment.plan.installmentsCount} - ${installment.plan.description}`,
-        amountCents: paymentAmount,
-        type: 'EXPENSE',
-        date: date ? new Date(date) : new Date(),
-        paymentMethod: 'BANK_TRANSFER',
-        accountId,
-        cardId: installment.plan.cardId,
-        installmentPlanId: planId,
-        notes: `Parcela ${number} de ${installment.plan.installmentsCount}`,
-      },
+    await app.db.insert(transaction).values({
+      userId,
+      description: `Pagamento parcela ${number}/${installmentRecord.plan.installmentsCount} - ${installmentRecord.plan.description}`,
+      amountCents: paymentAmount,
+      type: 'EXPENSE',
+      date: date ? new Date(date) : new Date(),
+      paymentMethod: 'BANK_TRANSFER',
+      accountId,
+      cardId: installmentRecord.plan.card.id,
+      installmentPlanId: planId,
+      notes: `Parcela ${number} de ${installmentRecord.plan.installmentsCount}`,
     });
 
     await app.auditLog({
       userId,
       action: 'INSTALLMENT_PAID',
       entityType: 'Installment',
-      entityId: installment.id,
+      entityId: installmentRecord.installment.id,
       newData: { amount: paymentAmount, accountId },
       ip: request.ip,
       userAgent: request.headers['user-agent'],

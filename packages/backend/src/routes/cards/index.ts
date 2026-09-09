@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, desc, gte, gt, count, inArray } from 'drizzle-orm';
 import { createCardSchema, updateCardSchema, paginationSchema } from '../../types/schemas.js';
+import { creditCard, bankAccount, invoice, installment, installmentPlan, transaction, category } from '../../db/schema';
 
 const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -12,22 +14,28 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit } = request.query;
     const userId = request.authUser!.id;
 
-    const [cards, total] = await Promise.all([
-      app.prisma.creditCard.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { account: true },
-      }),
-      app.prisma.creditCard.count({ where: { userId } }),
+    const [cards, totalResult] = await Promise.all([
+      app.db.select({
+        ...creditCard,
+        account: bankAccount,
+      })
+        .from(creditCard)
+        .leftJoin(bankAccount, eq(creditCard.accountId, bankAccount.id))
+        .where(eq(creditCard.userId, userId))
+        .orderBy(desc(creditCard.createdAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(creditCard).where(eq(creditCard.userId, userId)),
     ]);
+
+    const total = totalResult[0]?.count || 0;
 
     return {
       data: cards.map((c) => ({
-        ...c,
-        limit: { cents: Number(c.limitCents), currency: 'BRL' as const },
-        availableLimit: { cents: Number(c.availableLimitCents), currency: 'BRL' as const },
+        ...c.creditCard,
+        account: c.account,
+        limit: { cents: Number(c.creditCard.limitCents), currency: 'BRL' as const },
+        availableLimit: { cents: Number(c.creditCard.availableLimitCents), currency: 'BRL' as const },
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -37,24 +45,32 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: createCardSchema,
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    if (request.body.accountId) {
-      const account = await app.prisma.bankAccount.findFirst({
-        where: { id: request.body.accountId, userId: request.authUser!.id },
-      });
+    const body = request.body;
+    if (body.accountId) {
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, body.accountId), eq(bankAccount.userId, request.authUser!.id)))
+        .limit(1);
       if (!account) {
         throw app.httpErrors.badRequest('Account not found');
       }
     }
 
-    const card = await app.prisma.creditCard.create({
-      data: {
-        ...request.body,
-        userId: request.authUser!.id,
-        limitCents: request.body.limit,
-        availableLimitCents: request.body.limit,
-      },
-      include: { account: true },
-    });
+    const [card] = await app.db.insert(creditCard).values({
+      ...body,
+      userId: request.authUser!.id,
+      limitCents: body.limit,
+      availableLimitCents: body.limit,
+    }).returning();
+
+    const [cardWithAccount] = await app.db.select({
+      ...creditCard,
+      account: bankAccount,
+    })
+      .from(creditCard)
+      .leftJoin(bankAccount, eq(creditCard.accountId, bankAccount.id))
+      .where(eq(creditCard.id, card.id))
+      .limit(1);
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -67,9 +83,10 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     });
 
     return reply.status(201).send({
-      ...card,
-      limit: { cents: Number(card.limitCents), currency: 'BRL' as const },
-      availableLimit: { cents: Number(card.availableLimitCents), currency: 'BRL' as const },
+      ...cardWithAccount!.creditCard,
+      account: cardWithAccount!.account,
+      limit: { cents: Number(cardWithAccount!.creditCard.limitCents), currency: 'BRL' as const },
+      availableLimit: { cents: Number(cardWithAccount!.creditCard.availableLimitCents), currency: 'BRL' as const },
     });
   });
 
@@ -79,19 +96,24 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const card = await app.prisma.creditCard.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-      include: { account: true },
-    });
+    const [cardWithAccount] = await app.db.select({
+      ...creditCard,
+      account: bankAccount,
+    })
+      .from(creditCard)
+      .leftJoin(bankAccount, eq(creditCard.accountId, bankAccount.id))
+      .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
+      .limit(1);
 
-    if (!card) {
+    if (!cardWithAccount) {
       throw app.httpErrors.notFound('Card not found');
     }
 
     return {
-      ...card,
-      limit: { cents: Number(card.limitCents), currency: 'BRL' as const },
-      availableLimit: { cents: Number(card.availableLimitCents), currency: 'BRL' as const },
+      ...cardWithAccount.creditCard,
+      account: cardWithAccount.account,
+      limit: { cents: Number(cardWithAccount.creditCard.limitCents), currency: 'BRL' as const },
+      availableLimit: { cents: Number(cardWithAccount.creditCard.availableLimitCents), currency: 'BRL' as const },
     };
   });
 
@@ -104,23 +126,25 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
   }, async (request, reply) => {
     const { page, limit } = request.query;
 
-    const card = await app.prisma.creditCard.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [card] = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!card) {
       throw app.httpErrors.notFound('Card not found');
     }
 
-    const [invoices, total] = await Promise.all([
-      app.prisma.invoice.findMany({
-        where: { cardId: card.id },
-        orderBy: { periodStart: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      app.prisma.invoice.count({ where: { cardId: card.id } }),
+    const [invoices, totalResult] = await Promise.all([
+      app.db.select().from(invoice)
+        .where(eq(invoice.cardId, card.id))
+        .orderBy(desc(invoice.periodStart))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(invoice).where(eq(invoice.cardId, card.id)),
     ]);
+
+    const total = totalResult[0]?.count || 0;
 
     return {
       data: invoices.map((i) => ({
@@ -139,37 +163,48 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const card = await app.prisma.creditCard.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [card] = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!card) {
       throw app.httpErrors.notFound('Card not found');
     }
 
     const now = new Date();
-    const invoice = await app.prisma.invoice.findFirst({
-      where: {
-        cardId: card.id,
-        periodStart: { lte: now },
-        periodEnd: { gte: now },
-      },
-      orderBy: { periodStart: 'desc' },
-      include: { transactions: { include: { category: true } } },
-    });
+    const [currentInvoice] = await app.db.select()
+      .from(invoice)
+      .where(and(
+        eq(invoice.cardId, card.id),
+        lte(invoice.periodStart, now),
+        gte(invoice.periodEnd, now)
+      ))
+      .orderBy(desc(invoice.periodStart))
+      .limit(1);
 
-    if (!invoice) {
+    if (!currentInvoice) {
       throw app.httpErrors.notFound('Current invoice not found');
     }
 
+    const invoiceTransactions = await app.db.select({
+      ...transaction,
+      category: category,
+    })
+      .from(transaction)
+      .leftJoin(category, eq(transaction.categoryId, category.id))
+      .where(eq(transaction.invoiceId, currentInvoice.id))
+      .orderBy(desc(transaction.date));
+
     return {
-      ...invoice,
-      total: { cents: Number(invoice.totalCents), currency: 'BRL' as const },
-      paid: { cents: Number(invoice.paidCents), currency: 'BRL' as const },
-      remaining: { cents: Number(invoice.remainingCents), currency: 'BRL' as const },
-      transactions: invoice.transactions.map((t) => ({
-        ...t,
-        amount: { cents: Number(t.amountCents), currency: 'BRL' as const },
+      ...currentInvoice,
+      total: { cents: Number(currentInvoice.totalCents), currency: 'BRL' as const },
+      paid: { cents: Number(currentInvoice.paidCents), currency: 'BRL' as const },
+      remaining: { cents: Number(currentInvoice.remainingCents), currency: 'BRL' as const },
+      transactions: invoiceTransactions.map((t) => ({
+        ...t.transaction,
+        amount: { cents: Number(t.transaction.amountCents), currency: 'BRL' as const },
+        category: t.category,
       })),
     };
   });
@@ -180,22 +215,21 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const card = await app.prisma.creditCard.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [card] = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!card) {
       throw app.httpErrors.notFound('Card not found');
     }
 
     const now = new Date();
-    const nextInvoice = await app.prisma.invoice.findFirst({
-      where: {
-        cardId: card.id,
-        periodStart: { gt: now },
-      },
-      orderBy: { periodStart: 'asc' },
-    });
+    const [nextInvoice] = await app.db.select()
+      .from(invoice)
+      .where(and(eq(invoice.cardId, card.id), gt(invoice.periodStart, now)))
+      .orderBy(invoice.periodStart)
+      .limit(1);
 
     if (!nextInvoice) {
       throw app.httpErrors.notFound('Next invoice not found');
@@ -218,37 +252,52 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
   }, async (request, reply) => {
     const { page, limit } = request.query;
 
-    const card = await app.prisma.creditCard.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [card] = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!card) {
       throw app.httpErrors.notFound('Card not found');
     }
 
-    const [installments, total] = await Promise.all([
-      app.prisma.installment.findMany({
-        where: {
-          plan: { cardId: card.id },
-          status: { in: ['PENDING', 'OVERDUE'] },
-        },
-        orderBy: { dueDate: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { plan: true, invoice: true },
-      }),
-      app.prisma.installment.count({
-        where: {
-          plan: { cardId: card.id },
-          status: { in: ['PENDING', 'OVERDUE'] },
-        },
-      }),
+    const plans = await app.db.select({ id: installmentPlan.id })
+      .from(installmentPlan)
+      .where(eq(installmentPlan.cardId, card.id));
+
+    const planIds = plans.map(p => p.id);
+
+    const [installments, totalResult] = await Promise.all([
+      app.db.select({
+        ...installment,
+        plan: installmentPlan,
+        invoice: invoice,
+      })
+        .from(installment)
+        .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+        .leftJoin(invoice, eq(installment.invoiceId, invoice.id))
+        .where(and(
+          inArray(installment.planId, planIds),
+          inArray(installment.status, ['PENDING', 'OVERDUE'])
+        ))
+        .orderBy(installment.dueDate)
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(installment)
+        .where(and(
+          inArray(installment.planId, planIds),
+          inArray(installment.status, ['PENDING', 'OVERDUE'])
+        )),
     ]);
+
+    const total = totalResult[0]?.count || 0;
 
     return {
       data: installments.map((i) => ({
-        ...i,
-        amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
+        ...i.installment,
+        amount: { cents: Number(i.installment.amountCents), currency: 'BRL' as const },
+        plan: i.plan,
+        invoice: i.invoice,
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -258,18 +307,20 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: updateCardSchema,
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.creditCard.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!existing) {
       throw app.httpErrors.notFound('Card not found');
     }
 
     if (request.body.accountId) {
-      const account = await app.prisma.bankAccount.findFirst({
-        where: { id: request.body.accountId, userId: request.authUser!.id },
-      });
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, request.body.accountId), eq(bankAccount.userId, request.authUser!.id)))
+        .limit(1);
       if (!account) {
         throw app.httpErrors.badRequest('Account not found');
       }
@@ -282,11 +333,19 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       delete updateData.limit;
     }
 
-    const card = await app.prisma.creditCard.update({
-      where: { id: request.params.id },
-      data: updateData,
-      include: { account: true },
-    });
+    const [card] = await app.db.update(creditCard)
+      .set(updateData)
+      .where(eq(creditCard.id, request.params.id))
+      .returning();
+
+    const [cardWithAccount] = await app.db.select({
+      ...creditCard,
+      account: bankAccount,
+    })
+      .from(creditCard)
+      .leftJoin(bankAccount, eq(creditCard.accountId, bankAccount.id))
+      .where(eq(creditCard.id, card.id))
+      .limit(1);
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -300,9 +359,10 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     });
 
     return {
-      ...card,
-      limit: { cents: Number(card.limitCents), currency: 'BRL' as const },
-      availableLimit: { cents: Number(card.availableLimitCents), currency: 'BRL' as const },
+      ...cardWithAccount!.creditCard,
+      account: cardWithAccount!.account,
+      limit: { cents: Number(cardWithAccount!.creditCard.limitCents), currency: 'BRL' as const },
+      availableLimit: { cents: Number(cardWithAccount!.creditCard.availableLimitCents), currency: 'BRL' as const },
     };
   });
 
@@ -312,18 +372,19 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.creditCard.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(creditCard)
+      .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
+      .limit(1);
 
     if (!existing) {
       throw app.httpErrors.notFound('Card not found');
     }
 
-    const card = await app.prisma.creditCard.update({
-      where: { id: request.params.id },
-      data: { status: 'INACTIVE' },
-    });
+    const [card] = await app.db.update(creditCard)
+      .set({ status: 'INACTIVE' })
+      .where(eq(creditCard.id, request.params.id))
+      .returning();
 
     await app.auditLog({
       userId: request.authUser!.id,

@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { registerSchema, loginSchema, changePasswordSchema, forgotPasswordSchema, resetPasswordSchema } from '../../types/schemas.js';
+import { user, session } from '../../db/schema';
+import { eq, and, isNull, gt } from 'drizzle-orm';
 
 const authRoutes: FastifyPluginAsyncZod = async (app) => {
   const authService = app.authService;
@@ -11,32 +13,30 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const body = request.body as z.infer<typeof registerSchema.shape.body>;
     const { email, password, name } = body;
 
-    const existingUser = await app.prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
+    const existingUser = await app.db.select().from(user).where(eq(user.email, email)).limit(1);
+    if (existingUser[0]) {
       throw app.httpErrors.conflict('Email already registered');
     }
 
     const passwordHash = await authService.hashPassword(password);
 
-    const user = await app.prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        name,
-      },
-    });
+    const [newUser] = await app.db.insert(user).values({
+      email,
+      passwordHash,
+      name,
+    }).returning();
 
     await app.auditLog({
-      userId: user.id,
+      userId: newUser.id,
       action: 'USER_REGISTERED',
       entityType: 'User',
-      entityId: user.id,
+      entityId: newUser.id,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
-    const { session, accessToken, refreshToken } = await authService.createSession(
-      user.id,
+    const { session: newSession, accessToken, refreshToken } = await authService.createSession(
+      newUser.id,
       request.ip,
       request.headers['user-agent'],
       'Initial session'
@@ -60,10 +60,10 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
     return reply.status(201).send({
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        emailVerified: user.emailVerified,
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        emailVerified: newUser.emailVerified,
       },
       accessToken,
       refreshToken,
@@ -76,36 +76,37 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const body = request.body as z.infer<typeof loginSchema.shape.body>;
     const { email, password } = body;
 
-    const user = await app.prisma.user.findUnique({ where: { email } });
-    if (!user || !user.passwordHash) {
+    const userRecord = await app.db.select().from(user).where(eq(user.email, email)).limit(1);
+    const userData = userRecord[0];
+    if (!userData || !userData.passwordHash) {
       throw app.httpErrors.unauthorized('Invalid credentials');
     }
 
-    const valid = await authService.verifyPassword(password, user.passwordHash);
+    const valid = await authService.verifyPassword(password, userData.passwordHash);
     if (!valid) {
       await app.auditLog({
-        userId: user.id,
+        userId: userData.id,
         action: 'LOGIN_FAILED',
         entityType: 'User',
-        entityId: user.id,
+        entityId: userData.id,
         ip: request.ip,
         userAgent: request.headers['user-agent'],
       });
       throw app.httpErrors.unauthorized('Invalid credentials');
     }
 
-    const { session, accessToken, refreshToken } = await authService.createSession(
-      user.id,
+    const { session: newSession, accessToken, refreshToken } = await authService.createSession(
+      userData.id,
       request.ip,
       request.headers['user-agent'],
       'Password login'
     );
 
     await app.auditLog({
-      userId: user.id,
+      userId: userData.id,
       action: 'LOGIN_SUCCESS',
       entityType: 'User',
-      entityId: user.id,
+      entityId: userData.id,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
@@ -128,10 +129,10 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
     return {
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        emailVerified: user.emailVerified,
+        id: userData.id,
+        email: userData.email,
+        name: userData.name,
+        emailVerified: userData.emailVerified,
       },
       accessToken,
       refreshToken,
@@ -172,23 +173,32 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
         throw app.httpErrors.unauthorized('Invalid token type');
       }
 
-      const session = await app.prisma.session.findUnique({
-        where: { id: decoded.sessionId },
-        include: { user: true },
-      });
+      const sessionRecord = await app.db.select({
+        session: session,
+        user: user,
+      })
+        .from(session)
+        .innerJoin(user, eq(session.userId, user.id))
+        .where(and(
+          eq(session.id, decoded.sessionId),
+          isNull(session.revokedAt),
+          gt(session.expiresAt, new Date())
+        ))
+        .limit(1);
 
-      if (!session || session.revokedAt || session.expiresAt < new Date()) {
+      const sessionData = sessionRecord[0];
+      if (!sessionData) {
         throw app.httpErrors.unauthorized('Session expired or revoked');
       }
 
       const { session: newSession, accessToken: newAccessToken, refreshToken: newRefreshToken } = await authService.createSession(
-        session.userId,
+        sessionData.session.userId,
         request.ip,
         request.headers['user-agent'],
         'Token refresh'
       );
 
-      await authService.revokeSession(session.id);
+      await authService.revokeSession(sessionData.session.id);
 
       reply.setCookie('accessToken', newAccessToken, {
         httpOnly: true,
@@ -208,10 +218,10 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
       return {
         user: {
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.name,
-          emailVerified: session.user.emailVerified,
+          id: sessionData.user.id,
+          email: sessionData.user.email,
+          name: sessionData.user.name,
+          emailVerified: sessionData.user.emailVerified,
         },
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
@@ -229,21 +239,21 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const { currentPassword, newPassword } = body;
     const userId = request.authUser!.id;
 
-    const user = await app.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.passwordHash) {
+    const userRecord = await app.db.select().from(user).where(eq(user.id, userId)).limit(1);
+    const userData = userRecord[0];
+    if (!userData || !userData.passwordHash) {
       throw app.httpErrors.notFound('User not found');
     }
 
-    const valid = await authService.verifyPassword(currentPassword, user.passwordHash);
+    const valid = await authService.verifyPassword(currentPassword, userData.passwordHash);
     if (!valid) {
       throw app.httpErrors.unauthorized('Current password is incorrect');
     }
 
     const newPasswordHash = await authService.hashPassword(newPassword);
-    await app.prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash: newPasswordHash },
-    });
+    await app.db.update(user)
+      .set({ passwordHash: newPasswordHash })
+      .where(eq(user.id, userId));
 
     await authService.revokeAllSessions(userId, request.authUser!.session?.id);
 
@@ -265,22 +275,23 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const body = request.body as z.infer<typeof forgotPasswordSchema.shape.body>;
     const { email } = body;
 
-    const user = await app.prisma.user.findUnique({ where: { email } });
+    const userRecord = await app.db.select().from(user).where(eq(user.email, email)).limit(1);
+    const userData = userRecord[0];
 
-    if (user) {
+    if (userData) {
       const resetToken = crypto.randomUUID();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-      await app.prisma.user.update({
-        where: { id: user.id },
-        data: { settings: { resetToken, resetTokenExpiresAt: expiresAt.toISOString() } },
-      });
+      const currentSettings = (userData.settings as Record<string, unknown>) || {};
+      await app.db.update(user)
+        .set({ settings: { ...currentSettings, resetToken, resetTokenExpiresAt: expiresAt.toISOString() } })
+        .where(eq(user.id, userData.id));
 
       await app.auditLog({
-        userId: user.id,
+        userId: userData.id,
         action: 'PASSWORD_RESET_REQUESTED',
         entityType: 'User',
-        entityId: user.id,
+        entityId: userData.id,
         ip: request.ip,
         userAgent: request.headers['user-agent'],
       });
@@ -297,40 +308,33 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const body = request.body as z.infer<typeof resetPasswordSchema.shape.body>;
     const { token, password } = body;
 
-    const user = await app.prisma.user.findFirst({
-      where: {
-        settings: {
-          path: ['resetToken'],
-          equals: token,
-        },
-      },
-    });
+    const userRecord = await app.db.select().from(user).limit(100);
+    const foundUser = userRecord.find(u => (u.settings as Record<string, unknown>)?.resetToken === token);
 
-    if (!user) {
+    if (!foundUser) {
       throw app.httpErrors.badRequest('Invalid or expired reset token');
     }
 
-    const settings = user.settings as any;
-    if (!settings.resetTokenExpiresAt || new Date(settings.resetTokenExpiresAt) < new Date()) {
+    const settings = foundUser.settings as Record<string, unknown>;
+    if (!settings.resetTokenExpiresAt || new Date(settings.resetTokenExpiresAt as string) < new Date()) {
       throw app.httpErrors.badRequest('Reset token expired');
     }
 
     const passwordHash = await authService.hashPassword(password);
-    await app.prisma.user.update({
-      where: { id: user.id },
-      data: {
+    await app.db.update(user)
+      .set({ 
         passwordHash,
-        settings: { resetToken: null, resetTokenExpiresAt: null },
-      },
-    });
+        settings: { ...settings, resetToken: null, resetTokenExpiresAt: null } 
+      })
+      .where(eq(user.id, foundUser.id));
 
-    await authService.revokeAllSessions(user.id);
+    await authService.revokeAllSessions(foundUser.id);
 
     await app.auditLog({
-      userId: user.id,
+      userId: foundUser.id,
       action: 'PASSWORD_RESET_COMPLETED',
       entityType: 'User',
-      entityId: user.id,
+      entityId: foundUser.id,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
@@ -368,7 +372,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
       throw app.httpErrors.unauthorized('Passkey verification failed');
     }
 
-    const { session, accessToken, refreshToken } = await authService.createSession(
+    const { session: newSession, accessToken, refreshToken } = await authService.createSession(
       user.id,
       request.ip,
       request.headers['user-agent'],

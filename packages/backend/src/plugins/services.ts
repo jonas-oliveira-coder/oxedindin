@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import { AuthService } from '../services/index.js';
-import { PrismaClient } from '@prisma/client';
+import { db } from '../db';
 
 interface AuditLogInput {
   userId: string;
@@ -16,7 +16,7 @@ interface AuditLogInput {
 declare module 'fastify' {
   interface FastifyInstance {
     authService: AuthService;
-    prisma: PrismaClient;
+    db: typeof db;
     auditLog: (input: AuditLogInput) => Promise<void>;
     broadcast: (userId: string, message: unknown) => void;
     broadcastToAll: (message: unknown) => void;
@@ -26,6 +26,6 @@ declare module 'fastify' {
 }
 
 export default fp(async (app) => {
-  const authService = new AuthService(app, app.prisma);
+  const authService = new AuthService(app);
   app.decorate('authService', authService);
 });

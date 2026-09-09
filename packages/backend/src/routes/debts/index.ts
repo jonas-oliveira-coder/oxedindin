@@ -1,6 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { eq, and, gte, lte, desc, asc, count, sql, inArray } from 'drizzle-orm';
 import { createDebtSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
+import { debt, person, sharedDebt, user, bankAccount, transaction, notification } from '../../db/schema';
 
 const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -15,28 +17,62 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, startDate, endDate, status, type } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { userId };
-    if (startDate || endDate) {
-      where.dueDate = {};
-      if (startDate) where.dueDate.gte = new Date(startDate);
-      if (endDate) where.dueDate.lte = new Date(endDate);
-    }
-    if (status) where.status = status;
-    if (type) where.type = type;
+    const conditions = [eq(debt.userId, userId)];
+    if (startDate) conditions.push(gte(debt.dueDate, new Date(startDate)));
+    if (endDate) conditions.push(lte(debt.dueDate, new Date(endDate)));
+    if (status) conditions.push(eq(debt.status, status));
+    if (type) conditions.push(eq(debt.type, type));
 
-    const [debts, total] = await Promise.all([
-      app.prisma.debt.findMany({
-        where,
-        orderBy: { dueDate: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { relatedPerson: true, sharedDebts: { include: { debtor: true } } },
-      }),
-      app.prisma.debt.count({ where }),
+    const [debtsData, totalResult] = await Promise.all([
+      app.db.select({
+        ...debt,
+        relatedPerson: person,
+        sharedDebts: {
+          id: sharedDebt.id,
+          debtorUserId: sharedDebt.debtorUserId,
+          creditorUserId: sharedDebt.creditorUserId,
+          personId: sharedDebt.personId,
+          status: sharedDebt.status,
+          notifiedAt: sharedDebt.notifiedAt,
+          acceptedAt: sharedDebt.acceptedAt,
+          createdAt: sharedDebt.createdAt,
+          updatedAt: sharedDebt.updatedAt,
+          debtor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
+        },
+      })
+        .from(debt)
+        .leftJoin(person, eq(debt.relatedPersonId, person.id))
+        .leftJoin(sharedDebt, eq(debt.id, sharedDebt.debtId))
+        .leftJoin(user, eq(sharedDebt.debtorUserId, user.id))
+        .where(and(...conditions))
+        .orderBy(asc(debt.dueDate))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() }).from(debt).where(and(...conditions)),
     ]);
 
+    const total = totalResult[0]?.count || 0;
+
+    // Group shared debts by debt
+    const debtMap = new Map<string, any>();
+    for (const d of debtsData) {
+      if (!debtMap.has(d.debt.id)) {
+        debtMap.set(d.debt.id, {
+          ...d.debt,
+          relatedPerson: d.relatedPerson,
+          sharedDebts: [],
+        });
+      }
+      if (d.sharedDebts.id) {
+        debtMap.get(d.debt.id).sharedDebts.push({
+          ...d.sharedDebts,
+          debtor: d.sharedDebts.debtor,
+        });
+      }
+    }
+
     return {
-      data: debts.map((d) => ({
+      data: Array.from(debtMap.values()).map((d) => ({
         ...d,
         totalAmount: { cents: Number(d.totalAmountCents), currency: 'BRL' as const },
         paidAmount: { cents: Number(d.paidAmountCents), currency: 'BRL' as const },
@@ -54,41 +90,51 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const userId = request.authUser!.id;
 
     if (relatedPersonId) {
-      const person = await app.prisma.person.findFirst({ where: { id: relatedPersonId, userId } });
-      if (!person) throw app.httpErrors.badRequest('Person not found');
+      const [personRecord] = await app.db.select()
+        .from(person)
+        .where(and(eq(person.id, relatedPersonId), eq(person.userId, userId)))
+        .limit(1);
+      if (!personRecord) throw app.httpErrors.badRequest('Person not found');
     }
 
-    const debt = await app.prisma.debt.create({
-      data: {
-        userId,
-        description,
-        totalAmountCents: totalAmount,
-        paidAmountCents: 0,
-        remainingAmountCents: totalAmount,
-        dueDate: new Date(dueDate),
-        type,
-        relatedPersonId,
-        notes,
-        status: 'ACTIVE',
-      },
-      include: { relatedPerson: true },
-    });
+    const [newDebt] = await app.db.insert(debt).values({
+      userId,
+      description,
+      totalAmountCents: totalAmount,
+      paidAmountCents: 0,
+      remainingAmountCents: totalAmount,
+      dueDate: new Date(dueDate),
+      type,
+      relatedPersonId,
+      notes,
+      status: 'ACTIVE',
+    }).returning();
+
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .leftJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(eq(debt.id, newDebt.id))
+      .limit(1);
 
     await app.auditLog({
       userId,
       action: 'DEBT_CREATED',
       entityType: 'Debt',
-      entityId: debt.id,
+      entityId: newDebt.id,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
     return reply.status(201).send({
-      ...debt,
-      totalAmount: { cents: Number(debt.totalAmountCents), currency: 'BRL' as const },
-      paidAmount: { cents: Number(debt.paidAmountCents), currency: 'BRL' as const },
-      remainingAmount: { cents: Number(debt.remainingAmountCents), currency: 'BRL' as const },
+      ...debtWithPerson!.debt,
+      relatedPerson: debtWithPerson!.relatedPerson,
+      totalAmount: { cents: Number(debtWithPerson!.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson!.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson!.debt.remainingAmountCents), currency: 'BRL' as const },
     });
   });
 
@@ -96,18 +142,32 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const debt = await app.prisma.debt.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-      include: { relatedPerson: true, sharedDebts: { include: { debtor: true } } },
-    });
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .leftJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(and(eq(debt.id, request.params.id), eq(debt.userId, request.authUser!.id)))
+      .limit(1);
 
-    if (!debt) throw app.httpErrors.notFound('Debt not found');
+    if (!debtWithPerson) throw app.httpErrors.notFound('Debt not found');
+
+    const sharedDebtsData = await app.db.select({
+      ...sharedDebt,
+      debtor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
+    })
+      .from(sharedDebt)
+      .leftJoin(user, eq(sharedDebt.debtorUserId, user.id))
+      .where(eq(sharedDebt.debtId, debtWithPerson.debt.id));
 
     return {
-      ...debt,
-      totalAmount: { cents: Number(debt.totalAmountCents), currency: 'BRL' as const },
-      paidAmount: { cents: Number(debt.paidAmountCents), currency: 'BRL' as const },
-      remainingAmount: { cents: Number(debt.remainingAmountCents), currency: 'BRL' as const },
+      ...debtWithPerson.debt,
+      relatedPerson: debtWithPerson.relatedPerson,
+      sharedDebts: sharedDebtsData,
+      totalAmount: { cents: Number(debtWithPerson.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson.debt.remainingAmountCents), currency: 'BRL' as const },
     };
   });
 
@@ -126,9 +186,10 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.debt.findFirst({
-      where: { id: request.params.id, userId: request.authUser!.id },
-    });
+    const [existing] = await app.db.select()
+      .from(debt)
+      .where(and(eq(debt.id, request.params.id), eq(debt.userId, request.authUser!.id)))
+      .limit(1);
     if (!existing) throw app.httpErrors.notFound('Debt not found');
 
     const updateData = { ...request.body };
@@ -139,17 +200,25 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       delete updateData.totalAmount;
     }
 
-    const debt = await app.prisma.debt.update({
-      where: { id: request.params.id },
-      data: updateData,
-      include: { relatedPerson: true },
-    });
+    const [updatedDebt] = await app.db.update(debt)
+      .set(updateData)
+      .where(eq(debt.id, request.params.id))
+      .returning();
+
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .leftJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(eq(debt.id, updatedDebt.id))
+      .limit(1);
 
     await app.auditLog({
       userId: request.authUser!.id,
       action: 'DEBT_UPDATED',
       entityType: 'Debt',
-      entityId: debt.id,
+      entityId: updatedDebt.id,
       oldData: existing,
       newData: request.body,
       ip: request.ip,
@@ -157,10 +226,11 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     });
 
     return {
-      ...debt,
-      totalAmount: { cents: Number(debt.totalAmountCents), currency: 'BRL' as const },
-      paidAmount: { cents: Number(debt.paidAmountCents), currency: 'BRL' as const },
-      remainingAmount: { cents: Number(debt.remainingAmountCents), currency: 'BRL' as const },
+      ...debtWithPerson!.debt,
+      relatedPerson: debtWithPerson!.relatedPerson,
+      totalAmount: { cents: Number(debtWithPerson!.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson!.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson!.debt.remainingAmountCents), currency: 'BRL' as const },
     };
   });
 
@@ -179,48 +249,57 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { amount, accountId, date, notes } = request.body;
     const userId = request.authUser!.id;
 
-    const existing = await app.prisma.debt.findFirst({
-      where: { id: request.params.id, userId },
-    });
+    const [existing] = await app.db.select()
+      .from(debt)
+      .where(and(eq(debt.id, request.params.id), eq(debt.userId, userId)))
+      .limit(1);
     if (!existing) throw app.httpErrors.notFound('Debt not found');
     if (amount > Number(existing.remainingAmountCents)) throw app.httpErrors.badRequest('Payment exceeds remaining amount');
 
     if (accountId) {
-      const account = await app.prisma.bankAccount.findFirst({ where: { id: accountId, userId } });
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
+        .limit(1);
       if (!account) throw app.httpErrors.badRequest('Account not found');
 
-      await app.prisma.bankAccount.update({
-        where: { id: accountId },
-        data: { balanceCents: { decrement: amount } },
-      });
+      await app.db.update(bankAccount)
+        .set({ balanceCents: sql`${bankAccount.balanceCents} - ${amount}` })
+        .where(eq(bankAccount.id, accountId));
     }
 
     const newPaid = Number(existing.paidAmountCents) + amount;
     const newRemaining = Number(existing.totalAmountCents) - newPaid;
     const newStatus = newRemaining === 0 ? 'PAID' : 'ACTIVE';
 
-    const debt = await app.prisma.debt.update({
-      where: { id: request.params.id },
-      data: {
+    const [updatedDebt] = await app.db.update(debt)
+      .set({
         paidAmountCents: newPaid,
         remainingAmountCents: newRemaining,
         status: newStatus,
-      },
-      include: { relatedPerson: true },
-    });
+      })
+      .where(eq(debt.id, request.params.id))
+      .returning();
+
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .leftJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(eq(debt.id, updatedDebt.id))
+      .limit(1);
 
     if (accountId) {
-      await app.prisma.transaction.create({
-        data: {
-          userId,
-          description: `Pagamento dívida: ${debt.description}`,
-          amountCents: amount,
-          type: 'EXPENSE',
-          date: date ? new Date(date) : new Date(),
-          paymentMethod: 'BANK_TRANSFER',
-          accountId,
-          notes: notes || `Pagamento de dívida - ${debt.description}`,
-        },
+      await app.db.insert(transaction).values({
+        userId,
+        description: `Pagamento dívida: ${debtWithPerson!.debt.description}`,
+        amountCents: amount,
+        type: 'EXPENSE',
+        date: date ? new Date(date) : new Date(),
+        paymentMethod: 'BANK_TRANSFER',
+        accountId,
+        notes: notes || `Pagamento de dívida - ${debtWithPerson!.debt.description}`,
       });
     }
 
@@ -228,17 +307,18 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       userId,
       action: 'DEBT_PAYMENT',
       entityType: 'Debt',
-      entityId: debt.id,
+      entityId: updatedDebt.id,
       newData: { amount, accountId },
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
     return {
-      ...debt,
-      totalAmount: { cents: Number(debt.totalAmountCents), currency: 'BRL' as const },
-      paidAmount: { cents: Number(debt.paidAmountCents), currency: 'BRL' as const },
-      remainingAmount: { cents: Number(debt.remainingAmountCents), currency: 'BRL' as const },
+      ...debtWithPerson!.debt,
+      relatedPerson: debtWithPerson!.relatedPerson,
+      totalAmount: { cents: Number(debtWithPerson!.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson!.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson!.debt.remainingAmountCents), currency: 'BRL' as const },
     };
   });
 
@@ -246,10 +326,9 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    await app.prisma.debt.update({
-      where: { id: request.params.id },
-      data: { status: 'CANCELLED' },
-    });
+    await app.db.update(debt)
+      .set({ status: 'CANCELLED' })
+      .where(eq(debt.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -274,27 +353,63 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, startDate, endDate, status } = request.query;
     const userId = request.authUser!.id;
 
-    const where: any = { relatedPerson: { userId } };
-    if (startDate || endDate) {
-      where.dueDate = {};
-      if (startDate) where.dueDate.gte = new Date(startDate);
-      if (endDate) where.dueDate.lte = new Date(endDate);
-    }
-    if (status) where.status = status;
+    const conditions = [eq(person.userId, userId)];
+    if (startDate) conditions.push(gte(debt.dueDate, new Date(startDate)));
+    if (endDate) conditions.push(lte(debt.dueDate, new Date(endDate)));
+    if (status) conditions.push(eq(debt.status, status));
 
-    const [debts, total] = await Promise.all([
-      app.prisma.debt.findMany({
-        where,
-        orderBy: { dueDate: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { relatedPerson: true, sharedDebts: { include: { debtor: true, creditor: true } } },
-      }),
-      app.prisma.debt.count({ where }),
+    // Join debts with person where person.userId = userId
+    const [debtsData, totalResult] = await Promise.all([
+      app.db.select({
+        ...debt,
+        relatedPerson: person,
+        sharedDebts: {
+          id: sharedDebt.id,
+          debtorUserId: sharedDebt.debtorUserId,
+          creditorUserId: sharedDebt.creditorUserId,
+          personId: sharedDebt.personId,
+          status: sharedDebt.status,
+          notifiedAt: sharedDebt.notifiedAt,
+          acceptedAt: sharedDebt.acceptedAt,
+          createdAt: sharedDebt.createdAt,
+          updatedAt: sharedDebt.updatedAt,
+          debtor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
+          creditor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
+        },
+      })
+        .from(debt)
+        .innerJoin(person, eq(debt.relatedPersonId, person.id))
+        .leftJoin(sharedDebt, eq(debt.id, sharedDebt.debtId))
+        .leftJoin(user, eq(sharedDebt.debtorUserId, user.id))
+        .leftJoin(user, eq(sharedDebt.creditorUserId, user.id))
+        .where(and(...conditions))
+        .orderBy(asc(debt.dueDate))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      app.db.select({ count: count() })
+        .from(debt)
+        .innerJoin(person, eq(debt.relatedPersonId, person.id))
+        .where(and(...conditions)),
     ]);
 
+    const total = totalResult[0]?.count || 0;
+
+    const debtMap = new Map<string, any>();
+    for (const d of debtsData) {
+      if (!debtMap.has(d.debt.id)) {
+        debtMap.set(d.debt.id, {
+          ...d.debt,
+          relatedPerson: d.relatedPerson,
+          sharedDebts: [],
+        });
+      }
+      if (d.sharedDebts.id) {
+        debtMap.get(d.debt.id).sharedDebts.push(d.sharedDebts);
+      }
+    }
+
     return {
-      data: debts.map((d) => ({
+      data: Array.from(debtMap.values()).map((d) => ({
         ...d,
         totalAmount: { cents: Number(d.totalAmountCents), currency: 'BRL' as const },
         paidAmount: { cents: Number(d.paidAmountCents), currency: 'BRL' as const },
@@ -320,40 +435,50 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { description, totalAmount, dueDate, type, personId, notes } = request.body;
     const userId = request.authUser!.id;
 
-    const person = await app.prisma.person.findFirst({ where: { id: personId, userId } });
-    if (!person) throw app.httpErrors.badRequest('Person not found');
+    const [personRecord] = await app.db.select()
+      .from(person)
+      .where(and(eq(person.id, personId), eq(person.userId, userId)))
+      .limit(1);
+    if (!personRecord) throw app.httpErrors.badRequest('Person not found');
 
-    const debt = await app.prisma.debt.create({
-      data: {
-        userId,
-        description,
-        totalAmountCents: totalAmount,
-        paidAmountCents: 0,
-        remainingAmountCents: totalAmount,
-        dueDate: new Date(dueDate),
-        type,
-        relatedPersonId: personId,
-        notes,
-        status: 'ACTIVE',
-      },
-      include: { relatedPerson: true },
-    });
+    const [newDebt] = await app.db.insert(debt).values({
+      userId,
+      description,
+      totalAmountCents: totalAmount,
+      paidAmountCents: 0,
+      remainingAmountCents: totalAmount,
+      dueDate: new Date(dueDate),
+      type,
+      relatedPersonId: personId,
+      notes,
+      status: 'ACTIVE',
+    }).returning();
+
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .leftJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(eq(debt.id, newDebt.id))
+      .limit(1);
 
     await app.auditLog({
       userId,
       action: 'OWED_DEBT_CREATED',
       entityType: 'Debt',
-      entityId: debt.id,
+      entityId: newDebt.id,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
     return reply.status(201).send({
-      ...debt,
-      totalAmount: { cents: Number(debt.totalAmountCents), currency: 'BRL' as const },
-      paidAmount: { cents: Number(debt.paidAmountCents), currency: 'BRL' as const },
-      remainingAmount: { cents: Number(debt.remainingAmountCents), currency: 'BRL' as const },
+      ...debtWithPerson!.debt,
+      relatedPerson: debtWithPerson!.relatedPerson,
+      totalAmount: { cents: Number(debtWithPerson!.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson!.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson!.debt.remainingAmountCents), currency: 'BRL' as const },
     });
   });
 
@@ -361,18 +486,34 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const debt = await app.prisma.debt.findFirst({
-      where: { id: request.params.id, relatedPerson: { userId: request.authUser!.id } },
-      include: { relatedPerson: true, sharedDebts: { include: { debtor: true, creditor: true } } },
-    });
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .innerJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(and(eq(debt.id, request.params.id), eq(person.userId, request.authUser!.id)))
+      .limit(1);
 
-    if (!debt) throw app.httpErrors.notFound('Debt not found');
+    if (!debtWithPerson) throw app.httpErrors.notFound('Debt not found');
+
+    const sharedDebtsData = await app.db.select({
+      ...sharedDebt,
+      debtor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
+      creditor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
+    })
+      .from(sharedDebt)
+      .leftJoin(user, eq(sharedDebt.debtorUserId, user.id))
+      .leftJoin(user, eq(sharedDebt.creditorUserId, user.id))
+      .where(eq(sharedDebt.debtId, debtWithPerson.debt.id));
 
     return {
-      ...debt,
-      totalAmount: { cents: Number(debt.totalAmountCents), currency: 'BRL' as const },
-      paidAmount: { cents: Number(debt.paidAmountCents), currency: 'BRL' as const },
-      remainingAmount: { cents: Number(debt.remainingAmountCents), currency: 'BRL' as const },
+      ...debtWithPerson.debt,
+      relatedPerson: debtWithPerson.relatedPerson,
+      sharedDebts: sharedDebtsData,
+      totalAmount: { cents: Number(debtWithPerson.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson.debt.remainingAmountCents), currency: 'BRL' as const },
     };
   });
 
@@ -390,41 +531,52 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request, reply) => {
-    const existing = await app.prisma.debt.findFirst({
-      where: { id: request.params.id, relatedPerson: { userId: request.authUser!.id } },
-    });
+    const [existing] = await app.db.select()
+      .from(debt)
+      .innerJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(and(eq(debt.id, request.params.id), eq(person.userId, request.authUser!.id)))
+      .limit(1);
     if (!existing) throw app.httpErrors.notFound('Debt not found');
 
     const updateData = { ...request.body };
     if (updateData.totalAmount !== undefined) {
-      const paid = Number(existing.paidAmountCents);
+      const paid = Number(existing.debt.paidAmountCents);
       updateData.totalAmountCents = updateData.totalAmount;
       updateData.remainingAmountCents = updateData.totalAmount - paid;
       delete updateData.totalAmount;
     }
 
-    const debt = await app.prisma.debt.update({
-      where: { id: request.params.id },
-      data: updateData,
-      include: { relatedPerson: true },
-    });
+    const [updatedDebt] = await app.db.update(debt)
+      .set(updateData)
+      .where(eq(debt.id, request.params.id))
+      .returning();
+
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .leftJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(eq(debt.id, updatedDebt.id))
+      .limit(1);
 
     await app.auditLog({
       userId: request.authUser!.id,
       action: 'OWED_DEBT_UPDATED',
       entityType: 'Debt',
-      entityId: debt.id,
-      oldData: existing,
+      entityId: updatedDebt.id,
+      oldData: existing.debt,
       newData: request.body,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
     return {
-      ...debt,
-      totalAmount: { cents: Number(debt.totalAmountCents), currency: 'BRL' as const },
-      paidAmount: { cents: Number(debt.paidAmountCents), currency: 'BRL' as const },
-      remainingAmount: { cents: Number(debt.remainingAmountCents), currency: 'BRL' as const },
+      ...debtWithPerson!.debt,
+      relatedPerson: debtWithPerson!.relatedPerson,
+      totalAmount: { cents: Number(debtWithPerson!.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson!.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson!.debt.remainingAmountCents), currency: 'BRL' as const },
     };
   });
 
@@ -442,41 +594,52 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { amount, date, notes } = request.body;
     const userId = request.authUser!.id;
 
-    const existing = await app.prisma.debt.findFirst({
-      where: { id: request.params.id, relatedPerson: { userId } },
-    });
+    const [existing] = await app.db.select()
+      .from(debt)
+      .innerJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(and(eq(debt.id, request.params.id), eq(person.userId, userId)))
+      .limit(1);
     if (!existing) throw app.httpErrors.notFound('Debt not found');
-    if (amount > Number(existing.remainingAmountCents)) throw app.httpErrors.badRequest('Payment exceeds remaining amount');
+    if (amount > Number(existing.debt.remainingAmountCents)) throw app.httpErrors.badRequest('Payment exceeds remaining amount');
 
-    const newPaid = Number(existing.paidAmountCents) + amount;
-    const newRemaining = Number(existing.totalAmountCents) - newPaid;
+    const newPaid = Number(existing.debt.paidAmountCents) + amount;
+    const newRemaining = Number(existing.debt.totalAmountCents) - newPaid;
     const newStatus = newRemaining === 0 ? 'PAID' : 'ACTIVE';
 
-    const debt = await app.prisma.debt.update({
-      where: { id: request.params.id },
-      data: {
+    const [updatedDebt] = await app.db.update(debt)
+      .set({
         paidAmountCents: newPaid,
         remainingAmountCents: newRemaining,
         status: newStatus,
-      },
-      include: { relatedPerson: true },
-    });
+      })
+      .where(eq(debt.id, request.params.id))
+      .returning();
+
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .leftJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(eq(debt.id, updatedDebt.id))
+      .limit(1);
 
     await app.auditLog({
       userId,
       action: 'OWED_DEBT_PAYMENT_RECEIVED',
       entityType: 'Debt',
-      entityId: debt.id,
+      entityId: updatedDebt.id,
       newData: { amount },
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
 
     return {
-      ...debt,
-      totalAmount: { cents: Number(debt.totalAmountCents), currency: 'BRL' as const },
-      paidAmount: { cents: Number(debt.paidAmountCents), currency: 'BRL' as const },
-      remainingAmount: { cents: Number(debt.remainingAmountCents), currency: 'BRL' as const },
+      ...debtWithPerson!.debt,
+      relatedPerson: debtWithPerson!.relatedPerson,
+      totalAmount: { cents: Number(debtWithPerson!.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson!.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson!.debt.remainingAmountCents), currency: 'BRL' as const },
     };
   });
 
@@ -492,52 +655,55 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { email } = request.body;
     const userId = request.authUser!.id;
 
-    const debt = await app.prisma.debt.findFirst({
-      where: { id: request.params.id, relatedPerson: { userId } },
-      include: { relatedPerson: true },
-    });
-    if (!debt) throw app.httpErrors.notFound('Debt not found');
+    const [debtWithPerson] = await app.db.select({
+      ...debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .innerJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(and(eq(debt.id, request.params.id), eq(person.userId, userId)))
+      .limit(1);
+    if (!debtWithPerson) throw app.httpErrors.notFound('Debt not found');
 
-    const debtorUser = await app.prisma.user.findUnique({ where: { email } });
+    const [debtorUser] = await app.db.select()
+      .from(user)
+      .where(eq(user.email, email))
+      .limit(1);
 
     if (debtorUser) {
-      const existingShare = await app.prisma.sharedDebt.findFirst({
-        where: { debtId: debt.id, debtorUserId: debtorUser.id },
-      });
+      const [existingShare] = await app.db.select()
+        .from(sharedDebt)
+        .where(and(eq(sharedDebt.debtId, debtWithPerson.debt.id), eq(sharedDebt.debtorUserId, debtorUser.id)))
+        .limit(1);
       if (existingShare) throw app.httpErrors.conflict('Debt already shared with this user');
 
-      const sharedDebt = await app.prisma.sharedDebt.create({
-        data: {
-          debtId: debt.id,
-          debtorUserId: debtorUser.id,
-          creditorUserId: userId,
-          status: 'PENDING',
-          notifiedAt: new Date(),
-        },
-      });
+      const [sharedDebtRecord] = await app.db.insert(sharedDebt).values({
+        debtId: debtWithPerson.debt.id,
+        debtorUserId: debtorUser.id,
+        creditorUserId: userId,
+        status: 'PENDING',
+        notifiedAt: new Date(),
+      }).returning();
 
-      await app.prisma.notification.create({
-        data: {
-          userId: debtorUser.id,
-          type: 'SHARED_DEBT_ADDED',
-          title: 'Nova dívida compartilhada',
-          message: `${request.authUser!.name} registrou uma dívida de ${(Number(debt.remainingAmountCents) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em seu nome: ${debt.description}`,
-          channels: ['IN_APP'],
-          relatedEntityType: 'SharedDebt',
-          relatedEntityId: sharedDebt.id,
-        },
+      await app.db.insert(notification).values({
+        userId: debtorUser.id,
+        type: 'SHARED_DEBT_ADDED',
+        title: 'Nova dívida compartilhada',
+        message: `${request.authUser!.name} registrou uma dívida de ${(Number(debtWithPerson.debt.remainingAmountCents) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em seu nome: ${debtWithPerson.debt.description}`,
+        channels: ['IN_APP'],
+        relatedEntityType: 'SharedDebt',
+        relatedEntityId: sharedDebtRecord.id,
       });
 
       app.broadcast(debtorUser.id, {
         type: 'notification',
-        data: { type: 'SHARED_DEBT_ADDED', debtId: debt.id, sharedDebtId: sharedDebt.id },
+        data: { type: 'SHARED_DEBT_ADDED', debtId: debtWithPerson.debt.id, sharedDebtId: sharedDebtRecord.id },
       });
     } else {
-      if (!debt.relatedPerson?.email) {
-        await app.prisma.person.update({
-          where: { id: debt.relatedPersonId! },
-          data: { email },
-        });
+      if (!debtWithPerson.relatedPerson?.email) {
+        await app.db.update(person)
+          .set({ email })
+          .where(eq(person.id, debtWithPerson.relatedPersonId!));
       }
     }
 
@@ -545,7 +711,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       userId,
       action: 'DEBT_SHARED',
       entityType: 'Debt',
-      entityId: debt.id,
+      entityId: debtWithPerson.debt.id,
       newData: { email },
       ip: request.ip,
       userAgent: request.headers['user-agent'],

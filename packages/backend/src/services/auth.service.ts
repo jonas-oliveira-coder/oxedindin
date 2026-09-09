@@ -1,11 +1,17 @@
 import { hash, verify } from '@node-rs/argon2';
 import { generateRegistrationOptions, generateAuthenticationOptions, verifyRegistrationResponse, verifyAuthenticationResponse } from '@simplewebauthn/server';
-import { PrismaClient, User, Session, Passkey } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
-import { env } from '../utils/env.js';
+import { db } from '../db';
+import { user, session, passkey } from '../db/schema';
+import { eq, and, gt, isNull, desc } from 'drizzle-orm';
+import { env } from '../utils/env';
+
+type User = typeof user.$inferSelect;
+type Session = typeof session.$inferSelect;
+type Passkey = typeof passkey.$inferSelect;
 
 export class AuthService {
-  constructor(private app: FastifyInstance, private prisma: PrismaClient) {}
+  constructor(private app: FastifyInstance) {}
 
   async hashPassword(password: string): Promise<string> {
     return hash(password, {
@@ -21,46 +27,52 @@ export class AuthService {
   }
 
   async createSession(userId: string, ip?: string, userAgent?: string, deviceName?: string): Promise<{ session: Session; accessToken: string; refreshToken: string }> {
-    const session = await this.prisma.session.create({
-      data: {
-        userId,
-        tokenHash: await this.hashToken(crypto.randomUUID()),
-        ip,
-        userAgent,
-        deviceName,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
+    const tokenHash = await this.hashToken(crypto.randomUUID());
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    
+    const [newSession] = await db.insert(session).values({
+      userId,
+      tokenHash,
+      ip,
+      userAgent,
+      deviceName,
+      expiresAt,
+    }).returning();
 
-    const accessToken = this.app.jwt.sign({ sub: userId, sessionId: session.id }, { expiresIn: '15m' });
-    const refreshToken = this.app.jwt.sign({ sub: userId, sessionId: session.id, type: 'refresh' }, { expiresIn: '7d', key: env.JWT_REFRESH_SECRET });
+    const accessToken = this.app.jwt.sign({ sub: userId, sessionId: newSession.id }, { expiresIn: '15m' });
+    const refreshToken = this.app.jwt.sign({ sub: userId, sessionId: newSession.id, type: 'refresh' }, { expiresIn: '7d', key: env.JWT_REFRESH_SECRET });
 
-    return { session, accessToken, refreshToken };
+    return { session: newSession, accessToken, refreshToken };
   }
 
   async revokeSession(sessionId: string): Promise<void> {
-    await this.prisma.session.update({
-      where: { id: sessionId },
-      data: { revokedAt: new Date() },
-    });
+    await db.update(session)
+      .set({ revokedAt: new Date() })
+      .where(eq(session.id, sessionId));
   }
 
   async revokeAllSessions(userId: string, exceptSessionId?: string): Promise<void> {
-    await this.prisma.session.updateMany({
-      where: {
-        userId,
-        revokedAt: null,
-        ...(exceptSessionId ? { NOT: { id: exceptSessionId } } : {}),
-      },
-      data: { revokedAt: new Date() },
-    });
+    const conditions = [
+      eq(session.userId, userId),
+      isNull(session.revokedAt),
+    ];
+    if (exceptSessionId) {
+      conditions.push(not(eq(session.id, exceptSessionId)));
+    }
+    await db.update(session)
+      .set({ revokedAt: new Date() })
+      .where(and(...conditions));
   }
 
   async getUserSessions(userId: string): Promise<Session[]> {
-    return this.prisma.session.findMany({
-      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    });
+    return db.select()
+      .from(session)
+      .where(and(
+        eq(session.userId, userId),
+        isNull(session.revokedAt),
+        gt(session.expiresAt, new Date())
+      ))
+      .orderBy(desc(session.createdAt));
   }
 
   private async hashToken(token: string): Promise<string> {
@@ -77,17 +89,18 @@ export class AuthService {
   }
 
   async registerPasskeyStart(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new Error('User not found');
+    const userRecord = await db.select().from(user).where(eq(user.id, userId)).limit(1);
+    if (!userRecord[0]) throw new Error('User not found');
+    const userData = userRecord[0];
 
-    const existingPasskeys = await this.prisma.passkey.findMany({ where: { userId } });
+    const existingPasskeys = await db.select().from(passkey).where(eq(passkey.userId, userId));
 
     const options = generateRegistrationOptions({
       rpName: env.WEB_AUTHN_RP_NAME,
       rpID: env.WEB_AUTHN_RP_ID,
-      userID: user.id,
-      userName: user.email,
-      userDisplayName: user.name,
+      userID: userData.id,
+      userName: userData.email,
+      userDisplayName: userData.name,
       attestationType: 'none',
       authenticatorSelection: {
         authenticatorAttachment: 'platform',
@@ -103,19 +116,20 @@ export class AuthService {
       timeout: 60000,
     });
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { settings: { passkeyChallenge: options.challenge } },
-    });
+    const currentSettings = (userData.settings as Record<string, unknown>) || {};
+    await db.update(user)
+      .set({ settings: { ...currentSettings, passkeyChallenge: options.challenge } })
+      .where(eq(user.id, userId));
 
     return options;
   }
 
   async registerPasskeyFinish(userId: string, credential: any) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new Error('User not found');
+    const userRecord = await db.select().from(user).where(eq(user.id, userId)).limit(1);
+    if (!userRecord[0]) throw new Error('User not found');
+    const userData = userRecord[0];
 
-    const storedChallenge = (user.settings as any)?.passkeyChallenge;
+    const storedChallenge = (userData.settings as Record<string, unknown>)?.passkeyChallenge;
     if (!storedChallenge) throw new Error('No challenge found');
 
     const expectedOrigin = env.WEB_AUTHN_ORIGIN;
@@ -135,32 +149,30 @@ export class AuthService {
 
     const { credentialPublicKey, credentialID, counter } = verification.registrationInfo;
 
-    const passkey = await this.prisma.passkey.create({
-      data: {
-        userId,
-        credentialId: credentialID,
-        publicKey: Buffer.from(credentialPublicKey).toString('base64'),
-        counter: BigInt(counter),
-        name: `Passkey ${new Date().toLocaleDateString('pt-BR')}`,
-      },
-    });
+    const [newPasskey] = await db.insert(passkey).values({
+      userId,
+      credentialId: credentialID,
+      publicKey: Buffer.from(credentialPublicKey).toString('base64'),
+      counter: BigInt(counter),
+      name: `Passkey ${new Date().toLocaleDateString('pt-BR')}`,
+    }).returning();
 
     await this.app.auditLog({
       userId,
       action: 'PASSKEY_REGISTERED',
       entityType: 'Passkey',
-      entityId: passkey.id,
-      newData: { name: passkey.name },
+      entityId: newPasskey.id,
+      newData: { name: newPasskey.name },
     });
 
-    return { verified: true, passkey };
+    return { verified: true, passkey: newPasskey };
   }
 
   async authenticatePasskeyStart(userId?: string) {
     let allowCredentials: any[] = [];
 
     if (userId) {
-      const passkeys = await this.prisma.passkey.findMany({ where: { userId } });
+      const passkeys = await db.select().from(passkey).where(eq(passkey.userId, userId));
       allowCredentials = passkeys.map((pk) => ({
         id: pk.credentialId,
         type: 'public-key' as const,
@@ -176,33 +188,37 @@ export class AuthService {
     });
 
     if (userId) {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { settings: { passkeyChallenge: options.challenge } },
-      });
+      const userRecord = await db.select().from(user).where(eq(user.id, userId)).limit(1);
+      if (userRecord[0]) {
+        const currentSettings = (userRecord[0].settings as Record<string, unknown>) || {};
+        await db.update(user)
+          .set({ settings: { ...currentSettings, passkeyChallenge: options.challenge } })
+          .where(eq(user.id, userId));
+      }
     } else {
-      await this.prisma.user.updateMany({
-        data: { settings: { passkeyChallenge: options.challenge } },
-      });
+      // For discoverable credentials, update all users' challenge
+      const users = await db.select().from(user);
+      for (const u of users) {
+        const currentSettings = (u.settings as Record<string, unknown>) || {};
+        await db.update(user)
+          .set({ settings: { ...currentSettings, passkeyChallenge: options.challenge } })
+          .where(eq(user.id, u.id));
+      }
     }
 
     return options;
   }
 
   async authenticatePasskeyFinish(credential: any) {
-    const user = await this.prisma.user.findFirst({
-      where: {
-        passkeys: { some: { credentialId: credential.id } },
-      },
-      include: { passkeys: true },
-    });
+    const passkeys = await db.select().from(passkey).where(eq(passkey.credentialId, credential.id));
+    if (!passkeys[0]) throw new Error('Passkey not found');
+    const passkeyData = passkeys[0];
 
-    if (!user) throw new Error('User not found');
+    const userRecord = await db.select().from(user).where(eq(user.id, passkeyData.userId)).limit(1);
+    if (!userRecord[0]) throw new Error('User not found');
+    const userData = userRecord[0];
 
-    const passkey = user.passkeys.find((pk) => pk.credentialId === credential.id);
-    if (!passkey) throw new Error('Passkey not found');
-
-    const storedChallenge = (user.settings as any)?.passkeyChallenge;
+    const storedChallenge = (userData.settings as Record<string, unknown>)?.passkeyChallenge;
     if (!storedChallenge) throw new Error('No challenge found');
 
     const verification = await verifyAuthenticationResponse({
@@ -211,9 +227,9 @@ export class AuthService {
       expectedOrigin: env.WEB_AUTHN_ORIGIN,
       expectedRPID: env.WEB_AUTHN_RP_ID,
       authenticator: {
-        credentialID: passkey.credentialId,
-        credentialPublicKey: Buffer.from(passkey.publicKey, 'base64'),
-        counter: Number(passkey.counter),
+        credentialID: passkeyData.credentialId,
+        credentialPublicKey: Buffer.from(passkeyData.publicKey, 'base64'),
+        counter: Number(passkeyData.counter),
       },
       requireUserVerification: true,
     });
@@ -222,36 +238,38 @@ export class AuthService {
       throw new Error('Passkey verification failed');
     }
 
-    await this.prisma.passkey.update({
-      where: { id: passkey.id },
-      data: { counter: BigInt(verification.authenticationInfo?.newCounter || 0), lastUsedAt: new Date() },
-    });
+    await db.update(passkey)
+      .set({ 
+        counter: BigInt(verification.authenticationInfo?.newCounter || 0), 
+        lastUsedAt: new Date() 
+      })
+      .where(eq(passkey.id, passkeyData.id));
 
-    return { verified: true, user };
+    return { verified: true, user: userData };
   }
 
   async listPasskeys(userId: string): Promise<Passkey[]> {
-    return this.prisma.passkey.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
+    return db.select()
+      .from(passkey)
+      .where(eq(passkey.userId, userId))
+      .orderBy(desc(passkey.createdAt));
   }
 
   async revokePasskey(userId: string, passkeyId: string): Promise<void> {
-    const passkey = await this.prisma.passkey.findFirst({
-      where: { id: passkeyId, userId },
-    });
+    const passkeyRecord = await db.select().from(passkey)
+      .where(and(eq(passkey.id, passkeyId), eq(passkey.userId, userId)))
+      .limit(1);
 
-    if (!passkey) throw new Error('Passkey not found');
+    if (!passkeyRecord[0]) throw new Error('Passkey not found');
 
-    await this.prisma.passkey.delete({ where: { id: passkeyId } });
+    await db.delete(passkey).where(eq(passkey.id, passkeyId));
 
     await this.app.auditLog({
       userId,
       action: 'PASSKEY_REVOKED',
       entityType: 'Passkey',
       entityId: passkeyId,
-      oldData: { name: passkey.name },
+      oldData: { name: passkeyRecord[0].name },
     });
   }
 

@@ -20,6 +20,8 @@ import {
   LogOut,
   Menu,
   X,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -45,6 +47,17 @@ export function Layout() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('drizzle-dark-mode');
+    return saved ? saved === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  
+  useEffect(() => {
+    const html = document.documentElement;
+    html.classList.toggle('dark', darkMode);
+    html.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('drizzle-dark-mode', darkMode.toString());
+  }, [darkMode]);
 
   const handleLogout = async () => {
     await logout();
@@ -114,11 +127,13 @@ export function Layout() {
                   Configurações
                 </NavLink>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <NavLink to="/security" onClick={() => setMobileMenuOpen(false)}>
-                  <Shield className="mr-2 h-4 w-4" />
-                  Segurança
-                </NavLink>
+              <DropdownMenuItem>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => setDarkMode(prev => !prev)}>
+                    <Moon className="h-4 w-4" id="theme-moon" />
+                    <Sun className="h-4 w-4 hidden" id="theme-sun" />
+                  </Button>
+                </DropdownMenuTrigger>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
