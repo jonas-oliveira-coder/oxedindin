@@ -352,133 +352,133 @@ export const auditLog = pgTable('AuditLog', {
 
 // Relations
 export const userRelations = relations(user, ({ many, one }) => ({
-  accounts: Many(bankAccount),
-  cards: Many(creditCard),
-  transactions: Many(transaction),
-  installmentPlans: Many(installmentPlan),
-  recurringBills: Many(recurringBill),
-  bills: Many(bill),
-  debts: Many(debt),
-  owedDebts: Many(debt, { relationName: 'owedDebts' }),
-  categories: Many(category),
-  people: Many(person),
-  sharedDebtsAsDebtor: Many(sharedDebt, { relationName: 'debtorSharedDebts' }),
-  sharedDebtsAsCreditor: Many(sharedDebt, { relationName: 'creditorSharedDebts' }),
-  notifications: Many(notification),
-  notificationPrefs: One(notificationPreferences),
-  passkeys: Many(passkey),
-  sessions: Many(session),
-  auditLogs: Many(auditLog),
+  accounts: many(bankAccount),
+  cards: many(creditCard),
+  transactions: many(transaction),
+  installmentPlans: many(installmentPlan),
+  recurringBills: many(recurringBill),
+  bills: many(bill),
+  debts: many(debt),
+  owedDebts: many(debt, { relationName: 'owedDebts' }),
+  categories: many(category),
+  people: many(person),
+  sharedDebtsAsDebtor: many(sharedDebt, { relationName: 'debtorSharedDebts' }),
+  sharedDebtsAsCreditor: many(sharedDebt, { relationName: 'creditorSharedDebts' }),
+  notifications: many(notification),
+  notificationPrefs: one(notificationPreferences),
+  passkeys: many(passkey),
+  sessions: many(session),
+  auditLogs: many(auditLog),
 }));
 
-export const bankAccountRelations = relations(bankAccount, ({ One, Many }) => ({
-  user: One(user, { fields: [bankAccount.userId], references: [user.id] }),
-  cards: Many(creditCard),
-  transactions: Many(transaction),
-  recurringBills: Many(recurringBill),
-  bills: Many(bill),
+export const bankAccountRelations = relations(bankAccount, ({ one, many }) => ({
+  user: one(user, { fields: [bankAccount.userId], references: [user.id] }),
+  cards: many(creditCard),
+  transactions: many(transaction),
+  recurringBills: many(recurringBill),
+  bills: many(bill),
 }));
 
-export const creditCardRelations = relations(creditCard, ({ One, Many }) => ({
-  user: One(user, { fields: [creditCard.userId], references: [user.id] }),
-  account: One(bankAccount, { fields: [creditCard.accountId], references: [bankAccount.id] }),
-  invoices: Many(invoice),
-  transactions: Many(transaction),
-  installmentPlans: Many(installmentPlan),
-  recurringBills: Many(recurringBill),
-  bills: Many(bill),
+export const creditCardRelations = relations(creditCard, ({ one, many }) => ({
+  user: one(user, { fields: [creditCard.userId], references: [user.id] }),
+  account: one(bankAccount, { fields: [creditCard.accountId], references: [bankAccount.id] }),
+  invoices: many(invoice),
+  transactions: many(transaction),
+  installmentPlans: many(installmentPlan),
+  recurringBills: many(recurringBill),
+  bills: many(bill),
 }));
 
-export const invoiceRelations = relations(invoice, ({ One, Many }) => ({
-  card: One(creditCard, { fields: [invoice.cardId], references: [creditCard.id] }),
-  transactions: Many(transaction),
-  installments: Many(installment),
+export const invoiceRelations = relations(invoice, ({ one, many }) => ({
+  card: one(creditCard, { fields: [invoice.cardId], references: [creditCard.id] }),
+  transactions: many(transaction),
+  installments: many(installment),
 }));
 
-export const categoryRelations = relations(category, ({ One, Many }) => ({
-  user: One(user, { fields: [category.userId], references: [user.id] }),
-  transactions: Many(transaction),
-  installmentPlans: Many(installmentPlan),
-  recurringBills: Many(recurringBill),
-  bills: Many(bill),
+export const categoryRelations = relations(category, ({ one, many }) => ({
+  user: one(user, { fields: [category.userId], references: [user.id] }),
+  transactions: many(transaction),
+  installmentPlans: many(installmentPlan),
+  recurringBills: many(recurringBill),
+  bills: many(bill),
 }));
 
-export const transactionRelations = relations(transaction, ({ One }) => ({
-  user: One(user, { fields: [transaction.userId], references: [user.id] }),
-  account: One(bankAccount, { fields: [transaction.accountId], references: [bankAccount.id] }),
-  card: One(creditCard, { fields: [transaction.cardId], references: [creditCard.id] }),
-  installmentPlan: One(installmentPlan, { fields: [transaction.installmentPlanId], references: [installmentPlan.id] }),
-  invoice: One(invoice, { fields: [transaction.invoiceId], references: [invoice.id] }),
-  category: One(category, { fields: [transaction.categoryId], references: [category.id] }),
+export const transactionRelations = relations(transaction, ({ one }) => ({
+  user: one(user, { fields: [transaction.userId], references: [user.id] }),
+  account: one(bankAccount, { fields: [transaction.accountId], references: [bankAccount.id] }),
+  card: one(creditCard, { fields: [transaction.cardId], references: [creditCard.id] }),
+  installmentPlan: one(installmentPlan, { fields: [transaction.installmentPlanId], references: [installmentPlan.id] }),
+  invoice: one(invoice, { fields: [transaction.invoiceId], references: [invoice.id] }),
+  category: one(category, { fields: [transaction.categoryId], references: [category.id] }),
 }));
 
-export const installmentPlanRelations = relations(installmentPlan, ({ One, Many }) => ({
-  user: One(user, { fields: [installmentPlan.userId], references: [user.id] }),
-  card: One(creditCard, { fields: [installmentPlan.cardId], references: [creditCard.id] }),
-  category: One(category, { fields: [installmentPlan.categoryId], references: [category.id] }),
-  installments: Many(installment),
-  transactions: Many(transaction),
+export const installmentPlanRelations = relations(installmentPlan, ({ one, many }) => ({
+  user: one(user, { fields: [installmentPlan.userId], references: [user.id] }),
+  card: one(creditCard, { fields: [installmentPlan.cardId], references: [creditCard.id] }),
+  category: one(category, { fields: [installmentPlan.categoryId], references: [category.id] }),
+  installments: many(installment),
+  transactions: many(transaction),
 }));
 
-export const installmentRelations = relations(installment, ({ One }) => ({
-  plan: One(installmentPlan, { fields: [installment.planId], references: [installmentPlan.id] }),
-  invoice: One(invoice, { fields: [installment.invoiceId], references: [invoice.id] }),
+export const installmentRelations = relations(installment, ({ one }) => ({
+  plan: one(installmentPlan, { fields: [installment.planId], references: [installmentPlan.id] }),
+  invoice: one(invoice, { fields: [installment.invoiceId], references: [invoice.id] }),
 }));
 
-export const recurringBillRelations = relations(recurringBill, ({ One, Many }) => ({
-  user: One(user, { fields: [recurringBill.userId], references: [user.id] }),
-  account: One(bankAccount, { fields: [recurringBill.accountId], references: [bankAccount.id] }),
-  card: One(creditCard, { fields: [recurringBill.cardId], references: [creditCard.id] }),
-  category: One(category, { fields: [recurringBill.categoryId], references: [category.id] }),
-  bills: Many(bill),
+export const recurringBillRelations = relations(recurringBill, ({ one, many }) => ({
+  user: one(user, { fields: [recurringBill.userId], references: [user.id] }),
+  account: one(bankAccount, { fields: [recurringBill.accountId], references: [bankAccount.id] }),
+  card: one(creditCard, { fields: [recurringBill.cardId], references: [creditCard.id] }),
+  category: one(category, { fields: [recurringBill.categoryId], references: [category.id] }),
+  bills: many(bill),
 }));
 
-export const billRelations = relations(bill, ({ One }) => ({
-  user: One(user, { fields: [bill.userId], references: [user.id] }),
-  account: One(bankAccount, { fields: [bill.accountId], references: [bankAccount.id] }),
-  card: One(creditCard, { fields: [bill.cardId], references: [creditCard.id] }),
-  recurringBill: One(recurringBill, { fields: [bill.recurringBillId], references: [recurringBill.id] }),
-  category: One(category, { fields: [bill.categoryId], references: [category.id] }),
+export const billRelations = relations(bill, ({ one }) => ({
+  user: one(user, { fields: [bill.userId], references: [user.id] }),
+  account: one(bankAccount, { fields: [bill.accountId], references: [bankAccount.id] }),
+  card: one(creditCard, { fields: [bill.cardId], references: [creditCard.id] }),
+  recurringBill: one(recurringBill, { fields: [bill.recurringBillId], references: [recurringBill.id] }),
+  category: one(category, { fields: [bill.categoryId], references: [category.id] }),
 }));
 
-export const debtRelations = relations(debt, ({ One, Many }) => ({
-  user: One(user, { fields: [debt.userId], references: [user.id] }),
-  relatedPerson: One(person, { fields: [debt.relatedPersonId], references: [person.id], relationName: 'owedDebts' }),
-  creditor: One(user, { fields: [debt.creditorId], references: [user.id], relationName: 'owedDebts' }),
-  sharedDebts: Many(sharedDebt),
+export const debtRelations = relations(debt, ({ one, many }) => ({
+  user: one(user, { fields: [debt.userId], references: [user.id] }),
+  relatedPerson: one(person, { fields: [debt.relatedPersonId], references: [person.id], relationName: 'owedDebts' }),
+  creditor: one(user, { fields: [debt.creditorId], references: [user.id], relationName: 'owedDebts' }),
+  sharedDebts: many(sharedDebt),
 }));
 
-export const personRelations = relations(person, ({ One, Many }) => ({
-  user: One(user, { fields: [person.userId], references: [user.id] }),
-  debts: Many(debt, { relationName: 'owedDebts' }),
-  sharedDebts: Many(sharedDebt),
+export const personRelations = relations(person, ({ one, many }) => ({
+  user: one(user, { fields: [person.userId], references: [user.id] }),
+  debts: many(debt, { relationName: 'owedDebts' }),
+  sharedDebts: many(sharedDebt),
 }));
 
-export const sharedDebtRelations = relations(sharedDebt, ({ One }) => ({
-  debt: One(debt, { fields: [sharedDebt.debtId], references: [debt.id] }),
-  debtor: One(user, { fields: [sharedDebt.debtorUserId], references: [user.id], relationName: 'debtorSharedDebts' }),
-  creditor: One(user, { fields: [sharedDebt.creditorUserId], references: [user.id], relationName: 'creditorSharedDebts' }),
-  person: One(person, { fields: [sharedDebt.personId], references: [person.id] }),
+export const sharedDebtRelations = relations(sharedDebt, ({ one }) => ({
+  debt: one(debt, { fields: [sharedDebt.debtId], references: [debt.id] }),
+  debtor: one(user, { fields: [sharedDebt.debtorUserId], references: [user.id], relationName: 'debtorSharedDebts' }),
+  creditor: one(user, { fields: [sharedDebt.creditorUserId], references: [user.id], relationName: 'creditorSharedDebts' }),
+  person: one(person, { fields: [sharedDebt.personId], references: [person.id] }),
 }));
 
-export const notificationRelations = relations(notification, ({ One }) => ({
-  user: One(user, { fields: [notification.userId], references: [user.id] }),
+export const notificationRelations = relations(notification, ({ one }) => ({
+  user: one(user, { fields: [notification.userId], references: [user.id] }),
 }));
 
-export const notificationPreferencesRelations = relations(notificationPreferences, ({ One }) => ({
-  user: One(user, { fields: [notificationPreferences.userId], references: [user.id] }),
+export const notificationPreferencesRelations = relations(notificationPreferences, ({ one }) => ({
+  user: one(user, { fields: [notificationPreferences.userId], references: [user.id] }),
 }));
 
-export const passkeyRelations = relations(passkey, ({ One }) => ({
-  user: One(user, { fields: [passkey.userId], references: [user.id] }),
+export const passkeyRelations = relations(passkey, ({ one }) => ({
+  user: one(user, { fields: [passkey.userId], references: [user.id] }),
 }));
 
-export const sessionRelations = relations(session, ({ One }) => ({
-  user: One(user, { fields: [session.userId], references: [user.id] }),
+export const sessionRelations = relations(session, ({ one }) => ({
+  user: one(user, { fields: [session.userId], references: [user.id] }),
 }));
 
-export const auditLogRelations = relations(auditLog, ({ One }) => ({
-  user: One(user, { fields: [auditLog.userId], references: [user.id] }),
+export const auditLogRelations = relations(auditLog, ({ one }) => ({
+  user: one(user, { fields: [auditLog.userId], references: [user.id] }),
 }));
 
 // Export all tables for easy importing
