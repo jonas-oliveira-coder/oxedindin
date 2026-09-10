@@ -1,9 +1,6 @@
 # Backend Dockerfile
-FROM node:20-alpine AS base
-
-# Install dependencies only when needed
-FROM base AS deps
-WORKDIR /app
+FROM node:20-alpine AS deps
+WORKDIR /repo
 
 COPY package.json package-lock.json* ./
 COPY packages/backend/package.json ./packages/backend/
@@ -11,32 +8,26 @@ COPY packages/shared/package.json ./packages/shared/
 
 RUN npm ci --workspaces --include-workspace-root --filter @oxedindin/backend...
 
-# Generate Prisma Client
-COPY packages/backend/prisma ./packages/backend/prisma/
-RUN cd packages/backend && npm run db:generate
-
 # Build the application
-FROM base AS builder
-WORKDIR /app
+FROM deps AS builder
+WORKDIR /repo
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/backend/node_modules ./packages/backend/node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-
-COPY . .
+COPY packages/backend ./packages/backend
+COPY packages/shared ./packages/shared
 
 RUN npm run build --workspace=@oxedindin/backend
 
 # Production image
-FROM base AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-COPY --from=builder /app/packages/backend/dist ./dist
-COPY --from=builder /app/packages/backend/node_modules ./node_modules
-COPY --from=builder /app/packages/backend/package.json ./package.json
-COPY --from=builder /app/packages/backend/prisma ./prisma
+COPY --from=builder /repo/packages/backend/dist ./dist
+COPY --from=builder /repo/packages/backend/drizzle ./drizzle
+COPY --from=builder /repo/node_modules ./node_modules
+COPY --from=builder /repo/packages/backend/node_modules ./packages/backend/node_modules
+COPY --from=builder /repo/packages/backend/package.json ./package.json
 
 EXPOSE 3000
 

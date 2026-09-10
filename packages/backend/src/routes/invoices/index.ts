@@ -31,24 +31,8 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       app.db.select({
         invoice,
         card: creditCard,
-        transactions: {
-          id: transaction.id,
-          userId: transaction.userId,
-          accountId: transaction.accountId,
-          cardId: transaction.cardId,
-          installmentPlanId: transaction.installmentPlanId,
-          invoiceId: transaction.invoiceId,
-          description: transaction.description,
-          amountCents: transaction.amountCents,
-          type: transaction.type,
-          categoryId: transaction.categoryId,
-          date: transaction.date,
-          paymentMethod: transaction.paymentMethod,
-          notes: transaction.notes,
-          createdAt: transaction.createdAt,
-          updatedAt: transaction.updatedAt,
-          category: category,
-        },
+        transaction,
+        category,
       })
         .from(invoice)
         .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
@@ -73,10 +57,11 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
           transactions: [],
         });
       }
-      if (i.transactions.id) {
+      if (i.transaction?.id) {
         invoiceMap.get(i.invoice.id).transactions.push({
-          ...i.transactions,
-          amount: { cents: Number(i.transactions.amountCents), currency: 'BRL' as const },
+          ...i.transaction,
+          amount: { cents: Number(i.transaction.amountCents), currency: 'BRL' as const },
+          category: i.category,
         });
       }
     }

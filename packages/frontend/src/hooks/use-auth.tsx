@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api as apiClient } from '@/lib/api';
-import { getAuthTokens, setAuthTokens, clearAuthTokens, isAuthenticated } from '@/lib/auth';
+import { getAuthTokens, setAuthTokens, clearAuthTokens } from '@/lib/auth';
 
 interface User {
   id: string;

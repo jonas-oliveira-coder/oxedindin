@@ -1,8 +1,12 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, gte, lte, desc, asc, count, sql, inArray } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { createDebtSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
 import { debt, person, sharedDebt, user, bankAccount, transaction, notification } from '../../db/schema/index.js';
+
+const debtorUser = alias(user, 'debts_debtor_user');
+const creditorUser = alias(user, 'debts_creditor_user');
 
 const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -27,23 +31,9 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       app.db.select({
         debt,
         relatedPerson: person,
-        sharedDebts: {
-          id: sharedDebt.id,
-          debtorUserId: sharedDebt.debtorUserId,
-          creditorUserId: sharedDebt.creditorUserId,
-          personId: sharedDebt.personId,
-          status: sharedDebt.status,
-          notifiedAt: sharedDebt.notifiedAt,
-          acceptedAt: sharedDebt.acceptedAt,
-          createdAt: sharedDebt.createdAt,
-          updatedAt: sharedDebt.updatedAt,
-          debtor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
-        },
       })
         .from(debt)
         .leftJoin(person, eq(debt.relatedPersonId, person.id))
-        .leftJoin(sharedDebt, eq(debt.id, sharedDebt.debtId))
-        .leftJoin(user, eq(sharedDebt.debtorUserId, user.id))
         .where(and(...conditions))
         .orderBy(asc(debt.dueDate))
         .limit(limit)
@@ -52,6 +42,20 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     ]);
 
     const total = totalResult[0]?.count || 0;
+
+    // Fetch shared debts separately and group them in JS
+    const debtIds = debtsData.map((d) => d.debt.id);
+    const sharedDebtsData = debtIds.length > 0
+      ? await app.db.select({
+          sharedDebt,
+          debtor: debtorUser,
+          creditor: creditorUser,
+        })
+          .from(sharedDebt)
+          .leftJoin(debtorUser, eq(sharedDebt.debtorUserId, debtorUser.id))
+          .leftJoin(creditorUser, eq(sharedDebt.creditorUserId, creditorUser.id))
+          .where(inArray(sharedDebt.debtId, debtIds))
+      : [];
 
     // Group shared debts by debt
     const debtMap = new Map<string, any>();
@@ -63,12 +67,12 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
           sharedDebts: [],
         });
       }
-      if (d.sharedDebts.id) {
-        debtMap.get(d.debt.id).sharedDebts.push({
-          ...d.sharedDebts,
-          debtor: d.sharedDebts.debtor,
-        });
-      }
+    }
+    for (const s of sharedDebtsData) {
+      debtMap.get(s.sharedDebt.debtId)?.sharedDebts.push({
+        ...s.sharedDebt,
+        debtor: s.debtor,
+      });
     }
 
     return {
@@ -363,25 +367,9 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       app.db.select({
         debt,
         relatedPerson: person,
-        sharedDebts: {
-          id: sharedDebt.id,
-          debtorUserId: sharedDebt.debtorUserId,
-          creditorUserId: sharedDebt.creditorUserId,
-          personId: sharedDebt.personId,
-          status: sharedDebt.status,
-          notifiedAt: sharedDebt.notifiedAt,
-          acceptedAt: sharedDebt.acceptedAt,
-          createdAt: sharedDebt.createdAt,
-          updatedAt: sharedDebt.updatedAt,
-          debtor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
-          creditor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
-        },
       })
         .from(debt)
         .innerJoin(person, eq(debt.relatedPersonId, person.id))
-        .leftJoin(sharedDebt, eq(debt.id, sharedDebt.debtId))
-        .leftJoin(user, eq(sharedDebt.debtorUserId, user.id))
-        .leftJoin(user, eq(sharedDebt.creditorUserId, user.id))
         .where(and(...conditions))
         .orderBy(asc(debt.dueDate))
         .limit(limit)
@@ -394,6 +382,19 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const total = totalResult[0]?.count || 0;
 
+    const debtIds = debtsData.map((d) => d.debt.id);
+    const sharedDebtsData = debtIds.length > 0
+      ? await app.db.select({
+          sharedDebt,
+          debtor: debtorUser,
+          creditor: creditorUser,
+        })
+          .from(sharedDebt)
+          .leftJoin(debtorUser, eq(sharedDebt.debtorUserId, debtorUser.id))
+          .leftJoin(creditorUser, eq(sharedDebt.creditorUserId, creditorUser.id))
+          .where(inArray(sharedDebt.debtId, debtIds))
+      : [];
+
     const debtMap = new Map<string, any>();
     for (const d of debtsData) {
       if (!debtMap.has(d.debt.id)) {
@@ -403,9 +404,12 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
           sharedDebts: [],
         });
       }
-      if (d.sharedDebts.id) {
-        debtMap.get(d.debt.id).sharedDebts.push(d.sharedDebts);
-      }
+    }
+    for (const s of sharedDebtsData) {
+      debtMap.get(s.sharedDebt.debtId)?.sharedDebts.push({
+        ...s.sharedDebt,
+        debtor: s.debtor,
+      });
     }
 
     return {
@@ -499,18 +503,21 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const sharedDebtsData = await app.db.select({
       sharedDebt,
-      debtor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
-      creditor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
+      debtor: debtorUser,
+      creditor: creditorUser,
     })
       .from(sharedDebt)
-      .leftJoin(user, eq(sharedDebt.debtorUserId, user.id))
-      .leftJoin(user, eq(sharedDebt.creditorUserId, user.id))
+      .leftJoin(debtorUser, eq(sharedDebt.debtorUserId, debtorUser.id))
+      .leftJoin(creditorUser, eq(sharedDebt.creditorUserId, creditorUser.id))
       .where(eq(sharedDebt.debtId, debtWithPerson.debt.id));
 
     return {
       ...debtWithPerson.debt,
       relatedPerson: debtWithPerson.relatedPerson,
-      sharedDebts: sharedDebtsData,
+      sharedDebts: sharedDebtsData.map((s) => ({
+        ...s.sharedDebt,
+        debtor: s.debtor,
+      })),
       totalAmount: { cents: Number(debtWithPerson.debt.totalAmountCents), currency: 'BRL' as const },
       paidAmount: { cents: Number(debtWithPerson.debt.paidAmountCents), currency: 'BRL' as const },
       remainingAmount: { cents: Number(debtWithPerson.debt.remainingAmountCents), currency: 'BRL' as const },
@@ -703,7 +710,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       if (!debtWithPerson.relatedPerson?.email) {
         await app.db.update(person)
           .set({ email })
-          .where(eq(person.id, debtWithPerson.relatedPersonId!));
+          .where(eq(person.id, debtWithPerson.debt.relatedPersonId!));
       }
     }
 

@@ -4,11 +4,11 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
-import { formatMoney, getCardBrandLabel } from '@/lib/utils';
+import { formatMoney, getCardBrandLabel, cn } from '@/lib/utils';
 import { Plus, Edit, Trash2, Loader2, CreditCard as CreditCardIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -156,13 +156,13 @@ export function CardsPage() {
     updateForm.reset({
       name: card.name,
       institution: card.institution,
-      brand: card.brand,
+      brand: card.brand as UpdateCardInput['brand'],
       last4: card.last4,
       limit: card.limit.cents / 100,
       closingDay: card.closingDay,
       dueDay: card.dueDay,
       accountId: card.account?.id,
-      status: card.status,
+      status: card.status as UpdateCardInput['status'],
       notes: card.notes,
     });
     setDialogOpen(true);

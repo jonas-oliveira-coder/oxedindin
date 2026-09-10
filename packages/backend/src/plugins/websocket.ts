@@ -56,8 +56,7 @@ export default fp(async (app) => {
             }
 
             try {
-              // @ts-ignore - jwtVerify accepts token string at runtime
-              const decoded = await request.jwtVerify<{ sub: string; sessionId: string }>(token);
+              const decoded = app.jwt.verify(token) as { sub: string; sessionId: string };
               const sessionRecord = await app.db.select({
                 session: session,
                 user: user,

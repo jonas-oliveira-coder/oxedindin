@@ -3,6 +3,7 @@ import autoload from '@fastify/autoload';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validatorCompiler } from 'fastify-type-provider-zod';
+import { sql } from 'drizzle-orm';
 import { env } from './utils/env.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -149,15 +150,35 @@ await app.register(autoload, {
   options: { prefix: '/api/v1' },
 });
 
-app.get('/health', async () => ({
-  status: 'ok',
-  timestamp: new Date().toISOString(),
-  services: {
-    database: 'ok',
-    redis: 'ok',
-  },
-  version: process.env.npm_package_version || '0.0.0',
-}));
+app.get('/health', async () => {
+  let database: 'ok' | 'down' = 'ok';
+  let redis: 'ok' | 'down' = 'ok';
+
+  try {
+    await app.db.execute(sql`SELECT 1`);
+  } catch {
+    database = 'down';
+  }
+
+  if (!app.redis) {
+    redis = 'down';
+  } else {
+    try {
+      await app.redis.ping();
+    } catch {
+      redis = 'down';
+    }
+  }
+
+  const status = database === 'ok' && redis === 'ok' ? 'ok' : database === 'down' ? 'down' : 'degraded';
+
+  return {
+    status,
+    timestamp: new Date().toISOString(),
+    services: { database, redis },
+    version: process.env.npm_package_version || '0.0.0',
+  };
+});
 
 app.setErrorHandler(async (error, request, reply) => {
   request.log.error(error);

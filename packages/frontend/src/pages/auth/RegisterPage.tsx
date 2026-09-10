@@ -21,13 +21,10 @@ export function RegisterPage() {
   const {
     register,
     handleSubmit,
-    watch,
     formState: { errors },
   } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
   });
-
-  const password = watch('password');
 
   const onSubmit = async (data: RegisterInput) => {
     setIsLoading(true);

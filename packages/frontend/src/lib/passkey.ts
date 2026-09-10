@@ -55,7 +55,7 @@ function base64URLDecode(str: string): ArrayBuffer {
 
 export function prepareRegistrationCredential(
   credential: PublicKeyCredential
-): { id: string; rawId: string; response: any; type: string; transports?: string[] } {
+): WebAuthnCredential {
   const response = credential.response as AuthenticatorAttestationResponse;
   return {
     id: credential.id,
@@ -64,14 +64,14 @@ export function prepareRegistrationCredential(
       clientDataJSON: base64URLEncode(response.clientDataJSON),
       attestationObject: base64URLEncode(response.attestationObject!),
     },
-    type: credential.type,
-    transports: (credential as any).transports,
+    type: 'public-key',
+    transports: (credential as any).transports as WebAuthnCredential['transports'],
   };
 }
 
 export function prepareAuthenticationCredential(
   credential: PublicKeyCredential
-): { id: string; rawId: string; response: any; type: string; transports?: string[] } {
+): WebAuthnCredential {
   const response = credential.response as AuthenticatorAssertionResponse;
   return {
     id: credential.id,
@@ -82,8 +82,8 @@ export function prepareAuthenticationCredential(
       signature: base64URLEncode(response.signature),
       userHandle: response.userHandle ? base64URLEncode(response.userHandle) : undefined,
     },
-    type: credential.type,
-    transports: (credential as any).transports,
+    type: 'public-key',
+    transports: (credential as any).transports as WebAuthnCredential['transports'],
   };
 }
 
@@ -98,8 +98,9 @@ export function parseRegistrationOptions(options: PublicKeyCredentialCreationOpt
     excludeCredentials: options.excludeCredentials?.map((c) => ({
       ...c,
       id: base64URLDecode(c.id),
+      transports: c.transports as AuthenticatorTransport[],
     })),
-  };
+  } as PublicKeyCredentialCreationOptions;
 }
 
 export function parseAuthenticationOptions(options: PublicKeyCredentialRequestOptionsJSON): PublicKeyCredentialRequestOptions {
@@ -109,8 +110,9 @@ export function parseAuthenticationOptions(options: PublicKeyCredentialRequestOp
     allowCredentials: options.allowCredentials?.map((c) => ({
       ...c,
       id: base64URLDecode(c.id),
+      transports: c.transports as AuthenticatorTransport[],
     })),
-  };
+  } as PublicKeyCredentialRequestOptions;
 }
 
 export async function registerPasskey(options: PublicKeyCredentialCreationOptionsJSON): Promise<WebAuthnCredential> {

@@ -22,8 +22,7 @@ export default fp(async (app) => {
         throw app.httpErrors.unauthorized('Authentication required');
       }
 
-      // @ts-ignore - jwtVerify accepts token string at runtime
-      const decoded = await request.jwtVerify<{ sub: string; sessionId: string }>(token);
+      const decoded = (await request.jwtVerify()) as { sub: string; sessionId: string };
 
       const sessionRecord = await app.db.select({
         session: session,

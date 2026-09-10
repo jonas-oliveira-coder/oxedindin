@@ -167,7 +167,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     try {
-      const decoded = await request.jwtVerify(refreshToken, { key: app.config.env.JWT_REFRESH_SECRET });
+      const decoded = app.jwt.verify(refreshToken, { key: app.config.env.JWT_REFRESH_SECRET }) as { sub: string; sessionId: string; type?: string };
 
       if (decoded.type !== 'refresh') {
         throw app.httpErrors.unauthorized('Invalid token type');

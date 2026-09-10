@@ -198,7 +198,7 @@ export const settingsSchema = z.object({
   language: z.literal('pt-BR').optional(),
   currency: z.literal('BRL').optional(),
   dateFormat: z.string().optional(),
-  firstDayOfWeek: z.enum([0, 1]).optional(),
+  firstDayOfWeek: z.union([z.literal(0), z.literal(1)]).optional(),
   defaultAccountId: z.string().cuid().nullable().optional(),
   defaultCardId: z.string().cuid().nullable().optional(),
   dashboardLayout: z.array(z.string()).optional(),

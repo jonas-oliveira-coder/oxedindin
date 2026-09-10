@@ -95,10 +95,10 @@ export class AuthService {
 
     const existingPasskeys = await db.select().from(passkey).where(eq(passkey.userId, userId));
 
-    const options = generateRegistrationOptions({
+    const options = await generateRegistrationOptions({
       rpName: env.WEB_AUTHN_RP_NAME,
       rpID: env.WEB_AUTHN_RP_ID,
-      userID: userData.id,
+      userID: new TextEncoder().encode(userData.id),
       userName: userData.email,
       userDisplayName: userData.name,
       attestationType: 'none',
@@ -130,7 +130,7 @@ export class AuthService {
     const userData = userRecord[0];
 
     const storedChallenge = (userData.settings as Record<string, unknown>)?.passkeyChallenge;
-    if (!storedChallenge) throw new Error('No challenge found');
+    if (!storedChallenge || typeof storedChallenge !== 'string') throw new Error('No challenge found');
 
     const expectedOrigin = env.WEB_AUTHN_ORIGIN;
     const expectedRPID = env.WEB_AUTHN_RP_ID;
@@ -147,13 +147,13 @@ export class AuthService {
       throw new Error('Passkey verification failed');
     }
 
-    const { credentialPublicKey, credentialID, counter } = verification.registrationInfo;
+    const registrationInfo = verification.registrationInfo;
 
     const [newPasskey] = await db.insert(passkey).values({
       userId,
-      credentialId: credentialID,
-      publicKey: Buffer.from(credentialPublicKey).toString('base64'),
-      counter: BigInt(counter),
+      credentialId: registrationInfo.credential.id,
+      publicKey: Buffer.from(registrationInfo.credential.publicKey).toString('base64'),
+      counter: BigInt(registrationInfo.credential.counter),
       name: `Passkey ${new Date().toLocaleDateString('pt-BR')}`,
     }).returning();
 
@@ -180,7 +180,7 @@ export class AuthService {
       }));
     }
 
-    const options = generateAuthenticationOptions({
+    const options = await generateAuthenticationOptions({
       rpID: env.WEB_AUTHN_RP_ID,
       allowCredentials: allowCredentials.length > 0 ? allowCredentials : undefined,
       userVerification: 'required',
@@ -219,16 +219,16 @@ export class AuthService {
     const userData = userRecord[0];
 
     const storedChallenge = (userData.settings as Record<string, unknown>)?.passkeyChallenge;
-    if (!storedChallenge) throw new Error('No challenge found');
+    if (!storedChallenge || typeof storedChallenge !== 'string') throw new Error('No challenge found');
 
     const verification = await verifyAuthenticationResponse({
       response: credential,
       expectedChallenge: storedChallenge,
       expectedOrigin: env.WEB_AUTHN_ORIGIN,
       expectedRPID: env.WEB_AUTHN_RP_ID,
-      authenticator: {
-        credentialID: passkeyData.credentialId,
-        credentialPublicKey: Buffer.from(passkeyData.publicKey, 'base64'),
+      credential: {
+        id: passkeyData.credentialId,
+        publicKey: new Uint8Array(Buffer.from(passkeyData.publicKey, 'base64')),
         counter: Number(passkeyData.counter),
       },
       requireUserVerification: true,
@@ -301,7 +301,7 @@ export class AuthService {
     if (uppercase && !/[A-Z]/.test(password)) password = password.slice(0, -1) + charset[array[0] % 26];
     if (lowercase && !/[a-z]/.test(password)) password = password.slice(0, -1) + charset[array[1] % 26 + 26];
     if (numbers && !/[0-9]/.test(password)) password = password.slice(0, -1) + charset[array[2] % 10 + 52];
-    if (symbols && !/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) password = password.slice(0, -1) + charset[array[3] % 32 + 62];
+    if (symbols && !/[!@#$%^&*()_+\-=[]{}|;:,.<>?]/.test(password)) password = password.slice(0, -1) + charset[array[3] % 32 + 62];
 
     return password;
   }

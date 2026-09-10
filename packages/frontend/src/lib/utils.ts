@@ -34,7 +34,12 @@ export function getMonthKey(date: Date): string {
 
 export function addMonths(date: Date, months: number): Date {
   const result = new Date(date);
+  const day = result.getDate();
+  // Move to the first day to avoid month-end overflow (e.g. Jan 31 + 1 month)
+  result.setDate(1);
   result.setMonth(result.getMonth() + months);
+  const lastDayOfTarget = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(day, lastDayOfTarget));
   return result;
 }
 

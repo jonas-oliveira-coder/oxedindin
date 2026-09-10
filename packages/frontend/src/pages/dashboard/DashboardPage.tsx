@@ -13,8 +13,6 @@ import {
   AlertCircle,
   Calendar,
   DollarSign,
-  ArrowUpRight,
-  ArrowDownRight,
 } from 'lucide-react';
 
 interface DashboardSummary {

@@ -9,13 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getTransactionTypeColor } from '@/lib/utils';
-import { Plus, Edit, Trash2, Loader2, Filter, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createTransactionSchema, type CreateTransactionInput } from '@/lib/validation';
-import { Separator } from '@/components/ui/separator';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
 interface Transaction {
@@ -85,7 +82,7 @@ export function TransactionsPage() {
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
   const [cards, setCards] = useState<Array<{ id: string; name: string }>>([]);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['transactions', filters],
     queryFn: () => fetchTransactions(filters),
   });

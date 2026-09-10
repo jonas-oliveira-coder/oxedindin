@@ -22,10 +22,11 @@ export function getAuthTokens(): AuthTokens | null {
   }
 }
 
-export function setAuthTokens(tokens: { accessToken: string; refreshToken: string; expiresIn: number }): void {
+export function setAuthTokens(tokens: { accessToken: string; refreshToken: string; expiresIn?: number }): void {
   if (typeof window === 'undefined') return;
-  const expiresAt = Date.now() + tokens.expiresIn * 1000;
-  localStorage.setItem(TOKEN_KEY, JSON.stringify({ ...tokens, expiresAt }));
+  const expiresIn = tokens.expiresIn ?? 15 * 60;
+  const expiresAt = Date.now() + expiresIn * 1000;
+  localStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, expiresAt }));
 }
 
 export function clearAuthTokens(): void {

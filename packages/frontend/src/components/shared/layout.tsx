@@ -23,7 +23,7 @@ import {
   Moon,
   Sun,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -46,7 +46,6 @@ export function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('drizzle-dark-mode');
     return saved ? saved === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -76,7 +75,7 @@ export function Layout() {
           <h1 className="text-xl font-bold text-primary">OxeDinDin</h1>
           <button
             className="lg:hidden p-2 rounded-md hover:bg-accent"
-            onClick={() => setMobileMenuOpen(false)}
+            onClick={() => setSidebarOpen(false)}
             aria-label="Close sidebar"
           >
             <X className="h-5 w-5" />
@@ -96,7 +95,7 @@ export function Layout() {
                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 )
               }
-              onClick={() => setMobileMenuOpen(false)}
+              onClick={() => setSidebarOpen(false)}
             >
               <item.icon className="h-5 w-5" />
               {item.name}
@@ -122,7 +121,7 @@ export function Layout() {
               <DropdownMenuLabel className="font-normal">Minha conta</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <NavLink to="/settings" onClick={() => setMobileMenuOpen(false)}>
+                <NavLink to="/settings" onClick={() => setSidebarOpen(false)}>
                   <Settings className="mr-2 h-4 w-4" />
                   Configurações
                 </NavLink>

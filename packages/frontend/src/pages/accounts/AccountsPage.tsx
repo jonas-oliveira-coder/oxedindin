@@ -4,19 +4,15 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Toast } from '@/components/ui/use-toast';
 import { toast } from '@/components/ui/use-toast';
-import { formatMoney, getAccountTypeLabel } from '@/lib/utils';
+import { formatMoney, getAccountTypeLabel, cn } from '@/lib/utils';
 import { Plus, Edit, Trash2, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createAccountSchema, updateAccountSchema, type CreateAccountInput, type UpdateAccountInput } from '@/lib/validation';
-import { Separator } from '@/components/ui/separator';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
 interface BankAccount {
   id: string;
@@ -141,10 +137,10 @@ export function AccountsPage() {
     updateForm.reset({
       name: account.name,
       institution: account.institution,
-      type: account.type,
+      type: account.type as UpdateAccountInput['type'],
       number: account.number,
       agency: account.agency,
-      status: account.status,
+      status: account.status as UpdateAccountInput['status'],
       notes: account.notes,
     });
     setDialogOpen(true);
