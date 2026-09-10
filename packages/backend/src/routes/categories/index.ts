@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, desc, asc, count } from 'drizzle-orm';
 import { createCategorySchema, paginationSchema } from '../../types/schemas.js';
-import { category } from '../../db/schema';
+import { category } from '../../db/schema/index.js';
 
 const defaultCategories = [
   { name: 'Alimentação', icon: '🍔', color: '#EF4444' },
@@ -25,7 +25,7 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
       querystring: paginationSchema,
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit } = request.query;
     const userId = request.authUser!.id;
 
@@ -49,7 +49,7 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/', {
     schema: createCategorySchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [newCategory] = await app.db.insert(category).values({
       ...request.body,
       userId: request.authUser!.id,
@@ -79,7 +79,7 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(category)
       .where(and(eq(category.id, request.params.id), eq(category.userId, request.authUser!.id)))
@@ -117,7 +117,7 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(category)
       .where(and(eq(category.id, request.params.id), eq(category.userId, request.authUser!.id)))
@@ -147,7 +147,7 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/initialize-defaults', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const existingDefaults = await app.db.select()
       .from(category)
       .where(and(eq(category.userId, request.authUser!.id), eq(category.isDefault, true)));

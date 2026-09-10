@@ -1,5 +1,7 @@
 import fp from 'fastify-plugin';
 import { WebSocket } from 'ws';
+import { user, session } from '../db/schema/tables.js';
+import { eq } from 'drizzle-orm';
 
 interface ConnectedClient {
   userId: string;
@@ -56,18 +58,24 @@ export default fp(async (app) => {
             try {
               // @ts-ignore - jwtVerify accepts token string at runtime
               const decoded = await request.jwtVerify<{ sub: string; sessionId: string }>(token);
-              const session = await app.prisma.session.findUnique({
-                where: { id: decoded.sessionId },
-                include: { user: true },
-              });
+              const sessionRecord = await app.db.select({
+                session: session,
+                user: user,
+              })
+                .from(session)
+                .innerJoin(user, eq(session.userId, user.id))
+                .where(eq(session.id, decoded.sessionId))
+                .limit(1);
 
-              if (!session || session.revokedAt || session.expiresAt < new Date()) {
+              const row = sessionRecord[0];
+
+              if (!row || row.session.revokedAt || row.session.expiresAt < new Date()) {
                 ws.send(JSON.stringify({ type: 'error', message: 'Invalid session' }));
                 ws.close(4001, 'Invalid session');
                 return;
               }
 
-              currentUserId = session.user.id;
+              currentUserId = row.user.id;
 
               const existingClient = clients.get(currentUserId);
               if (existingClient) {

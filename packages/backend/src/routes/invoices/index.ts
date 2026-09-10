@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, gt, count, sql, desc, asc, inArray, lte } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
-import { invoice, creditCard, transaction, category, installment, installmentPlan, bankAccount } from '../../db/schema';
+import { invoice, creditCard, transaction, category, installment, installmentPlan, bankAccount } from '../../db/schema/index.js';
 
 const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -13,7 +13,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       })),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, cardId, status } = request.query;
     const userId = request.authUser!.id;
 
@@ -29,7 +29,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [invoicesData, totalResult] = await Promise.all([
       app.db.select({
-        ...invoice,
+        invoice,
         card: creditCard,
         transactions: {
           id: transaction.id,
@@ -94,7 +94,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/upcoming', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const userId = request.authUser!.id;
     const now = new Date();
 
@@ -133,9 +133,9 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [invoiceData] = await app.db.select({
-      ...invoice,
+      invoice,
       card: creditCard,
     })
       .from(invoice)
@@ -157,7 +157,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     const transactionsData = await app.db.select({
-      ...transaction,
+      transaction,
       category: category,
     })
       .from(transaction)
@@ -165,7 +165,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(eq(transaction.invoiceId, invoiceData.invoice.id));
 
     const installmentsData = await app.db.select({
-      ...installment,
+      installment,
       plan: installmentPlan,
     })
       .from(installment)
@@ -202,12 +202,12 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { amount, accountId, date, notes } = request.body;
     const userId = request.authUser!.id;
 
     const [invoiceData] = await app.db.select({
-      ...invoice,
+      invoice,
       card: creditCard,
     })
       .from(invoice)
@@ -250,8 +250,8 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
 
     await app.db.update(invoice)
       .set({
-        paidCents: newPaid,
-        remainingCents: newRemaining,
+        paidCents: BigInt(newPaid),
+        remainingCents: BigInt(newRemaining),
         status: newStatus,
       })
       .where(eq(invoice.id, invoiceData.invoice.id));

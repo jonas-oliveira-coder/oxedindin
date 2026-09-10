@@ -1,12 +1,13 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { sql } from 'drizzle-orm';
 
 const healthRoutes: FastifyPluginAsyncZod = async (app) => {
-  app.get('/', async (request, reply) => {
+  app.get('/', async (request: any, reply: any) => {
     let dbStatus = 'ok';
     let redisStatus = 'ok';
 
     try {
-      await app.prisma.$queryRaw`SELECT 1`;
+      await app.db.execute(sql`SELECT 1`);
     } catch {
       dbStatus = 'down';
     }

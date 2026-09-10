@@ -1,12 +1,12 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { user } from '../../db/schema';
+import { user } from '../../db/schema/index.js';
 
 const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const userData = request.authUser!;
     const settings = (userData.settings as Record<string, unknown>) || {};
 
@@ -36,7 +36,7 @@ const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const userData = request.authUser!;
     const currentSettings = (userData.settings as Record<string, unknown>) || {};
     const newSettings = { ...currentSettings, ...request.body };

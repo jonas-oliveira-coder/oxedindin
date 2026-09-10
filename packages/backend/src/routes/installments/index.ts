@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, gte, lte, asc, count, sql, inArray, desc } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
-import { installment, installmentPlan, creditCard, invoice, bankAccount, transaction, category } from '../../db/schema';
+import { installment, installmentPlan, creditCard, invoice, bankAccount, transaction, category } from '../../db/schema/index.js';
 
 const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -13,7 +13,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       })),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, cardId, status } = request.query;
     const userId = request.authUser!.id;
 
@@ -30,7 +30,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [installmentsData, totalResult] = await Promise.all([
       app.db.select({
-        ...installment,
+        installment,
         plan: installmentPlan,
         invoice: invoice,
       })
@@ -64,7 +64,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { months } = request.query;
     const userId = request.authUser!.id;
     const now = new Date();
@@ -82,11 +82,8 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     const planIdArray = planIds.map(p => p.id);
 
     const installmentsData = await app.db.select({
-      ...installment,
-      plan: {
-        ...installmentPlan,
-        card: creditCard,
-      },
+      installment,
+      plan: installmentPlan,
       invoice: invoice,
     })
       .from(installment)
@@ -114,7 +111,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [plan] = await app.db.select()
       .from(installmentPlan)
       .where(and(eq(installmentPlan.id, request.params.id), eq(installmentPlan.userId, request.authUser!.id)))
@@ -125,7 +122,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     const planWithCard = await app.db.select({
-      ...installmentPlan,
+      installmentPlan,
       card: creditCard,
       category: category,
     })
@@ -136,7 +133,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     const installmentsData = await app.db.select({
-      ...installment,
+      installment,
       invoice: invoice,
     })
       .from(installment)
@@ -167,7 +164,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(installmentPlan)
       .where(and(eq(installmentPlan.id, request.params.id), eq(installmentPlan.userId, request.authUser!.id)))
@@ -183,7 +180,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       .returning();
 
     const [planWithRelations] = await app.db.select({
-      ...installmentPlan,
+      installmentPlan,
       card: creditCard,
       category: category,
     })
@@ -218,7 +215,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(installmentPlan)
       .where(and(eq(installmentPlan.id, request.params.id), eq(installmentPlan.userId, request.authUser!.id)))
@@ -294,17 +291,15 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { planId, number } = request.params;
     const { amount, accountId, date } = request.body;
     const userId = request.authUser!.id;
 
     const [installmentRecord] = await app.db.select({
-      ...installment,
-      plan: {
-        ...installmentPlan,
-        card: creditCard,
-      },
+      installment,
+      plan: installmentPlan,
+      card: creditCard,
       invoice: invoice,
     })
       .from(installment)
@@ -355,8 +350,8 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
 
         await app.db.update(invoice)
           .set({
-            paidCents: newPaid,
-            remainingCents: newRemaining,
+            paidCents: BigInt(newPaid),
+            remainingCents: BigInt(newRemaining),
             status: newStatus,
           })
           .where(eq(invoice.id, invoiceRecord.id));
@@ -365,7 +360,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     await app.db.update(creditCard)
       .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${paymentAmount}` })
-      .where(eq(creditCard.id, installmentRecord.plan.card.id));
+      .where(eq(creditCard.id, installmentRecord.card.id));
 
     await app.db.insert(transaction).values({
       userId,
@@ -375,7 +370,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       date: date ? new Date(date) : new Date(),
       paymentMethod: 'BANK_TRANSFER',
       accountId,
-      cardId: installmentRecord.plan.card.id,
+      cardId: installmentRecord.card.id,
       installmentPlanId: planId,
       notes: `Parcela ${number} de ${installmentRecord.plan.installmentsCount}`,
     });

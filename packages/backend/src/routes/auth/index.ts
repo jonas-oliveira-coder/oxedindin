@@ -1,7 +1,7 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { registerSchema, loginSchema, changePasswordSchema, forgotPasswordSchema, resetPasswordSchema } from '../../types/schemas.js';
-import { user, session } from '../../db/schema';
+import { user, session } from '../../db/schema/index.js';
 import { eq, and, isNull, gt } from 'drizzle-orm';
 
 const authRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -9,7 +9,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/register', {
     schema: registerSchema,
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const body = request.body as z.infer<typeof registerSchema.shape.body>;
     const { email, password, name } = body;
 
@@ -72,7 +72,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/login', {
     schema: loginSchema,
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const body = request.body as z.infer<typeof loginSchema.shape.body>;
     const { email, password } = body;
 
@@ -139,7 +139,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     };
   });
 
-  app.post('/logout', async (request, reply) => {
+  app.post('/logout', async (request: any, reply: any) => {
     const user = request.authUser;
     if (user?.session) {
       await authService.revokeSession(user.session.id);
@@ -159,7 +159,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     return { success: true };
   });
 
-  app.post('/refresh', async (request, reply) => {
+  app.post('/refresh', async (request: any, reply: any) => {
     const refreshToken = request.cookies?.refreshToken || request.headers.authorization?.replace('Bearer ', '');
 
     if (!refreshToken) {
@@ -167,7 +167,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     try {
-      const decoded = await request.jwtVerify<{ sub: string; sessionId: string; type: string }>(refreshToken, { key: app.config.env.JWT_REFRESH_SECRET });
+      const decoded = await request.jwtVerify(refreshToken, { key: app.config.env.JWT_REFRESH_SECRET });
 
       if (decoded.type !== 'refresh') {
         throw app.httpErrors.unauthorized('Invalid token type');
@@ -234,7 +234,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/password/change', {
     schema: changePasswordSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const body = request.body as z.infer<typeof changePasswordSchema.shape.body>;
     const { currentPassword, newPassword } = body;
     const userId = request.authUser!.id;
@@ -271,7 +271,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/password/forgot', {
     schema: forgotPasswordSchema,
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const body = request.body as z.infer<typeof forgotPasswordSchema.shape.body>;
     const { email } = body;
 
@@ -304,7 +304,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/password/reset', {
     schema: resetPasswordSchema,
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const body = request.body as z.infer<typeof resetPasswordSchema.shape.body>;
     const { token, password } = body;
 
@@ -344,27 +344,27 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/passkey/register/start', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const options = await authService.registerPasskeyStart(request.authUser!.id);
     return options;
   });
 
   app.post('/passkey/register/finish', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const credential = request.body as any;
     const result = await authService.registerPasskeyFinish(request.authUser!.id, credential);
     return result;
   });
 
-  app.post('/passkey/login/start', async (request, reply) => {
+  app.post('/passkey/login/start', async (request: any, reply: any) => {
     const body = request.body as { userId?: string };
     const { userId } = body;
     const options = await authService.authenticatePasskeyStart(userId);
     return options;
   });
 
-  app.post('/passkey/login/finish', async (request, reply) => {
+  app.post('/passkey/login/finish', async (request: any, reply: any) => {
     const credential = request.body as any;
     const { verified, user } = await authService.authenticatePasskeyFinish(credential);
 
@@ -419,7 +419,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/passkeys', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const passkeys = await authService.listPasskeys(request.authUser!.id);
     return passkeys.map((pk) => ({
       id: pk.id,
@@ -434,7 +434,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const params = request.params as { id: string };
     await authService.revokePasskey(request.authUser!.id, params.id);
     return { success: true };
@@ -442,7 +442,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/sessions', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const sessions = await authService.getUserSessions(request.authUser!.id);
     return sessions.map((s) => ({
       id: s.id,
@@ -460,7 +460,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const params = request.params as { id: string };
     await authService.revokeSession(params.id);
     return { success: true };
@@ -476,7 +476,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
         symbols: z.boolean().default(true),
       }),
     },
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const body = request.body as { length?: number; uppercase?: boolean; lowercase?: boolean; numbers?: boolean; symbols?: boolean };
     const password = await authService.generateSecurePassword(body);
     return { password };

@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, desc, gte, lte, count, sum, sql } from 'drizzle-orm';
 import { createTransactionSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
-import { transaction, bankAccount, creditCard, category, invoice, installmentPlan, installment } from '../../db/schema';
+import { transaction, bankAccount, creditCard, category, invoice, installmentPlan, installment } from '../../db/schema/index.js';
 
 function calculateInstallmentValue(totalCents: number, count: number): number[] {
   const baseValue = Math.floor(totalCents / count);
@@ -59,7 +59,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       })),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, startDate, endDate, categoryId, accountId, cardId, type } = request.query;
     const userId = request.authUser!.id;
 
@@ -73,7 +73,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [transactionsData, totalResult] = await Promise.all([
       app.db.select({
-        ...transaction,
+        transaction,
         category: category,
         account: bankAccount,
         card: creditCard,
@@ -110,7 +110,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { month } = request.query;
     const userId = request.authUser!.id;
 
@@ -151,7 +151,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/', {
     schema: createTransactionSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { description, amount, type, categoryId, date, paymentMethod, accountId, cardId, notes } = request.body;
     const userId = request.authUser!.id;
 
@@ -227,9 +227,9 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
             periodEnd,
             closingDate,
             dueDate,
-            totalCents: 0,
-            paidCents: 0,
-            remainingCents: 0,
+            totalCents: 0n,
+            paidCents: 0n,
+            remainingCents: 0n,
             status: 'OPEN',
           }).returning();
           invoiceRecord = newInvoice;
@@ -281,7 +281,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { description, totalAmount, installmentsCount, startDate, firstInvoiceDate, cardId, categoryId } = request.body;
     const userId = request.authUser!.id;
 
@@ -312,7 +312,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       description,
       totalAmountCents: totalAmount,
       installmentsCount,
-      installmentValueCents: installmentValue,
+      installmentValueCents: BigInt(installmentValue),
       startDate: new Date(startDate),
       firstInvoiceDate: new Date(firstInvoiceDate),
       categoryId,
@@ -338,9 +338,9 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
           periodEnd: invoiceInfo.periodEnd,
           closingDate: invoiceInfo.closingDate,
           dueDate: invoiceInfo.dueDate,
-          totalCents: 0,
-          paidCents: 0,
-          remainingCents: 0,
+          totalCents: 0n,
+          paidCents: 0n,
+          remainingCents: 0n,
           status: 'OPEN',
         }).returning();
         invoiceRecord = newInvoice;
@@ -350,7 +350,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         planId: plan.id,
         invoiceId: invoiceRecord.id,
         number: i + 1,
-        amountCents: installmentValues[i],
+        amountCents: BigInt(installmentValues[i]),
         dueDate: invoiceInfo.dueDate,
         status: 'PENDING',
       }).returning();
@@ -395,9 +395,9 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [tx] = await app.db.select({
-      ...transaction,
+      transaction,
       category: category,
       account: bankAccount,
       card: creditCard,
@@ -435,7 +435,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(transaction)
       .where(and(eq(transaction.id, request.params.id), eq(transaction.userId, request.authUser!.id)))
@@ -472,7 +472,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(transaction)
       .where(and(eq(transaction.id, request.params.id), eq(transaction.userId, request.authUser!.id)))

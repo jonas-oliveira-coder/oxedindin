@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import { Prisma } from '@prisma/client';
+import { auditLog } from '../db/schema/tables.js';
 
 interface AuditLogInput {
   userId: string;
@@ -21,17 +21,15 @@ declare module 'fastify' {
 export default fp(async (app) => {
   app.decorate('auditLog', async (input: AuditLogInput) => {
     try {
-      await app.prisma.auditLog.create({
-        data: {
-          userId: input.userId,
-          action: input.action,
-          entityType: input.entityType,
-          entityId: input.entityId,
-          oldData: input.oldData as Prisma.InputJsonValue | undefined,
-          newData: input.newData as Prisma.InputJsonValue | undefined,
-          ip: input.ip,
-          userAgent: input.userAgent,
-        },
+      await app.db.insert(auditLog).values({
+        userId: input.userId,
+        action: input.action,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        oldData: input.oldData,
+        newData: input.newData,
+        ip: input.ip,
+        userAgent: input.userAgent,
       });
     } catch (err) {
       app.log.error({ err, input }, 'Failed to write audit log');

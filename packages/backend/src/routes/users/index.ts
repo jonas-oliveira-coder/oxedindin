@@ -5,12 +5,12 @@ import {
   user, bankAccount, creditCard, transaction, installmentPlan,
   recurringBill, bill, debt, person, category, notification,
   passkey, session, auditLog
-} from '../../db/schema';
+} from '../../db/schema/index.js';
 
 const userRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/me', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const userData = request.authUser!;
     return {
       id: userData.id,
@@ -33,7 +33,7 @@ const userRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [updatedUser] = await app.db.update(user)
       .set(request.body)
       .where(eq(user.id, request.authUser!.id))
@@ -64,7 +64,7 @@ const userRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete('/me', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     await app.db.delete(user).where(eq(user.id, request.authUser!.id));
 
     await app.auditLog({
@@ -84,7 +84,7 @@ const userRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/me/export', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const userId = request.authUser!.id;
 
     const [

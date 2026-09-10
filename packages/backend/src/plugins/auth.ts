@@ -1,5 +1,9 @@
 import fp from 'fastify-plugin';
-import { User, Session } from '@prisma/client';
+import { user, session } from '../db/schema/tables.js';
+import { eq } from 'drizzle-orm';
+
+type User = typeof user.$inferSelect;
+type Session = typeof session.$inferSelect;
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -21,17 +25,23 @@ export default fp(async (app) => {
       // @ts-ignore - jwtVerify accepts token string at runtime
       const decoded = await request.jwtVerify<{ sub: string; sessionId: string }>(token);
 
-      const session = await app.prisma.session.findUnique({
-        where: { id: decoded.sessionId },
-        include: { user: true },
-      });
+      const sessionRecord = await app.db.select({
+        session: session,
+        user: user,
+      })
+        .from(session)
+        .innerJoin(user, eq(session.userId, user.id))
+        .where(eq(session.id, decoded.sessionId))
+        .limit(1);
 
-      if (!session || session.revokedAt || session.expiresAt < new Date()) {
+      const row = sessionRecord[0];
+
+      if (!row || row.session.revokedAt || row.session.expiresAt < new Date()) {
         throw app.httpErrors.unauthorized('Session expired or revoked');
       }
 
-      request.authUser = session.user;
-      request.authUser.session = session;
+      request.authUser = row.user;
+      request.authUser.session = row.session;
     } catch (err: any) {
       if (err.statusCode === 401) throw err;
       throw app.httpErrors.unauthorized('Invalid token');
@@ -40,7 +50,7 @@ export default fp(async (app) => {
 
   app.decorate('authenticate', authenticate);
 
-  app.addHook('preHandler', async (request, reply) => {
+  app.addHook('preHandler', async (request: any, reply: any) => {
     const publicPaths = [
       '/api/v1/auth/register',
       '/api/v1/auth/login',

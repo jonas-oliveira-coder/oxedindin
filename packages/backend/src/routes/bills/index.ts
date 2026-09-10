@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, gte, lte, asc, count, sql, desc } from 'drizzle-orm';
 import { createRecurringBillSchema, createBillSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
-import { recurringBill, bill, bankAccount, creditCard, category, transaction, user } from '../../db/schema';
+import { recurringBill, bill, bankAccount, creditCard, category, transaction, user } from '../../db/schema/index.js';
 
 function getNextDueDate(frequency: string, dueDay: number, fromDate: Date): Date {
   const next = new Date(fromDate);
@@ -44,7 +44,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       })),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, status } = request.query;
     const userId = request.authUser!.id;
 
@@ -53,7 +53,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [billsData, totalResult] = await Promise.all([
       app.db.select({
-        ...recurringBill,
+        recurringBill,
         category: category,
         account: bankAccount,
         card: creditCard,
@@ -86,7 +86,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/recurring', {
     schema: createRecurringBillSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { description, amount, categoryId, frequency, dueDay, startDate, endDate, accountId, cardId, dateType } = request.body;
     const userId = request.authUser!.id;
 
@@ -131,7 +131,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     }).returning();
 
     const [billWithRelations] = await app.db.select({
-      ...recurringBill,
+      recurringBill,
       category: category,
       account: bankAccount,
       card: creditCard,
@@ -165,9 +165,9 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/recurring/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [billWithRelations] = await app.db.select({
-      ...recurringBill,
+      recurringBill,
       category: category,
       account: bankAccount,
       card: creditCard,
@@ -207,7 +207,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(recurringBill)
       .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
@@ -220,7 +220,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .returning();
 
     const [billWithRelations] = await app.db.select({
-      ...recurringBill,
+      recurringBill,
       category: category,
       account: bankAccount,
       card: creditCard,
@@ -255,7 +255,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.delete('/recurring/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     await app.db.update(recurringBill)
       .set({ status: 'INACTIVE' })
       .where(eq(recurringBill.id, request.params.id));
@@ -275,7 +275,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/recurring/:id/generate', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [recurringBillRecord] = await app.db.select()
       .from(recurringBill)
       .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
@@ -318,7 +318,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       })),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, startDate, endDate, status } = request.query;
     const userId = request.authUser!.id;
 
@@ -329,7 +329,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [billsData, totalResult] = await Promise.all([
       app.db.select({
-        ...bill,
+        bill,
         category: category,
         account: bankAccount,
         recurringBill: recurringBill,
@@ -362,7 +362,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/', {
     schema: createBillSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { description, amount, categoryId, dueDate, paymentMethod, accountId, notes } = request.body;
     const userId = request.authUser!.id;
 
@@ -394,7 +394,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     }).returning();
 
     const [billWithRelations] = await app.db.select({
-      ...bill,
+      bill,
       category: category,
       account: bankAccount,
     })
@@ -420,9 +420,9 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [billWithRelations] = await app.db.select({
-      ...bill,
+      bill,
       category: category,
       account: bankAccount,
       recurringBill: recurringBill,
@@ -460,7 +460,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(bill)
       .where(and(eq(bill.id, request.params.id), eq(bill.userId, request.authUser!.id)))
@@ -473,7 +473,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .returning();
 
     const [billWithRelations] = await app.db.select({
-      ...bill,
+      bill,
       category: category,
       account: bankAccount,
       recurringBill: recurringBill,
@@ -515,7 +515,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { accountId, date, paymentMethod } = request.body;
     const userId = request.authUser!.id;
 
@@ -549,7 +549,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .returning();
 
     const [billWithRelations] = await app.db.select({
-      ...bill,
+      bill,
       category: category,
       account: bankAccount,
       recurringBill: recurringBill,
@@ -590,7 +590,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.delete('/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     await app.db.update(bill)
       .set({ status: 'CANCELLED' })
       .where(eq(bill.id, request.params.id));

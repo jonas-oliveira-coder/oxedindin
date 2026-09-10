@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import { AuthService } from '../services/index.js';
-import { db } from '../db';
+import { db } from '../db/index.js';
 
 interface AuditLogInput {
   userId: string;

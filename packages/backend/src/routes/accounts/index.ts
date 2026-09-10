@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, gte, lte, desc, count } from 'drizzle-orm';
 import { createAccountSchema, updateAccountSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
-import { bankAccount, transaction, category } from '../../db/schema';
+import { bankAccount, transaction, category } from '../../db/schema/index.js';
 
 const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -10,7 +10,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
       querystring: paginationSchema.merge(dateRangeSchema),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, startDate, endDate } = request.query;
     const userId = request.authUser!.id;
 
@@ -42,7 +42,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/', {
     schema: createAccountSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const body = request.body;
     const [account] = await app.db.insert(bankAccount).values({
       ...body,
@@ -73,7 +73,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [account] = await app.db.select()
       .from(bankAccount)
       .where(and(eq(bankAccount.id, request.params.id), eq(bankAccount.userId, request.authUser!.id)))
@@ -99,7 +99,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
       })),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, startDate, endDate, categoryId, type } = request.query;
 
     const conditions = [
@@ -113,7 +113,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [transactions, totalResult] = await Promise.all([
       app.db.select({
-        ...transaction,
+        transaction,
         category: category,
       })
         .from(transaction)
@@ -140,7 +140,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.patch('/:id', {
     schema: updateAccountSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(bankAccount)
       .where(and(eq(bankAccount.id, request.params.id), eq(bankAccount.userId, request.authUser!.id)))
@@ -178,7 +178,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(bankAccount)
       .where(and(eq(bankAccount.id, request.params.id), eq(bankAccount.userId, request.authUser!.id)))

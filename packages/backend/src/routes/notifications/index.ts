@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, desc, count, sql } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
-import { notification, notificationPreferences } from '../../db/schema';
+import { notification, notificationPreferences } from '../../db/schema/index.js';
 
 const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -12,7 +12,7 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
       })),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, read } = request.query;
     const userId = request.authUser!.id;
 
@@ -39,7 +39,7 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.patch('/:id/read', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [notificationRecord] = await app.db.select()
       .from(notification)
       .where(and(eq(notification.id, request.params.id), eq(notification.userId, request.authUser!.id)))
@@ -56,7 +56,7 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/read-all', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     await app.db.update(notification)
       .set({ read: true })
       .where(and(eq(notification.userId, request.authUser!.id), eq(notification.read, false)));
@@ -66,7 +66,7 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/preferences', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     let [prefs] = await app.db.select()
       .from(notificationPreferences)
       .where(eq(notificationPreferences.userId, request.authUser!.id))
@@ -100,7 +100,7 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(notificationPreferences)
       .where(eq(notificationPreferences.userId, request.authUser!.id))

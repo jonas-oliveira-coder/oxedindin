@@ -1,8 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { eq, and, desc, gte, gt, count, inArray } from 'drizzle-orm';
+import { eq, and, desc, gte, gt, lte, count, inArray } from 'drizzle-orm';
 import { createCardSchema, updateCardSchema, paginationSchema } from '../../types/schemas.js';
-import { creditCard, bankAccount, invoice, installment, installmentPlan, transaction, category } from '../../db/schema';
+import { creditCard, bankAccount, invoice, installment, installmentPlan, transaction, category } from '../../db/schema/index.js';
 
 const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -10,13 +10,13 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       querystring: paginationSchema,
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit } = request.query;
     const userId = request.authUser!.id;
 
     const [cards, totalResult] = await Promise.all([
       app.db.select({
-        ...creditCard,
+        creditCard,
         account: bankAccount,
       })
         .from(creditCard)
@@ -44,7 +44,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/', {
     schema: createCardSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const body = request.body;
     if (body.accountId) {
       const [account] = await app.db.select()
@@ -64,7 +64,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     }).returning();
 
     const [cardWithAccount] = await app.db.select({
-      ...creditCard,
+      creditCard,
       account: bankAccount,
     })
       .from(creditCard)
@@ -95,9 +95,9 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [cardWithAccount] = await app.db.select({
-      ...creditCard,
+      creditCard,
       account: bankAccount,
     })
       .from(creditCard)
@@ -123,7 +123,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       querystring: paginationSchema,
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit } = request.query;
 
     const [card] = await app.db.select()
@@ -162,7 +162,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [card] = await app.db.select()
       .from(creditCard)
       .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
@@ -188,7 +188,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     const invoiceTransactions = await app.db.select({
-      ...transaction,
+      transaction,
       category: category,
     })
       .from(transaction)
@@ -214,7 +214,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [card] = await app.db.select()
       .from(creditCard)
       .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
@@ -249,7 +249,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       querystring: paginationSchema,
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit } = request.query;
 
     const [card] = await app.db.select()
@@ -269,7 +269,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [installments, totalResult] = await Promise.all([
       app.db.select({
-        ...installment,
+        installment,
         plan: installmentPlan,
         invoice: invoice,
       })
@@ -306,7 +306,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.patch('/:id', {
     schema: updateCardSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(creditCard)
       .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
@@ -339,7 +339,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .returning();
 
     const [cardWithAccount] = await app.db.select({
-      ...creditCard,
+      creditCard,
       account: bankAccount,
     })
       .from(creditCard)
@@ -371,7 +371,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().cuid() }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(creditCard)
       .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))

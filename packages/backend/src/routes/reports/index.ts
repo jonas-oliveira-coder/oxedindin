@@ -1,8 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { eq, and, gte, lte, asc, count, sum, sql, inArray, not, isNull } from 'drizzle-orm';
+import { eq, and, gte, lte, gt, asc, count, sum, sql, inArray, not, isNull } from 'drizzle-orm';
 import { reportFiltersSchema } from '../../types/schemas.js';
-import { transaction, category, bankAccount, creditCard, installment, installmentPlan, recurringBill, debt, person, invoice, bill } from '../../db/schema';
+import { transaction, category, bankAccount, creditCard, installment, installmentPlan, recurringBill, debt, person, invoice, bill } from '../../db/schema/index.js';
 
 function getMonthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -18,7 +18,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/spending-by-category', {
     schema: { querystring: reportFiltersSchema.shape.query },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { startDate, endDate, categoryIds, accountIds, cardIds, transactionTypes } = request.query;
     const userId = request.authUser!.id;
 
@@ -34,7 +34,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     if (transactionTypes) conditions.push(inArray(transaction.type, transactionTypes));
 
     const transactionsData = await app.db.select({
-      ...transaction,
+      transaction,
       category: category,
     })
       .from(transaction)
@@ -67,7 +67,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/spending-by-period', {
     schema: { querystring: reportFiltersSchema.shape.query.merge(z.object({ interval: z.enum(['day', 'week', 'month']).default('month') })) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { startDate, endDate, interval } = request.query;
     const userId = request.authUser!.id;
 
@@ -115,7 +115,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/spending-by-account', {
     schema: { querystring: reportFiltersSchema.shape.query },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { startDate, endDate, categoryIds, accountIds, cardIds, transactionTypes } = request.query;
     const userId = request.authUser!.id;
 
@@ -131,7 +131,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     if (transactionTypes) conditions.push(inArray(transaction.type, transactionTypes));
 
     const transactionsData = await app.db.select({
-      ...transaction,
+      transaction,
       account: bankAccount,
     })
       .from(transaction)
@@ -160,7 +160,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/spending-by-card', {
     schema: { querystring: reportFiltersSchema.shape.query },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { startDate, endDate, categoryIds, accountIds, cardIds, transactionTypes } = request.query;
     const userId = request.authUser!.id;
 
@@ -177,7 +177,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     if (transactionTypes) conditions.push(inArray(transaction.type, transactionTypes));
 
     const transactionsData = await app.db.select({
-      ...transaction,
+      transaction,
       card: creditCard,
     })
       .from(transaction)
@@ -206,7 +206,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/fixed-vs-variable', {
     schema: { querystring: reportFiltersSchema.shape.query },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { startDate, endDate } = request.query;
     const userId = request.authUser!.id;
 
@@ -220,7 +220,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const [transactionsData, installmentsData, recurringBillsData] = await Promise.all([
       app.db.select().from(transaction).where(and(...conditions)),
       app.db.select({
-        ...installment,
+        installment,
         plan: installmentPlan,
       })
         .from(installment)
@@ -236,7 +236,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     let recurringTotal = 0;
 
     for (const t of transactionsData) {
-      if (!t.installmentPlanId && !t.recurringBillId) {
+      if (!t.installmentPlanId) {
         variable += Number(t.amountCents);
       }
     }
@@ -262,7 +262,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/installments', {
     schema: { querystring: reportFiltersSchema.shape.query.merge(z.object({ months: z.coerce.number().int().positive().max(24).default(12) })) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { startDate, endDate, months } = request.query;
     const userId = request.authUser!.id;
     const now = new Date();
@@ -279,11 +279,8 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
     const planIdArray = planIds.map(p => p.id);
 
     const installmentsData = await app.db.select({
-      ...installment,
-      plan: {
-        ...installmentPlan,
-        card: creditCard,
-      },
+      installment,
+      plan: installmentPlan,
       invoice: invoice,
     })
       .from(installment)
@@ -320,12 +317,12 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/debts', {
     schema: { querystring: reportFiltersSchema.shape.query },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const userId = request.authUser!.id;
 
     const [toPayData, toReceiveData] = await Promise.all([
       app.db.select({
-        ...debt,
+        debt,
         relatedPerson: person,
       })
         .from(debt)
@@ -333,7 +330,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
         .where(and(eq(debt.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE'])))
         .orderBy(asc(debt.dueDate)),
       app.db.select({
-        ...debt,
+        debt,
         relatedPerson: person,
       })
         .from(debt)
@@ -365,7 +362,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/invoices', {
     schema: { querystring: reportFiltersSchema.shape.query.merge(z.object({ months: z.coerce.number().int().positive().max(24).default(12) })) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { months } = request.query;
     const userId = request.authUser!.id;
     const now = new Date();
@@ -400,7 +397,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/cashflow', {
     schema: { querystring: reportFiltersSchema.shape.query.merge(z.object({ months: z.coerce.number().int().positive().max(24).default(12) })) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { months } = request.query;
     const userId = request.authUser!.id;
     const now = new Date();
@@ -416,14 +413,14 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
       app.db.select().from(bill)
         .where(and(eq(bill.userId, userId), inArray(bill.status, ['PENDING', 'OVERDUE']), lte(bill.dueDate, end))),
       app.db.select({
-        ...installment,
+        installment,
         plan: installmentPlan,
       })
         .from(installment)
         .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
         .where(and(eq(installmentPlan.userId, userId), inArray(installment.status, ['PENDING', 'OVERDUE']), lte(installment.dueDate, end))),
       app.db.select({
-        ...invoice,
+        invoice,
         card: creditCard,
       })
         .from(invoice)
@@ -474,7 +471,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/summary', {
     schema: { querystring: reportFiltersSchema.shape.query },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const userId = request.authUser!.id;
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -512,14 +509,14 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
         .innerJoin(person, eq(debt.relatedPersonId, person.id))
         .where(and(eq(person.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE']))),
       app.db.select({
-        ...invoice,
+        invoice,
         card: creditCard,
       })
         .from(invoice)
         .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
         .where(and(eq(creditCard.userId, userId), lte(invoice.periodStart, now), gte(invoice.periodEnd, now))),
       app.db.select({
-        ...invoice,
+        invoice,
         card: creditCard,
       })
         .from(invoice)
@@ -532,7 +529,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
         .orderBy(asc(bill.dueDate))
         .limit(10),
       app.db.select({
-        ...installment,
+        installment,
         plan: installmentPlan,
       })
         .from(installment)

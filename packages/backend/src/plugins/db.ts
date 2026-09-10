@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import { db, closePool } from '../db';
+import { db, closePool } from '../db/index.js';
 import { FastifyInstance } from 'fastify';
 
 declare module 'fastify' {

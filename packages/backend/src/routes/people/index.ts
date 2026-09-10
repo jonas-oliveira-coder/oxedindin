@@ -1,14 +1,14 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { eq, and, asc, count } from 'drizzle-orm';
+import { eq, and, asc, count, getTableColumns } from 'drizzle-orm';
 import { createPersonSchema, paginationSchema } from '../../types/schemas.js';
-import { person, debt, sharedDebt, user } from '../../db/schema';
+import { person, debt, sharedDebt, user } from '../../db/schema/index.js';
 
 const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     schema: { querystring: paginationSchema },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit } = request.query;
     const userId = request.authUser!.id;
 
@@ -32,7 +32,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/', {
     schema: createPersonSchema,
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     if (request.body.email) {
       const [existing] = await app.db.select()
         .from(person)
@@ -62,7 +62,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [personRecord] = await app.db.select()
       .from(person)
       .where(and(eq(person.id, request.params.id), eq(person.userId, request.authUser!.id)))
@@ -71,7 +71,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
     if (!personRecord) throw app.httpErrors.notFound('Person not found');
 
     const debtsData = await app.db.select({
-      ...debt,
+      ...getTableColumns(debt),
       sharedDebts: sharedDebt,
     })
       .from(debt)
@@ -79,7 +79,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(eq(debt.relatedPersonId, personRecord.id));
 
     const sharedDebtsData = await app.db.select({
-      ...sharedDebt,
+      ...getTableColumns(sharedDebt),
       debt: debt,
       creditor: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, settings: user.settings, createdAt: user.createdAt, updatedAt: user.updatedAt },
     })
@@ -108,7 +108,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const [existing] = await app.db.select()
       .from(person)
       .where(and(eq(person.id, request.params.id), eq(person.userId, request.authUser!.id)))
@@ -145,7 +145,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
   app.delete('/:id', {
     schema: { params: z.object({ id: z.string().cuid() }) },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     await app.db.delete(person).where(eq(person.id, request.params.id));
 
     await app.auditLog({

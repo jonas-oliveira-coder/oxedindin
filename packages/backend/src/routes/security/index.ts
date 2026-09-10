@@ -1,8 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { eq, and, gte, lte, desc, count, sql, ilike } from 'drizzle-orm';
+import { eq, and, gte, lte, gt, isNull, desc, count, sql, ilike } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
-import { auditLog, session } from '../../db/schema';
+import { auditLog, session } from '../../db/schema/index.js';
 
 const securityRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/audit-log', {
@@ -15,7 +15,7 @@ const securityRoutes: FastifyPluginAsyncZod = async (app) => {
       })),
     },
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { page, limit, action, entityType, startDate, endDate } = request.query;
     const userId = request.authUser!.id;
 
@@ -44,7 +44,7 @@ const securityRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/devices', {
     preHandler: [app.authenticate],
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const sessions = await app.db.select().from(session)
       .where(and(
         eq(session.userId, request.authUser!.id),
@@ -74,7 +74,7 @@ const securityRoutes: FastifyPluginAsyncZod = async (app) => {
         symbols: z.boolean().default(true),
       }),
     },
-  }, async (request, reply) => {
+  }, async (request: any, reply: any) => {
     const { length, uppercase, lowercase, numbers, symbols } = request.body;
 
     let charset = '';

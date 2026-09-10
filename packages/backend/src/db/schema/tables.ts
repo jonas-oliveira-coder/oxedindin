@@ -1,14 +1,14 @@
 import {
   pgTable, text, timestamp, boolean, bigint, integer, jsonb, uuid, uniqueIndex, index, primaryKey
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   accountTypeEnum, accountStatusEnum, cardBrandEnum, cardStatusEnum,
   invoiceStatusEnum, transactionTypeEnum, paymentMethodEnum,
   installmentStatusEnum, recurringFrequencyEnum, recurringStatusEnum,
   billStatusEnum, debtTypeEnum, debtStatusEnum, sharedDebtStatusEnum,
   personTypeEnum, notificationTypeEnum, notificationChannelEnum, dateTypeEnum
-} from './enums';
+} from './enums.js';
 
 export const user = pgTable('User', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -31,8 +31,8 @@ export const bankAccount = pgTable('BankAccount', {
   type: accountTypeEnum('type').notNull(),
   number: text('number'),
   agency: text('agency'),
-  balanceCents: bigint('balance_cents', { mode: 'bigint' }).default('0').notNull(),
-  initialBalanceCents: bigint('initial_balance_cents', { mode: 'bigint' }).default('0').notNull(),
+  balanceCents: bigint('balance_cents', { mode: 'bigint' }).default(sql`0`) .notNull(),
+  initialBalanceCents: bigint('initial_balance_cents', { mode: 'bigint' }).default(sql`0`) .notNull(),
   status: accountStatusEnum('status').default('ACTIVE').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -71,9 +71,9 @@ export const invoice = pgTable('Invoice', {
   periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
   closingDate: timestamp('closing_date', { withTimezone: true }).notNull(),
   dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
-  totalCents: bigint('total_cents', { mode: 'bigint' }).default('0').notNull(),
-  paidCents: bigint('paid_cents', { mode: 'bigint' }).default('0').notNull(),
-  remainingCents: bigint('remaining_cents', { mode: 'bigint' }).default('0').notNull(),
+  totalCents: bigint('total_cents', { mode: 'bigint' }).default(sql`0`) .notNull(),
+  paidCents: bigint('paid_cents', { mode: 'bigint' }).default(sql`0`) .notNull(),
+  remainingCents: bigint('remaining_cents', { mode: 'bigint' }).default(sql`0`) .notNull(),
   status: invoiceStatusEnum('status').default('OPEN').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -214,8 +214,8 @@ export const debt = pgTable('Debt', {
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   description: text('description').notNull(),
   totalAmountCents: bigint('total_amount_cents', { mode: 'bigint' }).notNull(),
-  paidAmountCents: bigint('paid_amount_cents', { mode: 'bigint' }).default('0').notNull(),
-  remainingAmountCents: bigint('remaining_amount_cents', { mode: 'bigint' }).default('0').notNull(),
+  paidAmountCents: bigint('paid_amount_cents', { mode: 'bigint' }).default(sql`0`) .notNull(),
+  remainingAmountCents: bigint('remaining_amount_cents', { mode: 'bigint' }).default(sql`0`) .notNull(),
   dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
   type: debtTypeEnum('type').notNull(),
   relatedPersonId: text('related_person_id').references(() => person.id, { onDelete: 'set null' }),
@@ -309,7 +309,7 @@ export const passkey = pgTable('Passkey', {
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   credentialId: text('credential_id').notNull().unique(),
   publicKey: text('public_key').notNull(),
-  counter: bigint('counter', { mode: 'bigint' }).default('0').notNull(),
+  counter: bigint('counter', { mode: 'bigint' }).default(sql`0`) .notNull(),
   name: text('name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),

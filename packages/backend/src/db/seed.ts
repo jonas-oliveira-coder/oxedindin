@@ -1,5 +1,5 @@
-import { db } from './index';
-import { user, category } from './schema';
+import { db } from './index.js';
+import { user, category } from './schema/index.js';
 import { eq } from 'drizzle-orm';
 import { hash } from '@node-rs/argon2';
 

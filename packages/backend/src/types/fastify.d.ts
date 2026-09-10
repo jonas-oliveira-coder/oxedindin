@@ -1,5 +1,5 @@
 import 'fastify';
-import { User, Session } from '../db/schema/tables';
+import { User, Session } from '../db/schema/tables.js';
 
 declare module 'fastify' {
   interface FastifyInstance {

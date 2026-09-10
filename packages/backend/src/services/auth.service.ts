@@ -1,10 +1,10 @@
 import { hash, verify } from '@node-rs/argon2';
 import { generateRegistrationOptions, generateAuthenticationOptions, verifyRegistrationResponse, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { FastifyInstance } from 'fastify';
-import { db } from '../db';
-import { user, session, passkey } from '../db/schema';
-import { eq, and, gt, isNull, desc } from 'drizzle-orm';
-import { env } from '../utils/env';
+import { db } from '../db/index.js';
+import { user, session, passkey } from '../db/schema/index.js';
+import { eq, and, gt, isNull, desc, not } from 'drizzle-orm';
+import { env } from '../utils/env.js';
 
 type User = typeof user.$inferSelect;
 type Session = typeof session.$inferSelect;
