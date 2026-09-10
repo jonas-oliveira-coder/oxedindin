@@ -45,7 +45,7 @@ describe('AuthService.generateSecurePassword', () => {
       expect(password).toMatch(/[A-Z]/);
       expect(password).toMatch(/[a-z]/);
       expect(password).toMatch(/[0-9]/);
-      expect(password).toMatch(/[!@#$%^&*()_+\-=[]{}|;:,.<>?]/);
+      expect(password).toMatch(/[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/);
     }
   });
 });

@@ -3,12 +3,13 @@ export interface PublicKeyCredentialCreationOptionsJSON {
   rp: { name: string; id: string };
   user: { id: string; name: string; displayName: string };
   pubKeyCredParams: Array<{ type: 'public-key'; alg: number }>;
-  timeout: number;
-  attestation: 'none' | 'direct' | 'indirect';
-  authenticatorSelection: {
+  timeout?: number;
+  attestation?: 'none' | 'direct' | 'indirect';
+  authenticatorSelection?: {
     authenticatorAttachment?: 'platform' | 'cross-platform';
-    requireResidentKey: boolean;
-    userVerification: 'required' | 'preferred' | 'discouraged';
+    requireResidentKey?: boolean;
+    residentKey?: 'required' | 'preferred' | 'discouraged';
+    userVerification?: 'required' | 'preferred' | 'discouraged';
   };
   excludeCredentials?: Array<{ id: string; type: 'public-key'; transports?: string[] }>;
 }

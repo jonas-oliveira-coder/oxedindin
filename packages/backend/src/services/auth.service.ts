@@ -6,9 +6,9 @@ import { user, session, passkey } from '../db/schema/index.js';
 import { eq, and, gt, isNull, desc, not } from 'drizzle-orm';
 import { env } from '../utils/env.js';
 
-type User = typeof user.$inferSelect;
-type Session = typeof session.$inferSelect;
-type Passkey = typeof passkey.$inferSelect;
+export type User = typeof user.$inferSelect;
+export type Session = typeof session.$inferSelect;
+export type Passkey = typeof passkey.$inferSelect;
 
 export class AuthService {
   constructor(private app: FastifyInstance) {}
@@ -282,11 +282,16 @@ export class AuthService {
   } = {}): Promise<string> {
     const { length = 16, uppercase = true, lowercase = true, numbers = true, symbols = true } = options;
 
+    const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const LOWER = 'abcdefghijklmnopqrstuvwxyz';
+    const NUMBERS = '0123456789';
+    const SYMBOLS = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+
     let charset = '';
-    if (uppercase) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    if (lowercase) charset += 'abcdefghijklmnopqrstuvwxyz';
-    if (numbers) charset += '0123456789';
-    if (symbols) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+    if (uppercase) charset += UPPER;
+    if (lowercase) charset += LOWER;
+    if (numbers) charset += NUMBERS;
+    if (symbols) charset += SYMBOLS;
 
     if (!charset) throw new Error('At least one character type must be selected');
 
@@ -298,10 +303,10 @@ export class AuthService {
       password += charset[array[i] % charset.length];
     }
 
-    if (uppercase && !/[A-Z]/.test(password)) password = password.slice(0, -1) + charset[array[0] % 26];
-    if (lowercase && !/[a-z]/.test(password)) password = password.slice(0, -1) + charset[array[1] % 26 + 26];
-    if (numbers && !/[0-9]/.test(password)) password = password.slice(0, -1) + charset[array[2] % 10 + 52];
-    if (symbols && !/[!@#$%^&*()_+\-=[]{}|;:,.<>?]/.test(password)) password = password.slice(0, -1) + charset[array[3] % 32 + 62];
+    if (uppercase && !/[A-Z]/.test(password)) password = password.slice(0, -1) + UPPER[array[0] % UPPER.length];
+    if (lowercase && !/[a-z]/.test(password)) password = password.slice(0, -1) + LOWER[array[1] % LOWER.length];
+    if (numbers && !/[0-9]/.test(password)) password = password.slice(0, -1) + NUMBERS[array[2] % NUMBERS.length];
+    if (symbols && !/[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/.test(password)) password = password.slice(0, -1) + SYMBOLS[array[3] % SYMBOLS.length];
 
     return password;
   }

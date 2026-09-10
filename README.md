@@ -7,7 +7,7 @@ Uma plataforma completa de gerenciamento de finanças pessoais, construída com 
 ### Backend
 
 - **Fastify** - Framework web rápido e de baixa sobrecarga
-- **Prisma ORM** - ORM type-safe para PostgreSQL
+- **Drizzle ORM** - ORM TypeScript moderno e type-safe para PostgreSQL
 - **PostgreSQL** - Banco de dados relacional robusto
 - **Redis** - Cache e filas (BullMQ)
 - **JWT + Passkeys (WebAuthn)** - Autenticação moderna e segura
@@ -43,13 +43,12 @@ oxedindin/
 ├── packages/
 │   ├── shared/            # Tipos e utilitários compartilhados
 │   ├── backend/           # API Fastify
-│   │   ├── prisma/        # Schema do banco de dados
-│   │   └── src/           # Código fonte do backend
+│   │   ├── drizzle/       # Migrações SQL do Drizzle
+│   │   └── src/           # Código fonte do backend (incluindo src/db/schema)
 │   └── frontend/          # SPA React + Vite
 │       └── src/           # Código fonte do frontend
 ├── docker-compose.yml     # Desenvolvimento local
-├── Dockerfile             # Build multi-stage para produção
-└── pnpm-workspace.yaml    # Configuração do monorepo
+└── Dockerfile             # Build multi-stage para produção
 ```
 
 ## 🛠️ Desenvolvimento Local
@@ -79,7 +78,7 @@ docker compose up -d postgres redis
 # Instale dependências
 npm install
 
-# Gere o Prisma Client
+# Gere as migrações do Drizzle (se houver alterações de schema)
 npm run db:generate
 
 # Execute as migrações
@@ -109,12 +108,11 @@ npm run build:backend    # Build do backend
 npm run build:frontend   # Build do frontend
 
 # Banco de dados
-npm run db:generate      # Gera Prisma Client
-npm run db:push          # Push schema para DB (dev)
-npm run db:migrate       # Executa migrações
-npm run db:migrate:deploy # Deploy migrações (prod)
-npm run db:studio        # Abre Prisma Studio
-npm run db:seed          # Popula dados de exemplo
+npm run db:generate      # Gera migrações SQL com Drizzle Kit
+npm run db:push          # Push schema diretamente para o DB (dev)
+npm run db:migrate       # Executa migrações pendentes com Drizzle Kit
+npm run db:studio        # Abre o Drizzle Studio
+npm run db:seed          # Popula dados de exemplo (se configurado)
 
 # Testes
 npm run test             # Testes unitários
