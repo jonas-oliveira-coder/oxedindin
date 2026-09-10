@@ -78,9 +78,6 @@ export function TransactionsPage() {
     cardId: '',
     type: '',
   });
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
-  const [cards, setCards] = useState<Array<{ id: string; name: string }>>([]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['transactions', filters],
@@ -101,10 +98,6 @@ export function TransactionsPage() {
     queryKey: ['cards', 'active'],
     queryFn: fetchCards,
   });
-
-  if (fetchedCategories) setCategories(fetchedCategories);
-  if (fetchedAccounts) setAccounts(fetchedAccounts);
-  if (fetchedCards) setCards(fetchedCards);
 
   const createMutation = useMutation({
     mutationFn: createTransaction,
@@ -228,7 +221,7 @@ export function TransactionsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">Sem categoria</SelectItem>
-                    {categories.map((cat) => (
+                    {(fetchedCategories ?? []).map((cat) => (
                       <SelectItem key={cat.id} value={cat.id}>
                         <span className="flex items-center gap-2">
                           {cat.color && <span className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }} />}
@@ -271,7 +264,7 @@ export function TransactionsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">Nenhuma</SelectItem>
-                      {accounts.map((acc) => (
+                      {(fetchedAccounts ?? []).map((acc) => (
                         <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -285,7 +278,7 @@ export function TransactionsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="">Nenhum</SelectItem>
-                      {cards.map((card) => (
+                      {(fetchedCards ?? []).map((card) => (
                         <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -330,7 +323,7 @@ export function TransactionsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Todas</SelectItem>
-                  {categories.map((cat) => (
+                  {(fetchedCategories ?? []).map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -344,7 +337,7 @@ export function TransactionsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Todas</SelectItem>
-                  {accounts.map((acc) => (
+                  {(fetchedAccounts ?? []).map((acc) => (
                     <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -358,7 +351,7 @@ export function TransactionsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Todos</SelectItem>
-                  {cards.map((card) => (
+                  {(fetchedCards ?? []).map((card) => (
                     <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
                   ))}
                 </SelectContent>

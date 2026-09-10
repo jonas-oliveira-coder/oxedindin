@@ -103,6 +103,18 @@ export const createTransactionSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+export const createCategorySchema = z.object({
+  name: z.string().min(1, 'Nome é obrigatório').max(50),
+  icon: z.string().max(50).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+});
+
+export const updateCategorySchema = z.object({
+  name: z.string().min(1).max(50).optional(),
+  icon: z.string().max(50).nullable().optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
+});
+
 export const createInstallmentPlanSchema = z.object({
   description: z.string().min(1, 'Descrição é obrigatória').max(200),
   totalAmount: z.number().int().positive('Valor total deve ser positivo'),
@@ -213,6 +225,8 @@ export type CreateCardInput = z.infer<typeof createCardSchema>;
 export type UpdateCardInput = z.infer<typeof updateCardSchema>;
 export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
 export type CreateInstallmentPlanInput = z.infer<typeof createInstallmentPlanSchema>;
+export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 export type CreateRecurringBillInput = z.infer<typeof createRecurringBillSchema>;
 export type CreateBillInput = z.infer<typeof createBillSchema>;
 export type CreateDebtInput = z.infer<typeof createDebtSchema>;

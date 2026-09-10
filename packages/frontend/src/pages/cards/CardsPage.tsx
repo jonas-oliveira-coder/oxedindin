@@ -61,7 +61,6 @@ export function CardsPage() {
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<string | null>(null);
-  const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
 
   const { data: cards, isLoading } = useQuery({
     queryKey: ['cards'],
@@ -72,10 +71,6 @@ export function CardsPage() {
     queryKey: ['accounts', 'active'],
     queryFn: fetchAccounts,
   });
-
-  if (fetchedAccounts) {
-    setAccounts(fetchedAccounts);
-  }
 
   const createMutation = useMutation({
     mutationFn: createCard,
@@ -256,7 +251,7 @@ export function CardsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">Nenhuma</SelectItem>
-                    {accounts.map((acc) => (
+                    {(fetchedAccounts ?? []).map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
                     ))}
                   </SelectContent>

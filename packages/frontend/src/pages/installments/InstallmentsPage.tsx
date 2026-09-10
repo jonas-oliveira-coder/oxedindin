@@ -1,8 +1,166 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
+import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { toast } from '@/components/ui/use-toast';
+import { formatMoney, formatDate, getStatusColor } from '@/lib/utils';
+import { Plus, Loader2, TriangleAlert, CheckCircle2 } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+const createPlanFormSchema = z.object({
+  description: z.string().min(1, 'Descrição é obrigatória').max(200),
+  totalAmount: z.number().positive('Valor deve ser positivo'),
+  installmentsCount: z.number().int().min(1).max(60),
+  startDate: z.string().min(1, 'Data é obrigatória'),
+  firstInvoiceDate: z.string().min(1, 'Data é obrigatória'),
+  cardId: z.string().uuid('Selecione um cartão'),
+  categoryId: z.string().uuid().optional(),
+});
+
+type CreatePlanFormInput = z.infer<typeof createPlanFormSchema>;
+
+interface Installment {
+  id: string;
+  planId: string;
+  number: number;
+  amount: { cents: number; currency: string };
+  dueDate: string;
+  status: string;
+  plan?: { id: string; description: string; installmentsCount: number; totalAmountCents: string; cardId: string } | null;
+}
+
+interface IdName {
+  id: string;
+  name: string;
+}
+
+const paySchema = z.object({
+  accountId: z.string().uuid().optional(),
+});
+
+const statusLabels: Record<string, string> = {
+  PENDING: 'Pendente',
+  PAID: 'Paga',
+  OVERDUE: 'Vencida',
+  CANCELLED: 'Cancelada',
+};
+
+async function fetchInstallments(status?: string): Promise<Installment[]> {
+  const response = await api.get('/installments', { params: status ? { status } : {} });
+  return response.data.data;
+}
+
+async function fetchCards(): Promise<IdName[]> {
+  const response = await api.get('/cards');
+  return response.data.data.filter((c: any) => c.status === 'ACTIVE');
+}
+
+async function fetchAccounts(): Promise<IdName[]> {
+  const response = await api.get('/accounts');
+  return response.data.data.filter((a: any) => a.status === 'ACTIVE');
+}
 
 export function InstallmentsPage() {
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [payTarget, setPayTarget] = useState<Installment | null>(null);
+  const [cancelPlanId, setCancelPlanId] = useState<string | null>(null);
+
+  const { data: installments, isLoading } = useQuery({ queryKey: ['installments'], queryFn: () => fetchInstallments() });
+  const { data: cards } = useQuery({ queryKey: ['cards', 'active'], queryFn: fetchCards });
+  const { data: accounts } = useQuery({ queryKey: ['accounts', 'active'], queryFn: fetchAccounts });
+
+  const createForm = useForm<CreatePlanFormInput>({ resolver: zodResolver(createPlanFormSchema) });
+  const payForm = useForm<z.infer<typeof paySchema>>({ resolver: zodResolver(paySchema) });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: CreatePlanFormInput) => {
+      await api.post('/transactions/installment', {
+        description: data.description,
+        totalAmount: Math.round(data.totalAmount * 100),
+        installmentsCount: data.installmentsCount,
+        startDate: new Date(`${data.startDate}T00:00:00.000Z`).toISOString(),
+        firstInvoiceDate: new Date(`${data.firstInvoiceDate}T00:00:00.000Z`).toISOString(),
+        cardId: data.cardId,
+        categoryId: data.categoryId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['installments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast({ title: 'Parcelamento criado', description: 'Compra parcelada registrada com sucesso.' });
+      setCreateOpen(false);
+    },
+    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+  });
+
+  const payMutation = useMutation({
+    mutationFn: async ({ installment, data }: { installment: Installment; data: z.infer<typeof paySchema> }) => {
+      await api.post(`/installments/${installment.planId}/installments/${installment.number}/pay`, {
+        accountId: data.accountId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['installments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast({ title: 'Parcela paga', description: 'Parcela paga com sucesso.' });
+      setPayTarget(null);
+    },
+    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      await api.delete(`/installments/${planId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['installments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast({ title: 'Parcelamento cancelado', description: 'As parcelas pendentes foram canceladas.' });
+      setCancelPlanId(null);
+    },
+    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+  });
+
+  const grouped = new Map<string, { plan: NonNullable<Installment['plan']>; items: Installment[] }>();
+  for (const item of installments ?? []) {
+    const plan = item.plan;
+    if (!plan) continue;
+    const existing = grouped.get(plan.id);
+    if (existing) existing.items.push(item);
+    else grouped.set(plan.id, { plan, items: [item] });
+  }
+
+  const openPayDialog = (installment: Installment) => {
+    setPayTarget(installment);
+    payForm.reset({ accountId: undefined });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <Card key={i}>
+            <CardContent className="pt-6">
+              <div className="animate-pulse space-y-2">
+                <div className="h-4 bg-muted rounded w-3/4" />
+                <div className="h-8 bg-muted rounded w-1/2" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -10,19 +168,177 @@ export function InstallmentsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Parcelamentos</h1>
           <p className="text-muted-foreground">Gerencie suas compras parceladas</p>
         </div>
-        <Button variant="outline">
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Parcelamento
-        </Button>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Parcelamento
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Nova compra parcelada</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={createForm.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="description">Descrição</Label>
+                <Input id="description" {...createForm.register('description')} placeholder="Smartphone, Notebook..." />
+              </div>
+              <div className="grid gap-2 grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="totalAmount">Valor total</Label>
+                  <Input id="totalAmount" type="number" step="0.01" {...createForm.register('totalAmount', { valueAsNumber: true })} placeholder="3000,00" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="installmentsCount">Nº de parcelas</Label>
+                  <Input id="installmentsCount" type="number" min={1} max={60} {...createForm.register('installmentsCount', { valueAsNumber: true })} placeholder="10" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cardId">Cartão</Label>
+                <Select value={createForm.watch('cardId')} onValueChange={(v) => createForm.setValue('cardId', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o cartão" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(cards ?? []).map((card) => (
+                      <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2 grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="startDate">Data da compra</Label>
+                  <Input id="startDate" type="date" {...createForm.register('startDate')} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="firstInvoiceDate">Primeira fatura</Label>
+                  <Input id="firstInvoiceDate" type="date" {...createForm.register('firstInvoiceDate')} />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">As datas serão convertidas automaticamente para o formato ISO.</p>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
+                <Button type="submit" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Criar
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Em desenvolvimento</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">Esta página está sendo desenvolvida.</p>
-        </CardContent>
-      </Card>
+
+      {grouped.size > 0 ? (
+        <div className="space-y-6">
+          {Array.from(grouped.values()).map(({ plan, items }) => (
+            <Card key={plan.id}>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-semibold text-lg">{plan.description}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {items.length} de {plan.installmentsCount} parcelas · Total {formatMoney(Number(plan.totalAmountCents))}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setCancelPlanId(plan.id)}>
+                    <TriangleAlert className="mr-1 h-4 w-4" />
+                    Cancelar
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {items
+                    .sort((a, b) => a.number - b.number)
+                    .map((installment) => (
+                      <div key={installment.id} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-sm font-medium">
+                            {installment.number}
+                          </div>
+                          <div>
+                            <p className="font-medium">{formatMoney(installment.amount.cents)}</p>
+                            <p className="text-sm text-muted-foreground">Vence em {formatDate(installment.dueDate)}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge variant="outline" className={getStatusColor(installment.status)}>
+                            {statusLabels[installment.status] || installment.status}
+                          </Badge>
+                          {installment.status === 'PENDING' || installment.status === 'OVERDUE' ? (
+                            <Button size="sm" onClick={() => openPayDialog(installment)}>Pagar</Button>
+                          ) : (
+                            <CheckCircle2 className="h-5 w-5 text-success" />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="pt-6 text-center py-12">
+            <TriangleAlert className="mx-auto h-12 w-12 text-muted-foreground" />
+            <h3 className="mt-4 text-lg font-medium">Nenhum parcelamento cadastrado</h3>
+            <p className="mt-2 text-muted-foreground">Suas compras parceladas aparecerão aqui.</p>
+            <Button onClick={() => setCreateOpen(true)} className="mt-4">
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Parcelamento
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={!!payTarget} onOpenChange={(open) => !open && setPayTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pagar parcela {payTarget?.number}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={payForm.handleSubmit((data) => payTarget && payMutation.mutate({ installment: payTarget, data }))} className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Valor: <span className="font-semibold">{payTarget ? formatMoney(payTarget.amount.cents) : ''}</span>
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="accountId">Conta (opcional)</Label>
+              <Select value={payForm.watch('accountId')} onValueChange={(v) => payForm.setValue('accountId', v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma conta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(accounts ?? []).map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPayTarget(null)}>Cancelar</Button>
+              <Button type="submit" disabled={payMutation.isPending}>
+                {payMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Confirmar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!cancelPlanId} onOpenChange={(open) => !open && setCancelPlanId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancelar parcelamento?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">As parcelas pendentes serão canceladas e o limite restaurado.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelPlanId(null)}>Voltar</Button>
+            <Button variant="destructive" onClick={() => cancelPlanId && cancelMutation.mutate(cancelPlanId)}>
+              Cancelar parcelamento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

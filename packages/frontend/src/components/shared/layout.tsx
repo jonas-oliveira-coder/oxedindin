@@ -126,13 +126,9 @@ export function Layout() {
                   Configurações
                 </NavLink>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => setDarkMode(prev => !prev)}>
-                    <Moon className="h-4 w-4" id="theme-moon" />
-                    <Sun className="h-4 w-4 hidden" id="theme-sun" />
-                  </Button>
-                </DropdownMenuTrigger>
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDarkMode(prev => !prev); }}>
+                {darkMode ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+                {darkMode ? 'Modo claro' : 'Modo escuro'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
