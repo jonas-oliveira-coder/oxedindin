@@ -163,7 +163,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.get('/recurring/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     const [billWithRelations] = await app.db.select({
@@ -192,16 +192,16 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/recurring/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         description: z.string().min(1).max(200).optional(),
         amount: z.number().int().positive().optional(),
-        categoryId: z.string().cuid().nullable().optional(),
+        categoryId: z.string().uuid().nullable().optional(),
         frequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']).optional(),
         dueDay: z.number().int().min(1).max(31).optional(),
         endDate: z.string().datetime().nullable().optional(),
-        accountId: z.string().cuid().nullable().optional(),
-        cardId: z.string().cuid().nullable().optional(),
+        accountId: z.string().uuid().nullable().optional(),
+        cardId: z.string().uuid().nullable().optional(),
         status: z.enum(['ACTIVE', 'INACTIVE', 'ENDED']).optional(),
         dateType: z.enum(['FIXED', 'ADJUSTABLE']).optional(),
       }),
@@ -253,7 +253,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.delete('/recurring/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     await app.db.update(recurringBill)
@@ -273,7 +273,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/recurring/:id/generate', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     const [recurringBillRecord] = await app.db.select()
@@ -418,7 +418,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.get('/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     const [billWithRelations] = await app.db.select({
@@ -447,15 +447,15 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         description: z.string().min(1).max(200).optional(),
         amount: z.number().int().positive().optional(),
-        categoryId: z.string().cuid().nullable().optional(),
+        categoryId: z.string().uuid().nullable().optional(),
         dueDate: z.string().datetime().optional(),
         paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).nullable().optional(),
         status: z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED']).optional(),
-        accountId: z.string().cuid().nullable().optional(),
+        accountId: z.string().uuid().nullable().optional(),
         notes: z.string().max(500).nullable().optional(),
       }),
     },
@@ -507,9 +507,9 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/:id/pay', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
-        accountId: z.string().cuid().optional(),
+        accountId: z.string().uuid().optional(),
         date: z.string().datetime().optional(),
         paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).optional(),
       }),
@@ -588,7 +588,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.delete('/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     await app.db.update(bill)

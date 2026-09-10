@@ -143,7 +143,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.get('/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     const [debtWithPerson] = await app.db.select({
@@ -177,13 +177,13 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         description: z.string().min(1).max(200).optional(),
         totalAmount: z.number().int().positive().optional(),
         dueDate: z.string().datetime().optional(),
         type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']).optional(),
-        relatedPersonId: z.string().cuid().nullable().optional(),
+        relatedPersonId: z.string().uuid().nullable().optional(),
         notes: z.string().max(500).nullable().optional(),
         status: z.enum(['ACTIVE', 'PAID', 'OVERDUE', 'CANCELLED', 'RENEGOTIATED']).optional(),
       }),
@@ -240,10 +240,10 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/:id/pay', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         amount: z.number().int().positive(),
-        accountId: z.string().cuid().optional(),
+        accountId: z.string().uuid().optional(),
         date: z.string().datetime().optional(),
         notes: z.string().max(500).optional(),
       }),
@@ -327,7 +327,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.delete('/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     await app.db.update(debt)
@@ -430,7 +430,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
         totalAmount: z.number().int().positive(),
         dueDate: z.string().datetime(),
         type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']),
-        personId: z.string().cuid(),
+        personId: z.string().uuid(),
         notes: z.string().max(500).optional(),
       }),
     },
@@ -487,7 +487,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.get('/owed/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     const [debtWithPerson] = await app.db.select({
@@ -526,7 +526,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/owed/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         description: z.string().min(1).max(200).optional(),
         totalAmount: z.number().int().positive().optional(),
@@ -589,7 +589,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/owed/:id/pay', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         amount: z.number().int().positive(),
         date: z.string().datetime().optional(),
@@ -652,7 +652,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/owed/:id/share', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         email: z.string().email(),
       }),

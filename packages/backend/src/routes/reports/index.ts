@@ -479,7 +479,6 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [
       accountsData,
-      cardsData,
       expensesAgg,
       incomeAgg,
       pendingBillsAgg,
@@ -491,7 +490,6 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
       upcomingInstallmentsData,
     ] = await Promise.all([
       app.db.select().from(bankAccount).where(and(eq(bankAccount.userId, userId), eq(bankAccount.status, 'ACTIVE'))),
-      app.db.select().from(creditCard).where(and(eq(creditCard.userId, userId), eq(creditCard.status, 'ACTIVE'))),
       app.db.select({ sum: sum(transaction.amountCents) })
         .from(transaction)
         .where(and(eq(transaction.userId, userId), eq(transaction.type, 'EXPENSE'), gte(transaction.date, startOfMonth), lte(transaction.date, endOfMonth))),

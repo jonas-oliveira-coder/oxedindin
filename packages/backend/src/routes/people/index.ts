@@ -60,7 +60,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.get('/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     const [personRecord] = await app.db.select()
@@ -97,7 +97,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         name: z.string().min(1).max(100).optional(),
         email: z.string().email().nullable().optional(),
@@ -143,7 +143,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.delete('/:id', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     await app.db.delete(person).where(eq(person.id, request.params.id));

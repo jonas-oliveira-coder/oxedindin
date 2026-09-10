@@ -70,7 +70,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -92,9 +92,9 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id/transactions', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       querystring: paginationSchema.merge(dateRangeSchema).merge(z.object({
-        categoryId: z.string().cuid().optional(),
+        categoryId: z.string().uuid().optional(),
         type: z.enum(['EXPENSE', 'INCOME', 'TRANSFER']).optional(),
       })),
     },
@@ -175,7 +175,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {

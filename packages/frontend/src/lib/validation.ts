@@ -71,7 +71,7 @@ export const createCardSchema = z.object({
   limit: z.number().int().positive('Limite deve ser positivo'),
   closingDay: z.number().int().min(1).max(31),
   dueDay: z.number().int().min(1).max(31),
-  accountId: z.string().cuid().optional(),
+  accountId: z.string().uuid().optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -83,7 +83,7 @@ export const updateCardSchema = z.object({
   limit: z.number().int().positive().optional(),
   closingDay: z.number().int().min(1).max(31).optional(),
   dueDay: z.number().int().min(1).max(31).optional(),
-  accountId: z.string().cuid().nullable().optional(),
+  accountId: z.string().uuid().nullable().optional(),
   status: cardStatusSchema.optional(),
   notes: z.string().max(500).nullable().optional(),
 });
@@ -95,11 +95,11 @@ export const createTransactionSchema = z.object({
   description: z.string().min(1, 'Descrição é obrigatória').max(200),
   amount: z.number().int().positive('Valor deve ser positivo'),
   type: transactionTypeSchema,
-  categoryId: z.string().cuid().optional(),
+  categoryId: z.string().uuid().optional(),
   date: z.string().datetime(),
   paymentMethod: paymentMethodSchema,
-  accountId: z.string().cuid().optional(),
-  cardId: z.string().cuid().optional(),
+  accountId: z.string().uuid().optional(),
+  cardId: z.string().uuid().optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -109,8 +109,8 @@ export const createInstallmentPlanSchema = z.object({
   installmentsCount: z.number().int().positive('Quantidade de parcelas deve ser positiva').max(60),
   startDate: z.string().datetime(),
   firstInvoiceDate: z.string().datetime(),
-  cardId: z.string().cuid(),
-  categoryId: z.string().cuid().optional(),
+  cardId: z.string().uuid(),
+  categoryId: z.string().uuid().optional(),
 });
 
 export const recurringFrequencySchema = z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']);
@@ -120,13 +120,13 @@ export const dateTypeSchema = z.enum(['FIXED', 'ADJUSTABLE']);
 export const createRecurringBillSchema = z.object({
   description: z.string().min(1, 'Descrição é obrigatória').max(200),
   amount: z.number().int().positive('Valor deve ser positivo'),
-  categoryId: z.string().cuid().optional(),
+  categoryId: z.string().uuid().optional(),
   frequency: recurringFrequencySchema,
   dueDay: z.number().int().min(1).max(31),
   startDate: z.string().datetime(),
   endDate: z.string().datetime().optional(),
-  accountId: z.string().cuid().optional(),
-  cardId: z.string().cuid().optional(),
+  accountId: z.string().uuid().optional(),
+  cardId: z.string().uuid().optional(),
   dateType: dateTypeSchema.default('FIXED'),
 });
 
@@ -135,10 +135,10 @@ export const billStatusSchema = z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED
 export const createBillSchema = z.object({
   description: z.string().min(1, 'Descrição é obrigatória').max(200),
   amount: z.number().int().positive('Valor deve ser positivo'),
-  categoryId: z.string().cuid().optional(),
+  categoryId: z.string().uuid().optional(),
   dueDate: z.string().datetime(),
   paymentMethod: paymentMethodSchema.optional(),
-  accountId: z.string().cuid().optional(),
+  accountId: z.string().uuid().optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -150,7 +150,7 @@ export const createDebtSchema = z.object({
   totalAmount: z.number().int().positive('Valor total deve ser positivo'),
   dueDate: z.string().datetime(),
   type: debtTypeSchema,
-  relatedPersonId: z.string().cuid().optional(),
+  relatedPersonId: z.string().uuid().optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -199,8 +199,8 @@ export const settingsSchema = z.object({
   currency: z.literal('BRL').optional(),
   dateFormat: z.string().optional(),
   firstDayOfWeek: z.union([z.literal(0), z.literal(1)]).optional(),
-  defaultAccountId: z.string().cuid().nullable().optional(),
-  defaultCardId: z.string().cuid().nullable().optional(),
+  defaultAccountId: z.string().uuid().nullable().optional(),
+  defaultCardId: z.string().uuid().nullable().optional(),
   dashboardLayout: z.array(z.string()).optional(),
 });
 

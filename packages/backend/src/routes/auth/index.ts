@@ -431,7 +431,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete('/passkeys/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -457,7 +457,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete('/sessions/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {

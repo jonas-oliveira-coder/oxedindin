@@ -75,29 +75,8 @@ const securityRoutes: FastifyPluginAsyncZod = async (app) => {
       }),
     },
   }, async (request: any, reply: any) => {
-    const { length, uppercase, lowercase, numbers, symbols } = request.body;
-
-    let charset = '';
-    if (uppercase) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    if (lowercase) charset += 'abcdefghijklmnopqrstuvwxyz';
-    if (numbers) charset += '0123456789';
-    if (symbols) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-
-    if (!charset) throw app.httpErrors.badRequest('At least one character type must be selected');
-
-    const array = new Uint8Array(length);
-    crypto.getRandomValues(array);
-
-    let password = '';
-    for (let i = 0; i < length; i++) {
-      password += charset[array[i] % charset.length];
-    }
-
-    if (uppercase && !/[A-Z]/.test(password)) password = password.slice(0, -1) + charset[array[0] % 26];
-    if (lowercase && !/[a-z]/.test(password)) password = password.slice(0, -1) + charset[array[1] % 26 + 26];
-    if (numbers && !/[0-9]/.test(password)) password = password.slice(0, -1) + charset[array[2] % 10 + 52];
-    if (symbols && !/[!@#$%^&*()_+\-=[]{}|;:,.<>?]/.test(password)) password = password.slice(0, -1) + charset[array[3] % 32 + 62];
-
+    const body = request.body as { length?: number; uppercase?: boolean; lowercase?: boolean; numbers?: boolean; symbols?: boolean };
+    const password = await app.authService.generateSecurePassword(body);
     return { password };
   });
 };

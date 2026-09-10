@@ -37,7 +37,7 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.patch('/:id/read', {
-    schema: { params: z.object({ id: z.string().cuid() }) },
+    schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
     const [notificationRecord] = await app.db.select()

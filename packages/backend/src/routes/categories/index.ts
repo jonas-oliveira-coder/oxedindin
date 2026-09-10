@@ -71,7 +71,7 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         name: z.string().min(1).max(50).optional(),
         icon: z.string().max(50).nullable().optional(),
@@ -114,7 +114,7 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {

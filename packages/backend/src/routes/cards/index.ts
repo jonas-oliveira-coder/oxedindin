@@ -92,7 +92,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -119,7 +119,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id/invoices', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       querystring: paginationSchema,
     },
     preHandler: [app.authenticate],
@@ -159,7 +159,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id/invoices/current', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -211,7 +211,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id/invoices/next', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -245,7 +245,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id/installments', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       querystring: paginationSchema,
     },
     preHandler: [app.authenticate],
@@ -368,7 +368,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {

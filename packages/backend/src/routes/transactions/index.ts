@@ -52,9 +52,9 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     schema: {
       querystring: paginationSchema.merge(dateRangeSchema).merge(z.object({
-        categoryId: z.string().cuid().optional(),
-        accountId: z.string().cuid().optional(),
-        cardId: z.string().cuid().optional(),
+        categoryId: z.string().uuid().optional(),
+        accountId: z.string().uuid().optional(),
+        cardId: z.string().uuid().optional(),
         type: z.enum(['EXPENSE', 'INCOME', 'TRANSFER']).optional(),
       })),
     },
@@ -276,8 +276,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         installmentsCount: z.number().int().positive().max(60),
         startDate: z.string().datetime(),
         firstInvoiceDate: z.string().datetime(),
-        cardId: z.string().cuid(),
-        categoryId: z.string().cuid().optional(),
+        cardId: z.string().uuid(),
+        categoryId: z.string().uuid().optional(),
       }),
     },
     preHandler: [app.authenticate],
@@ -392,7 +392,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -424,11 +424,11 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         description: z.string().min(1).max(200).optional(),
         amount: z.number().int().optional(),
-        categoryId: z.string().cuid().nullable().optional(),
+        categoryId: z.string().uuid().nullable().optional(),
         date: z.string().datetime().optional(),
         paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).optional(),
         notes: z.string().max(500).nullable().optional(),
@@ -469,7 +469,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {

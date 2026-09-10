@@ -8,7 +8,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     schema: {
       querystring: paginationSchema.merge(z.object({
-        cardId: z.string().cuid().optional(),
+        cardId: z.string().uuid().optional(),
         status: z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED']).optional(),
       })),
     },
@@ -108,7 +108,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -157,10 +157,10 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.patch('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         description: z.string().min(1).max(200).optional(),
-        categoryId: z.string().cuid().nullable().optional(),
+        categoryId: z.string().uuid().nullable().optional(),
       }),
     },
     preHandler: [app.authenticate],
@@ -212,7 +212,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.delete('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -281,12 +281,12 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post('/:planId/installments/:number/pay', {
     schema: {
       params: z.object({
-        planId: z.string().cuid(),
+        planId: z.string().uuid(),
         number: z.coerce.number().int().positive(),
       }),
       body: z.object({
         amount: z.number().int().positive().optional(),
-        accountId: z.string().cuid().optional(),
+        accountId: z.string().uuid().optional(),
         date: z.string().datetime().optional(),
       }),
     },

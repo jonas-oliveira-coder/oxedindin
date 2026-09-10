@@ -8,7 +8,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     schema: {
       querystring: paginationSchema.merge(z.object({
-        cardId: z.string().cuid().optional(),
+        cardId: z.string().uuid().optional(),
         status: z.enum(['OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID', 'OVERDUE']).optional(),
       })),
     },
@@ -115,7 +115,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get('/:id', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
@@ -178,10 +178,10 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post('/:id/pay', {
     schema: {
-      params: z.object({ id: z.string().cuid() }),
+      params: z.object({ id: z.string().uuid() }),
       body: z.object({
         amount: z.number().int().positive(),
-        accountId: z.string().cuid().optional(),
+        accountId: z.string().uuid().optional(),
         date: z.string().datetime().optional(),
         notes: z.string().max(500).optional(),
       }),

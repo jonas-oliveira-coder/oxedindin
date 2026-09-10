@@ -109,3 +109,61 @@ describe('settingsSchema', () => {
     expect(settingsSchema.safeParse({ firstDayOfWeek: 2 }).success).toBe(false);
   });
 });
+
+describe('uuid id fields', () => {
+  const uuid = 'a1b2c3d4-1234-5678-9abc-def012345678';
+
+  it('createCardSchema accepts a UUID accountId', () => {
+    const result = createCardSchema.safeParse({
+      name: 'Visa Platinum',
+      institution: 'Nubank',
+      brand: 'VISA',
+      last4: '1234',
+      limit: 100000,
+      closingDay: 5,
+      dueDay: 10,
+      accountId: uuid,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('createCardSchema rejects a non-UUID accountId', () => {
+    const result = createCardSchema.safeParse({
+      name: 'Visa Platinum',
+      institution: 'Nubank',
+      brand: 'VISA',
+      last4: '1234',
+      limit: 100000,
+      closingDay: 5,
+      dueDay: 10,
+      accountId: 'ckwxyz1234567890abcdef',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('createTransactionSchema accepts UUID references', () => {
+    const result = createTransactionSchema.safeParse({
+      description: 'Supermercado',
+      amount: 10050,
+      type: 'EXPENSE',
+      date: new Date().toISOString(),
+      paymentMethod: 'PIX',
+      accountId: uuid,
+      cardId: uuid,
+      categoryId: uuid,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('createTransactionSchema rejects a non-UUID accountId', () => {
+    const result = createTransactionSchema.safeParse({
+      description: 'Supermercado',
+      amount: 10050,
+      type: 'EXPENSE',
+      date: new Date().toISOString(),
+      paymentMethod: 'PIX',
+      accountId: 'not-a-uuid',
+    });
+    expect(result.success).toBe(false);
+  });
+});
