@@ -20,7 +20,7 @@ COPY --from=shared-builder /app/packages/shared/dist ./packages/shared/dist
 COPY packages/backend/ ./packages/backend/
 COPY packages/shared/ ./packages/shared/
 
-RUN cd packages/backend && npm run db:generate && npm run build
+RUN cd packages/backend && npm run build
 
 # Stage 3: Build frontend
 FROM node:20-alpine AS frontend-builder
@@ -45,7 +45,6 @@ ENV NODE_ENV=production
 COPY --from=backend-builder /app/packages/backend/dist ./dist
 COPY --from=backend-builder /app/packages/backend/node_modules ./node_modules
 COPY --from=backend-builder /app/packages/backend/package.json ./package.json
-COPY --from=backend-builder /app/packages/backend/prisma ./prisma
 
 # Copy frontend build to public folder
 COPY --from=frontend-builder /app/packages/frontend/dist ./public

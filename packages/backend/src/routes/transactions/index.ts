@@ -445,8 +445,13 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       throw app.httpErrors.notFound('Transaction not found');
     }
 
+    const { amount, date, ...updateRest } = request.body;
+    const updateData: any = { ...updateRest };
+    if (amount !== undefined) updateData.amountCents = amount;
+    if (date !== undefined) updateData.date = new Date(date);
+
     const [updatedTransaction] = await app.db.update(transaction)
-      .set(request.body)
+      .set(updateData)
       .where(eq(transaction.id, request.params.id))
       .returning();
 

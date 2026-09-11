@@ -6,6 +6,12 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { sql } from 'drizzle-orm';
 import { env } from './utils/env.js';
 
+// JSON.stringify cannot serialize BigInt by default. Database money columns
+// are mapped to BigInt by Drizzle; patch toJSON so responses serialize safely.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = join(__filename, '..');
 

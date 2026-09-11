@@ -43,12 +43,12 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: createAccountSchema,
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const body = request.body;
+    const { initialBalance, ...rest } = request.body;
     const [account] = await app.db.insert(bankAccount).values({
-      ...body,
+      ...rest,
       userId: request.authUser!.id,
-      initialBalanceCents: body.initialBalance,
-      balanceCents: body.initialBalance,
+      initialBalanceCents: initialBalance,
+      balanceCents: initialBalance,
     }).returning();
 
     await app.auditLog({

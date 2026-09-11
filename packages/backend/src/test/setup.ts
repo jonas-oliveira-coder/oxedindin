@@ -1,5 +1,11 @@
 import 'dotenv/config';
 
+// Match production behavior: database money columns are BigInt, and
+// JSON.stringify cannot serialize them by default.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://oxedindin:oxedindin@localhost:5432/oxedindin_test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-key-min-32-chars-long';

@@ -214,8 +214,13 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
     if (!existing) throw app.httpErrors.notFound('Recurring bill not found');
 
+    const { amount, endDate, ...updateRest } = request.body;
+    const updateData: any = { ...updateRest };
+    if (amount !== undefined) updateData.amountCents = amount;
+    if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+
     const [updatedBill] = await app.db.update(recurringBill)
-      .set(request.body)
+      .set(updateData)
       .where(eq(recurringBill.id, request.params.id))
       .returning();
 
@@ -467,8 +472,13 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
     if (!existing) throw app.httpErrors.notFound('Bill not found');
 
+    const { amount, dueDate, ...updateRest } = request.body;
+    const updateData: any = { ...updateRest };
+    if (amount !== undefined) updateData.amountCents = amount;
+    if (dueDate !== undefined) updateData.dueDate = new Date(dueDate);
+
     const [updatedBill] = await app.db.update(bill)
-      .set(request.body)
+      .set(updateData)
       .where(eq(bill.id, request.params.id))
       .returning();
 

@@ -202,11 +202,11 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     });
 
     return {
-      ...planWithRelations![0].installmentPlan,
-      card: planWithRelations![0].card,
-      category: planWithRelations![0].category,
-      totalAmount: { cents: Number(planWithRelations![0].installmentPlan.totalAmountCents), currency: 'BRL' as const },
-      installmentValue: { cents: Number(planWithRelations![0].installmentPlan.installmentValueCents), currency: 'BRL' as const },
+      ...planWithRelations!.installmentPlan,
+      card: planWithRelations!.card,
+      category: planWithRelations!.category,
+      totalAmount: { cents: Number(planWithRelations!.installmentPlan.totalAmountCents), currency: 'BRL' as const },
+      installmentValue: { cents: Number(planWithRelations!.installmentPlan.installmentValueCents), currency: 'BRL' as const },
     };
   });
 

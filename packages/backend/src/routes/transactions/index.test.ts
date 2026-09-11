@@ -1,0 +1,123 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import transactionsRoutes from './index.js';
+import { buildApp, TEST_USER_ID, OTHER_USER_ID } from '../../test/helpers.js';
+import { transaction } from '../../db/schema/index.js';
+
+describe('transactions routes', () => {
+  let app: any;
+  let db: any;
+
+  beforeEach(async () => {
+    const harness = await buildApp(transactionsRoutes, '/api/v1/transactions');
+    app = harness.app;
+    db = harness.db;
+  });
+
+  it('creates a transaction mapping amount to amountCents', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Supermercado',
+        amount: 10050,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'PIX',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.description).toBe('Supermercado');
+    expect(body.amount).toEqual({ cents: 10050, currency: 'BRL' });
+
+    const rows = db.all(transaction);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amountCents).toBe(10050);
+    expect(rows[0].userId).toBe(TEST_USER_ID);
+    expect(rows[0]).not.toHaveProperty('amount');
+  });
+
+  it('rejects a create with an unknown category', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Teste',
+        amount: 100,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'CASH',
+        categoryId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('updates a transaction mapping amount and date', async () => {
+    db.seed(transaction, [{
+      id: '99999999-9999-4999-8999-999999999999',
+      userId: TEST_USER_ID,
+      description: 'Antiga',
+      amountCents: 1000,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'CASH',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const newDate = new Date('2025-01-01T00:00:00.000Z');
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/transactions/99999999-9999-4999-8999-999999999999',
+      payload: { description: 'Nova', amount: 2500, date: newDate.toISOString() },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().amount).toEqual({ cents: 2500, currency: 'BRL' });
+
+    const rows = db.all(transaction);
+    expect(rows[0].amountCents).toBe(2500);
+    expect(rows[0].description).toBe('Nova');
+    expect(rows[0].date).toEqual(newDate);
+    expect(rows[0]).not.toHaveProperty('amount');
+  });
+
+  it('returns 404 when getting a transaction owned by another user', async () => {
+    db.seed(transaction, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      userId: OTHER_USER_ID,
+      description: 'Outra',
+      amountCents: 1000,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'CASH',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/transactions/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('deletes a transaction', async () => {
+    db.seed(transaction, [{
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      userId: TEST_USER_ID,
+      description: 'Remover',
+      amountCents: 500,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'PIX',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/transactions/cccccccc-cccc-4ccc-8ccc-cccccccccccc' });
+    expect(res.statusCode).toBe(200);
+    expect(db.all(transaction)).toHaveLength(0);
+  });
+});

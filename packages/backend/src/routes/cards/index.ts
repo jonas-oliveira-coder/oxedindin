@@ -56,11 +56,12 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       }
     }
 
+    const { limit, ...rest } = body;
     const [card] = await app.db.insert(creditCard).values({
-      ...body,
+      ...rest,
       userId: request.authUser!.id,
-      limitCents: body.limit,
-      availableLimitCents: body.limit,
+      limitCents: limit,
+      availableLimitCents: limit,
     }).returning();
 
     const [cardWithAccount] = await app.db.select({

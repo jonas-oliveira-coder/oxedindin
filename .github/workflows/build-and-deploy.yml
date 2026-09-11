@@ -130,8 +130,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Coolify webhook
-        if: ${{ secrets.COOLIFY_WEBHOOK_URL != '' }}
+        env:
+          COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
         run: |
-          curl -X POST ${{ secrets.COOLIFY_WEBHOOK_URL }} \
-            -H "Content-Type: application/json" \
-            -d '{"image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"}'
+          if [ -n "$COOLIFY_WEBHOOK_URL" ]; then
+            curl -X POST "$COOLIFY_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d '{"image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"}'
+          else
+            echo "COOLIFY_WEBHOOK_URL not set; skipping webhook"
+          fi

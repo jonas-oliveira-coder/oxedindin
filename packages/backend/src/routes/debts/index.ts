@@ -199,8 +199,8 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const updateData = { ...request.body };
     if (updateData.totalAmount !== undefined) {
       const paid = Number(existing.paidAmountCents);
-      updateData.totalAmountCents = updateData.totalAmount;
-      updateData.remainingAmountCents = updateData.totalAmount - paid;
+      updateData.totalAmountCents = BigInt(updateData.totalAmount);
+      updateData.remainingAmountCents = BigInt(updateData.totalAmount - paid);
       delete updateData.totalAmount;
     }
 
@@ -548,8 +548,8 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const updateData = { ...request.body };
     if (updateData.totalAmount !== undefined) {
       const paid = Number(existing.debt.paidAmountCents);
-      updateData.totalAmountCents = updateData.totalAmount;
-      updateData.remainingAmountCents = updateData.totalAmount - paid;
+      updateData.totalAmountCents = BigInt(updateData.totalAmount);
+      updateData.remainingAmountCents = BigInt(updateData.totalAmount - paid);
       delete updateData.totalAmount;
     }
 
