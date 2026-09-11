@@ -47,12 +47,12 @@ services:
       JWT_SECRET: ${SERVICE_PASSWORD_JWT}
       JWT_REFRESH_SECRET: ${SERVICE_PASSWORD_JWT_REFRESH}
       COOKIE_SECRET: ${SERVICE_PASSWORD_COOKIE}
-      CORS_ORIGIN: ${FRONTEND_URL}
-      API_URL: ${API_URL}
-      FRONTEND_URL: ${FRONTEND_URL}
-      WEB_AUTHN_RP_ID: ${WEB_AUTHN_RP_ID}
+      CORS_ORIGIN: ${FRONTEND_URL:-https://oxedindin.jonas.qzz.io}
+      API_URL: ${API_URL:-https://api.oxedindin.jonas.qzz.io}
+      FRONTEND_URL: ${FRONTEND_URL:-https://oxedindin.jonas.qzz.io}
+      WEB_AUTHN_RP_ID: ${WEB_AUTHN_RP_ID:-oxedindin.jonas.qzz.io}
       WEB_AUTHN_RP_NAME: ${WEB_AUTHN_RP_NAME:-OxeDinDin}
-      WEB_AUTHN_ORIGIN: ${FRONTEND_URL}
+      WEB_AUTHN_ORIGIN: ${FRONTEND_URL:-https://oxedindin.jonas.qzz.io}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     expose:
@@ -70,9 +70,9 @@ services:
     pull_policy: always
     restart: always
     environment:
-      VITE_ALLOWED_HOSTS: ${FRONTEND_HOST}
+      VITE_ALLOWED_HOSTS: ${FRONTEND_HOST:-oxedindin.jonas.qzz.io}
     expose:
-      - "5173"
+      - "80"
     networks:
       - coolify
     depends_on:

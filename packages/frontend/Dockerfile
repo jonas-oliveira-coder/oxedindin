@@ -25,15 +25,9 @@ COPY . .
 RUN npm run build --workspace=@oxedindin/frontend
 
 # Production image
-FROM base AS runner
-WORKDIR /app
+FROM nginx:1.27-alpine AS runner
 
-ENV NODE_ENV=production
+COPY --from=builder /app/packages/frontend/dist /usr/share/nginx/html
+COPY packages/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-COPY --from=builder /app/packages/frontend/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages/frontend/package.json ./package.json
-
-EXPOSE 5173
-
-CMD ["npx", "vite", "preview", "--host", "--port", "5173"]
+EXPOSE 80

@@ -5,9 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const allowedHosts = (process.env.VITE_ALLOWED_HOSTS || '')
+const allowedHosts = (process.env.VITE_ALLOWED_HOSTS || process.env.FRONTEND_HOST || '')
   .split(',')
   .map((host) => host.trim())
+  .map((host) => host.replace(/^https?:\/\//, '').split('/')[0])
   .filter(Boolean);
 
 export default defineConfig({

@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from '@/components/ui/use-toast';
 import { loginSchema, type LoginInput } from '@/lib/validation';
 import { useAuth } from '@/hooks/use-auth';
+import { Logo } from '@/components/shared/logo';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 export function LoginPage() {
@@ -47,13 +48,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-muted/50 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary">
-            <svg className="h-7 w-7 text-primary-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
-          </div>
+          <Logo variant="wordmark" className="mx-auto mb-4 h-28 w-64" />
           <CardTitle className="text-2xl">Entrar no OxeDinDin</CardTitle>
           <CardDescription>Gerencie suas finanças com segurança</CardDescription>
         </CardHeader>

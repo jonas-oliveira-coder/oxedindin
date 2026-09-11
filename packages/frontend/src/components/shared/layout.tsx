@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { Logo } from '@/components/shared/logo';
 import {
   LayoutDashboard,
   CreditCard,
@@ -72,7 +73,7 @@ export function Layout() {
         )}
       >
         <div className="flex h-16 items-center justify-between px-4 border-b">
-          <h1 className="text-xl font-bold text-primary">OxeDinDin</h1>
+          <Logo className="h-10 w-10" />
           <button
             className="lg:hidden p-2 rounded-md hover:bg-accent"
             onClick={() => setSidebarOpen(false)}
