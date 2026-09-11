@@ -1,5 +1,5 @@
 # Exemplo de produção para o Coolify.
-# O backend e o frontend são construídos a partir deste repositório.
+# O backend e o frontend são puxados do GHCR.
 # PostgreSQL e Redis são baixados das imagens oficiais.
 # Configure as variáveis no Coolify antes do deploy.
 
@@ -35,10 +35,8 @@ services:
       retries: 5
 
   backend:
-    image: oxedindin-backend:production
-    build:
-      context: .
-      dockerfile: packages/backend/Dockerfile
+    image: ghcr.io/jonas-oliveira-coder/oxedindin-backend:latest
+    pull_policy: always
     restart: always
     environment:
       NODE_ENV: production
@@ -68,12 +66,8 @@ services:
         condition: service_healthy
 
   frontend:
-    image: oxedindin-frontend:production
-    build:
-      context: .
-      dockerfile: packages/frontend/Dockerfile
-      args:
-        VITE_API_URL: ${API_URL}
+    image: ghcr.io/jonas-oliveira-coder/oxedindin-frontend:latest
+    pull_policy: always
     restart: always
     expose:
       - "5173"
