@@ -15,9 +15,10 @@ RUN npm ci --workspaces --include-workspace-root --filter @oxedindin/frontend...
 FROM base AS builder
 WORKDIR /app
 
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/frontend/node_modules ./packages/frontend/node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 
 COPY . .
 

@@ -1,0 +1,91 @@
+# Exemplo de produção para o Coolify.
+# O backend e o frontend são construídos a partir deste repositório.
+# PostgreSQL e Redis são baixados das imagens oficiais.
+# Configure as variáveis no Coolify antes do deploy.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oxedindin}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
+      POSTGRES_DB: ${POSTGRES_DB:-oxedindin_prod}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    networks:
+      - coolify
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oxedindin} -d ${POSTGRES_DB:-oxedindin_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - coolify
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: oxedindin-backend:production
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oxedindin}:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/${POSTGRES_DB:-oxedindin_prod}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${SERVICE_PASSWORD_JWT}
+      JWT_REFRESH_SECRET: ${SERVICE_PASSWORD_JWT_REFRESH}
+      COOKIE_SECRET: ${SERVICE_PASSWORD_COOKIE}
+      CORS_ORIGIN: ${FRONTEND_URL}
+      API_URL: ${API_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      WEB_AUTHN_RP_ID: ${WEB_AUTHN_RP_ID}
+      WEB_AUTHN_RP_NAME: ${WEB_AUTHN_RP_NAME:-OxeDinDin}
+      WEB_AUTHN_ORIGIN: ${FRONTEND_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    expose:
+      - "3000"
+    networks:
+      - coolify
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    image: oxedindin-frontend:production
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+      args:
+        VITE_API_URL: ${API_URL}
+    restart: always
+    expose:
+      - "5173"
+    networks:
+      - coolify
+    depends_on:
+      - backend
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+
+networks:
+  coolify:
+    external: true
