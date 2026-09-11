@@ -125,30 +125,43 @@ npm run docker:run       # Executa container localmente
 
 ## 🏗️ Deploy em Produção
 
+O compose de exemplo para o Coolify está em
+[docker-compose.coolify.example.yml](docker-compose.coolify.example.yml). Ele usa as
+imagens pré-compiladas do GHCR e mantém PostgreSQL e Redis na rede externa `coolify`.
+
 ### Coolify + GHCR
 
-1. Configure os secrets no GitHub:
+1. No servidor do Coolify, crie a rede externa caso ela ainda não exista:
+
+   ```bash
+   docker network create coolify
+   ```
+
+2. Crie um recurso **Docker Compose** no Coolify e use o conteúdo de
+   `docker-compose.coolify.example.yml`.
+
+3. Configure as variáveis de ambiente no Coolify:
+
+   - `SERVICE_PASSWORD_POSTGRES`
+   - `SERVICE_PASSWORD_JWT`
+   - `SERVICE_PASSWORD_JWT_REFRESH`
+   - `SERVICE_PASSWORD_COOKIE`
+   - `FRONTEND_URL` (por exemplo, `https://app.seudominio.com`)
+   - `API_URL` (por exemplo, `https://api.seudominio.com`)
+   - `GOOGLE_CLIENT_ID` (opcional)
+   - `GOOGLE_CLIENT_SECRET` (opcional)
+
+4. Configure o domínio e a porta `5173` no serviço `frontend`. Se publicar a API
+   separadamente, configure o domínio e a porta `3000` no serviço `backend`.
+
+5. Configure os secrets no GitHub para o workflow de publicação:
 
    - `COOLIFY_WEBHOOK_URL` - Webhook do Coolify
    - `COOLIFY_TOKEN` - Token de autenticação (se necessário)
-2. No Coolify, crie um recurso **Docker Image**:
 
-   ```
-   ghcr.io/seu-usuario/oxedindin:latest
-   ```
-3. Configure as variáveis de ambiente no Coolify:
-
-   - `DATABASE_URL`
-   - `REDIS_URL`
-   - `JWT_SECRET`
-   - `JWT_REFRESH_SECRET`
-   - `COOKIE_SECRET`
-   - `WEB_AUTHN_RP_ID`
-   - `WEB_AUTHN_RP_NAME`
-   - `WEB_AUTHN_ORIGIN`
-   - `CORS_ORIGIN`
-   - `FRONTEND_URL`
-4. O deploy é automático no push para `main`/`master`.
+O frontend é uma aplicação Vite estática. Portanto, `VITE_API_URL` precisa estar
+definido durante o build da imagem do frontend; definir essa variável apenas no
+runtime do compose não altera o JavaScript já compilado.
 
 ## 🔐 Segurança
 

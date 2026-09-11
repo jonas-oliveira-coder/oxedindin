@@ -78,7 +78,7 @@ services:
       - ./packages/frontend:/app/packages/frontend
       - ./packages/shared:/app/packages/shared
     command: sh -c "npm run dev -- --host"
-
+  
 volumes:
   postgres_data:
   redis_data:
