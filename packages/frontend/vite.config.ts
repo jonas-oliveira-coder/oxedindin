@@ -5,6 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const allowedHosts = (process.env.VITE_ALLOWED_HOSTS || '')
+  .split(',')
+  .map((host) => host.trim())
+  .filter(Boolean);
 
 export default defineConfig({
   plugins: [react()],
@@ -17,6 +21,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    allowedHosts,
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
@@ -27,6 +32,11 @@ export default defineConfig({
         ws: true,
       },
     },
+  },
+  preview: {
+    port: 5173,
+    host: true,
+    allowedHosts,
   },
   build: {
     outDir: 'dist',

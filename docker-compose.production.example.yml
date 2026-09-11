@@ -69,6 +69,8 @@ services:
     image: ghcr.io/jonas-oliveira-coder/oxedindin-frontend:latest
     pull_policy: always
     restart: always
+    environment:
+      VITE_ALLOWED_HOSTS: ${FRONTEND_HOST}
     expose:
       - "5173"
     networks:
