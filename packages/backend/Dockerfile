@@ -25,6 +25,7 @@ ENV NODE_ENV=production
 
 COPY --from=builder /repo/packages/backend/dist ./dist
 COPY --from=builder /repo/packages/backend/drizzle ./drizzle
+COPY --from=builder /repo/node_modules ./node_modules
 COPY --from=builder /repo/packages/backend/node_modules ./node_modules
 COPY --from=builder /repo/packages/backend/package.json ./package.json
 
