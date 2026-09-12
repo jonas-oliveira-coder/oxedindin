@@ -294,20 +294,30 @@ export class AuthService {
     if (symbols) charset += SYMBOLS;
 
     if (!charset) throw new Error('At least one character type must be selected');
+    const requiredCharsets = [
+      uppercase ? UPPER : '',
+      lowercase ? LOWER : '',
+      numbers ? NUMBERS : '',
+      symbols ? SYMBOLS : '',
+    ].filter(Boolean);
+
+    if (length < requiredCharsets.length) {
+      throw new Error('Password length is too short for the selected character types');
+    }
 
     const array = new Uint8Array(length);
     crypto.getRandomValues(array);
 
-    let password = '';
-    for (let i = 0; i < length; i++) {
-      password += charset[array[i] % charset.length];
+    const characters = requiredCharsets.map((characterSet, index) => characterSet[array[index] % characterSet.length]);
+    for (let i = requiredCharsets.length; i < length; i++) {
+      characters.push(charset[array[i] % charset.length]);
     }
 
-    if (uppercase && !/[A-Z]/.test(password)) password = password.slice(0, -1) + UPPER[array[0] % UPPER.length];
-    if (lowercase && !/[a-z]/.test(password)) password = password.slice(0, -1) + LOWER[array[1] % LOWER.length];
-    if (numbers && !/[0-9]/.test(password)) password = password.slice(0, -1) + NUMBERS[array[2] % NUMBERS.length];
-    if (symbols && !/[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/.test(password)) password = password.slice(0, -1) + SYMBOLS[array[3] % SYMBOLS.length];
+    for (let i = characters.length - 1; i > 0; i--) {
+      const swapIndex = array[i] % (i + 1);
+      [characters[i], characters[swapIndex]] = [characters[swapIndex], characters[i]];
+    }
 
-    return password;
+    return characters.join('');
   }
 }
