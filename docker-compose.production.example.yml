@@ -1,11 +1,17 @@
 # Exemplo de produção para o Coolify.
-# O backend e o frontend são puxados do GHCR.
-# PostgreSQL e Redis são baixados das imagens oficiais.
-# Configure as variáveis no Coolify antes do deploy.
+# Backend e frontend são puxados do GHCR (imagens públicas).
+# PostgreSQL e Redis usam as imagens oficiais.
+#
+# Passos no Coolify:
+# 1. Crie um recurso "Docker Compose" (Empty ou via Git) e use este arquivo.
+# 2. No serviço `frontend`, defina um domínio no campo "Domains"
+#    (ex.: https://app.exemplo.com — sem porta, o nginx escuta na 80).
+# 3. Deploy. Coolify gera os segredos (SERVICE_PASSWORD_*) e deriva as URLs
+#    do backend a partir do domínio do frontend automaticamente.
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-oxedindin}
@@ -13,8 +19,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-oxedindin_prod}
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
-    networks:
-      - coolify
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oxedindin} -d ${POSTGRES_DB:-oxedindin_prod}"]
       interval: 10s
@@ -26,8 +30,6 @@ services:
     restart: always
     volumes:
       - redis_prod_data:/data
-    networks:
-      - coolify
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -47,18 +49,14 @@ services:
       JWT_SECRET: ${SERVICE_PASSWORD_JWT}
       JWT_REFRESH_SECRET: ${SERVICE_PASSWORD_JWT_REFRESH}
       COOKIE_SECRET: ${SERVICE_PASSWORD_COOKIE}
-      CORS_ORIGIN: ${FRONTEND_URL:-https://oxedindin.jonas.qzz.io}
-      API_URL: ${API_URL:-https://api.oxedindin.jonas.qzz.io}
-      FRONTEND_URL: ${FRONTEND_URL:-https://oxedindin.jonas.qzz.io}
-      WEB_AUTHN_RP_ID: ${WEB_AUTHN_RP_ID:-oxedindin.jonas.qzz.io}
+      CORS_ORIGIN: ${SERVICE_URL_FRONTEND}
+      API_URL: ${SERVICE_URL_FRONTEND}
+      FRONTEND_URL: ${SERVICE_URL_FRONTEND}
+      WEB_AUTHN_RP_ID: ${SERVICE_FQDN_FRONTEND}
       WEB_AUTHN_RP_NAME: ${WEB_AUTHN_RP_NAME:-OxeDinDin}
-      WEB_AUTHN_ORIGIN: ${FRONTEND_URL:-https://oxedindin.jonas.qzz.io}
+      WEB_AUTHN_ORIGIN: ${SERVICE_URL_FRONTEND}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-    expose:
-      - "3000"
-    networks:
-      - coolify
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,19 +67,11 @@ services:
     image: ghcr.io/jonas-oliveira-coder/oxedindin-frontend:latest
     pull_policy: always
     restart: always
-    environment:
-      VITE_ALLOWED_HOSTS: ${FRONTEND_HOST:-oxedindin.jonas.qzz.io}
     expose:
       - "80"
-    networks:
-      - coolify
     depends_on:
       - backend
 
 volumes:
   postgres_prod_data:
   redis_prod_data:
-
-networks:
-  coolify:
-    external: true

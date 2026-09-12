@@ -127,28 +127,19 @@ npm run docker:run       # Executa container localmente
 
 ### Coolify + GHCR
 
-1. Configure os secrets no GitHub:
+O deploy usa o arquivo `docker-compose.production.example.yml` e puxa as imagens do GHCR.
+
+**Pré-requisito (uma vez):** tornar os pacotes do GHCR públicos, pois o Coolify não consegue puxar imagens privadas sem credencial. Para cada pacote (`oxedindin-backend` e `oxedindin-frontend`), vá em GitHub → **Packages** → abra o pacote → **Package settings** → **Danger Zone → Change visibility → Public**.
+
+1. Configure o segredo no GitHub (opcional, para deploy automático):
 
    - `COOLIFY_WEBHOOK_URL` - Webhook do Coolify
-   - `COOLIFY_TOKEN` - Token de autenticação (se necessário)
-2. No Coolify, crie um recurso **Docker Image**:
+2. No Coolify, crie um recurso **Docker Compose** (Empty ou via Git) e use o `docker-compose.production.example.yml`.
+3. No serviço **`frontend`**, defina **um único domínio** no campo "Domains" (ex.: `https://app.exemplo.com` — sem porta, o nginx escuta na 80).
 
-   ```
-   ghcr.io/seu-usuario/oxedindin:latest
-   ```
-3. Configure as variáveis de ambiente no Coolify:
-
-   - `DATABASE_URL`
-   - `REDIS_URL`
-   - `JWT_SECRET`
-   - `JWT_REFRESH_SECRET`
-   - `COOKIE_SECRET`
-   - `WEB_AUTHN_RP_ID`
-   - `WEB_AUTHN_RP_NAME`
-   - `WEB_AUTHN_ORIGIN`
-   - `CORS_ORIGIN`
-   - `FRONTEND_URL`
-4. O deploy é automático no push para `main`/`master`.
+   O Coolify gera os segredos (`SERVICE_PASSWORD_*`) e deriva as URLs do backend (`CORS_ORIGIN`, `FRONTEND_URL`, `WEB_AUTHN_ORIGIN`, `WEB_AUTHN_RP_ID`, `API_URL`) automaticamente a partir desse domínio.
+4. Deploy. O frontend é o único serviço público; o nginx proxyfila `/api` e `/ws` para o backend internamente.
+5. O deploy automático acontece no push para `main`/`master` (via webhook).
 
 ## 🔐 Segurança
 
