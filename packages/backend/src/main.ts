@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { db } from './db/index.js';
 import { env } from './utils/env.js';
 
 // JSON.stringify cannot serialize BigInt by default. Database money columns
@@ -238,6 +240,8 @@ app.setErrorHandler(async (error, request, reply) => {
 });
 
 try {
+  await migrate(db, { migrationsFolder: join(__dirname, '../drizzle') });
+  app.log.info('Database migrations completed');
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   app.log.info(`Server listening on ${env.API_URL || `http://localhost:${env.PORT}`}`);
 } catch (err) {
