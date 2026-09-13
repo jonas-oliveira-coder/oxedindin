@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
 import { formatDateTime } from '@/lib/utils';
-import { Loader2, KeyRound, Smartphone, Fingerprint, ShieldCheck, Copy, Trash2, ScrollText } from 'lucide-react';
+import { KeyRound, Smartphone, Fingerprint, ShieldCheck, Copy, Trash2, ScrollText, Plus } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { changePasswordSchema, type ChangePasswordInput } from '@/lib/validation';
+import { FormField, PasswordInput } from '@/components/forms';
+import { registerPasskey, isPasskeySupported } from '@/lib/passkey';
 
 interface Device {
   id: string;
@@ -74,7 +75,7 @@ export function SecurityPage() {
       toast({ title: 'Senha alterada', description: 'Sua senha foi alterada com sucesso.' });
       changePasswordForm.reset();
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const generatePasswordMutation = useMutation({
@@ -83,7 +84,7 @@ export function SecurityPage() {
       return response.data.password as string;
     },
     onSuccess: (password) => setGeneratedPassword(password),
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const revokeSessionMutation = useMutation({
@@ -94,7 +95,21 @@ export function SecurityPage() {
       queryClient.invalidateQueries({ queryKey: ['devices'] });
       toast({ title: 'Sessão encerrada', description: 'Dispositivo removido com sucesso.' });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
+  });
+
+  const registerPasskeyMutation = useMutation({
+    mutationFn: async () => {
+      const start = await api.post('/auth/passkey/register/start');
+      const options = start.data;
+      const credential = await registerPasskey(options);
+      await api.post('/auth/passkey/register/finish', { challengeId: options.challengeId, credential });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['passkeys'] });
+      toast({ title: 'Passkey adicionada', description: 'Passkey registrada com sucesso.' });
+    },
+    onError: (error) => toast({ title: 'Falha ao adicionar passkey', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const revokePasskeyMutation = useMutation({
@@ -105,7 +120,7 @@ export function SecurityPage() {
       queryClient.invalidateQueries({ queryKey: ['passkeys'] });
       toast({ title: 'Passkey removida', description: 'Passkey removida com sucesso.' });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const copyPassword = async () => {
@@ -116,6 +131,14 @@ export function SecurityPage() {
   const toggleGenOption = (key: keyof typeof genOptions, value: boolean | number) => {
     setGenOptions((prev) => ({ ...prev, [key]: value }));
     setGeneratedPassword('');
+  };
+
+  const addPasskey = () => {
+    if (!isPasskeySupported()) {
+      toast({ title: 'Passkey indisponível', description: 'Seu navegador não suporta passkeys.', variant: 'destructive' });
+      return;
+    }
+    registerPasskeyMutation.mutate();
   };
 
   return (
@@ -131,19 +154,14 @@ export function SecurityPage() {
           <CardDescription>Use uma senha forte e única</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={changePasswordForm.handleSubmit((data) => changePasswordMutation.mutate(data))} className="space-y-4 max-w-md">
-            <div className="space-y-2">
-              <Label htmlFor="currentPassword">Senha atual</Label>
-              <Input id="currentPassword" type="password" {...changePasswordForm.register('currentPassword')} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="newPassword">Nova senha</Label>
-              <Input id="newPassword" type="password" {...changePasswordForm.register('newPassword')} />
-            </div>
-            <Button type="submit" disabled={changePasswordMutation.isPending}>
-              {changePasswordMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Alterar senha
-            </Button>
+          <form onSubmit={changePasswordForm.handleSubmit((data) => changePasswordMutation.mutate(data))} className="space-y-4 max-w-md" noValidate>
+            <FormField id="currentPassword" label="Senha atual" error={changePasswordForm.formState.errors.currentPassword?.message}>
+              <PasswordInput id="currentPassword" autoComplete="current-password" {...changePasswordForm.register('currentPassword')} />
+            </FormField>
+            <FormField id="newPassword" label="Nova senha" error={changePasswordForm.formState.errors.newPassword?.message} hint="A senha deve ter pelo menos 8 caracteres.">
+              <PasswordInput id="newPassword" autoComplete="new-password" {...changePasswordForm.register('newPassword')} />
+            </FormField>
+            <Button type="submit" loading={changePasswordMutation.isPending}>Alterar senha</Button>
           </form>
         </CardContent>
       </Card>
@@ -156,7 +174,7 @@ export function SecurityPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 max-w-2xl">
             <div className="space-y-2">
-              <Label htmlFor="genLength">Comprimento ({genOptions.length})</Label>
+              <span className="text-sm font-medium leading-none">Comprimento ({genOptions.length})</span>
               <Input
                 id="genLength"
                 type="number"
@@ -186,8 +204,7 @@ export function SecurityPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => generatePasswordMutation.mutate(genOptions)} disabled={generatePasswordMutation.isPending}>
-              {generatePasswordMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button onClick={() => generatePasswordMutation.mutate(genOptions)} loading={generatePasswordMutation.isPending}>
               Gerar senha
             </Button>
             {generatedPassword && (
@@ -208,8 +225,12 @@ export function SecurityPage() {
           <CardDescription>Chaves de acesso sem senha</CardDescription>
         </CardHeader>
         <CardContent>
+          <Button variant="outline" onClick={addPasskey} loading={registerPasskeyMutation.isPending}>
+            {!registerPasskeyMutation.isPending && <Plus className="mr-2 h-4 w-4" />}
+            Adicionar Passkey
+          </Button>
           {passkeys && passkeys.length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-3 mt-4">
               {passkeys.map((passkey) => (
                 <div key={passkey.id} className="flex items-center justify-between p-3 rounded-lg border">
                   <div>
@@ -219,14 +240,14 @@ export function SecurityPage() {
                       {passkey.lastUsedAt ? ` · Último uso ${formatDateTime(passkey.lastUsedAt)}` : ''}
                     </p>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => revokePasskeyMutation.mutate(passkey.id)}>
+                  <Button variant="ghost" size="icon" onClick={() => revokePasskeyMutation.mutate(passkey.id)} aria-label="Remover passkey">
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma passkey cadastrada.</p>
+            <p className="text-sm text-muted-foreground mt-4">Nenhuma passkey cadastrada.</p>
           )}
         </CardContent>
       </Card>
@@ -252,7 +273,7 @@ export function SecurityPage() {
                     <p className="text-xs text-muted-foreground">Ativa desde {formatDateTime(device.createdAt)}</p>
                   </div>
                   {!device.current && (
-                    <Button variant="ghost" size="icon" onClick={() => revokeSessionMutation.mutate(device.id)}>
+                    <Button variant="ghost" size="icon" onClick={() => revokeSessionMutation.mutate(device.id)} aria-label="Encerrar sessão">
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   )}

@@ -61,7 +61,8 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isRefreshRequest = originalRequest.url?.includes('/auth/refresh');
+    if (error.response?.status === 401 && !originalRequest._retry && !isRefreshRequest) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve: () => resolve(undefined), reject });
@@ -82,7 +83,6 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch {
         processQueue(new Error('Sessão expirada'));
-        if (typeof window !== 'undefined') window.location.href = '/login';
         return Promise.reject(error);
       } finally {
         isRefreshing = false;

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatMoney } from '@/lib/utils';
+import { formatMoney, formatDate } from '@/lib/utils';
 import {
   BarChart,
   Bar,
@@ -276,7 +276,7 @@ export function ReportsPage() {
                 <div key={d.id} className="flex items-center justify-between p-3 rounded-lg border">
                   <div>
                     <p className="font-medium">{d.description}</p>
-                    <p className="text-xs text-muted-foreground">{new Date(d.dueDate).toLocaleDateString('pt-BR')}</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(d.dueDate)}</p>
                   </div>
                   <p className="font-bold text-destructive">{formatMoney(d.remaining.cents)}</p>
                 </div>
@@ -297,7 +297,7 @@ export function ReportsPage() {
                 <div key={d.id} className="flex items-center justify-between p-3 rounded-lg border">
                   <div>
                     <p className="font-medium">{d.description}</p>
-                    <p className="text-xs text-muted-foreground">{new Date(d.dueDate).toLocaleDateString('pt-BR')}</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(d.dueDate)}</p>
                   </div>
                   <p className="font-bold text-success">{formatMoney(d.remaining.cents)}</p>
                 </div>

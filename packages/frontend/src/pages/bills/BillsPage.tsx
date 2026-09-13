@@ -1,20 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SelectItem } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getStatusColor, getFrequencyLabel } from '@/lib/utils';
-import { Plus, Loader2, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { Plus, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema } from '@oxedindin/shared';
+import { FormField, TextInput, CurrencyInput, NumberInput, DateInput, Textarea, FormSelect } from '@/components/forms';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 interface Bill {
   id: string;
@@ -44,24 +45,24 @@ interface IdName {
 }
 
 const billFormSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  amount: z.number().positive('Valor deve ser positivo'),
-  dueDate: z.string().min(1, 'Data é obrigatória'),
-  accountId: z.string().uuid().optional(),
-  categoryId: z.string().uuid().optional(),
-  notes: z.string().max(500).optional(),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  amount: positiveMoneyCentsSchema,
+  dueDate: civilDateSchema,
+  accountId: uuidSchema.optional().or(z.literal('')),
+  categoryId: uuidSchema.optional().or(z.literal('')),
+  notes: z.string().max(500).optional().or(z.literal('')),
 });
 
 const recurringFormSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  amount: z.number().positive('Valor deve ser positivo'),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  amount: positiveMoneyCentsSchema,
   frequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']),
-  dueDay: z.number().int().min(1).max(31),
-  startDate: z.string().min(1, 'Data é obrigatória'),
+  dueDay: z.number({ invalid_type_error: 'Informe o dia de vencimento.' }).int().min(1).max(31),
+  startDate: civilDateSchema,
 });
 
 const paySchema = z.object({
-  accountId: z.string().uuid().optional(),
+  accountId: uuidSchema.optional().or(z.literal('')),
 });
 
 type BillFormInput = z.infer<typeof billFormSchema>;
@@ -88,27 +89,31 @@ export function BillsPage() {
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<Bill | null>(null);
   const [cancelBillId, setCancelBillId] = useState<string | null>(null);
+  const [deleteRecurringId, setDeleteRecurringId] = useState<string | null>(null);
 
   const { data: bills, isLoading } = useQuery({ queryKey: ['bills'], queryFn: fetchBills });
   const { data: recurring } = useQuery({ queryKey: ['recurringBills'], queryFn: fetchRecurring });
   const { data: accounts } = useQuery({ queryKey: ['accounts', 'active'], queryFn: fetchAccounts });
 
-  const billForm = useForm<BillFormInput>({ resolver: zodResolver(billFormSchema) });
+  const billForm = useForm<BillFormInput>({
+    resolver: zodResolver(billFormSchema),
+    defaultValues: { accountId: '', categoryId: '', notes: '' },
+  });
   const recurringForm = useForm<RecurringFormInput>({
     resolver: zodResolver(recurringFormSchema),
     defaultValues: { frequency: 'MONTHLY', dueDay: 10 },
   });
-  const payForm = useForm<z.infer<typeof paySchema>>({ resolver: zodResolver(paySchema) });
+  const payForm = useForm<z.infer<typeof paySchema>>({ resolver: zodResolver(paySchema), defaultValues: { accountId: '' } });
 
   const createBillMutation = useMutation({
     mutationFn: async (data: BillFormInput) => {
       await api.post('/bills', {
         description: data.description,
-        amount: Math.round(data.amount * 100),
-        dueDate: new Date(`${data.dueDate}T00:00:00.000Z`).toISOString(),
-        accountId: data.accountId,
-        categoryId: data.categoryId,
-        notes: data.notes,
+        amount: data.amount,
+        dueDate: data.dueDate,
+        accountId: data.accountId || undefined,
+        categoryId: data.categoryId || undefined,
+        notes: data.notes || undefined,
       });
     },
     onSuccess: () => {
@@ -116,17 +121,17 @@ export function BillsPage() {
       toast({ title: 'Conta criada', description: 'Conta a pagar criada com sucesso.' });
       setBillDialogOpen(false);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const createRecurringMutation = useMutation({
     mutationFn: async (data: RecurringFormInput) => {
       await api.post('/bills/recurring', {
         description: data.description,
-        amount: Math.round(data.amount * 100),
+        amount: data.amount,
         frequency: data.frequency,
         dueDay: data.dueDay,
-        startDate: new Date(`${data.startDate}T00:00:00.000Z`).toISOString(),
+        startDate: data.startDate,
         dateType: 'FIXED',
       });
     },
@@ -135,12 +140,12 @@ export function BillsPage() {
       toast({ title: 'Conta recorrente criada', description: 'Conta recorrente criada com sucesso.' });
       setRecurringDialogOpen(false);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const payMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: z.infer<typeof paySchema> }) => {
-      await api.post(`/bills/${id}/pay`, data);
+      await api.post(`/bills/${id}/pay`, { accountId: data.accountId || undefined });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bills'] });
@@ -148,7 +153,7 @@ export function BillsPage() {
       toast({ title: 'Conta paga', description: 'Conta marcada como paga.' });
       setPayTarget(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const cancelBillMutation = useMutation({
@@ -157,21 +162,22 @@ export function BillsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bills'] });
-      toast({ title: 'Conta cancelada', description: 'Conta cancelada com sucesso.' });
+      toast({ title: 'Conta excluída', description: 'Conta excluída com sucesso.' });
       setCancelBillId(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
-  const deactivateRecurringMutation = useMutation({
+  const deleteRecurringMutation = useMutation({
     mutationFn: async (id: string) => {
       await api.delete(`/bills/recurring/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recurringBills'] });
-      toast({ title: 'Conta desativada', description: 'Conta recorrente desativada.' });
+      toast({ title: 'Conta excluída', description: 'Conta recorrente excluída.' });
+      setDeleteRecurringId(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const generateMutation = useMutation({
@@ -183,7 +189,7 @@ export function BillsPage() {
       queryClient.invalidateQueries({ queryKey: ['bills'] });
       toast({ title: 'Conta gerada', description: 'Próxima conta gerada na lista de contas.' });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   if (isLoading) {
@@ -222,46 +228,39 @@ export function BillsPage() {
               <DialogHeader>
                 <DialogTitle>Nova conta recorrente</DialogTitle>
               </DialogHeader>
-              <form onSubmit={recurringForm.handleSubmit((data) => createRecurringMutation.mutate(data))} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="description">Descrição</Label>
-                  <Input id="description" {...recurringForm.register('description')} placeholder="Netflix, Aluguel..." />
-                </div>
+              <form onSubmit={recurringForm.handleSubmit((data) => createRecurringMutation.mutate(data))} className="space-y-4" noValidate>
+                <FormField id="description" label="Descrição" error={recurringForm.formState.errors.description?.message}>
+                  <TextInput id="description" placeholder="Netflix, Aluguel..." {...recurringForm.register('description')} />
+                </FormField>
                 <div className="grid gap-2 grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">Valor</Label>
-                    <Input id="amount" type="number" step="0.01" {...recurringForm.register('amount', { valueAsNumber: true })} placeholder="39,90" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dueDay">Dia do vencimento</Label>
-                    <Input id="dueDay" type="number" min={1} max={31} {...recurringForm.register('dueDay', { valueAsNumber: true })} placeholder="10" />
-                  </div>
+                  <FormField id="amount" label="Valor" error={recurringForm.formState.errors.amount?.message}>
+                    <Controller
+                      name="amount"
+                      control={recurringForm.control}
+                      render={({ field }) => <CurrencyInput id="amount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                    />
+                  </FormField>
+                  <FormField id="dueDay" label="Dia do vencimento" error={recurringForm.formState.errors.dueDay?.message}>
+                    <NumberInput id="dueDay" min={1} max={31} placeholder="10" {...recurringForm.register('dueDay', { valueAsNumber: true })} />
+                  </FormField>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="frequency">Frequência</Label>
-                  <Select value={recurringForm.watch('frequency')} onValueChange={(v) => recurringForm.setValue('frequency', v as RecurringFormInput['frequency'])}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="WEEKLY">Semanal</SelectItem>
-                      <SelectItem value="BIWEEKLY">Quinzenal</SelectItem>
-                      <SelectItem value="MONTHLY">Mensal</SelectItem>
-                      <SelectItem value="QUARTERLY">Trimestral</SelectItem>
-                      <SelectItem value="ANNUAL">Anual</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Início</Label>
-                  <Input id="startDate" type="date" {...recurringForm.register('startDate')} />
-                </div>
+                <FormField id="frequency" label="Frequência" error={recurringForm.formState.errors.frequency?.message}>
+                  <FormSelect control={recurringForm.control} name="frequency" placeholder="Selecione">
+                    <SelectItem value="DAILY">Diário</SelectItem>
+                    <SelectItem value="WEEKLY">Semanal</SelectItem>
+                    <SelectItem value="BIWEEKLY">Quinzenal</SelectItem>
+                    <SelectItem value="MONTHLY">Mensal</SelectItem>
+                    <SelectItem value="QUARTERLY">Trimestral</SelectItem>
+                    <SelectItem value="SEMIANNUAL">Semestral</SelectItem>
+                    <SelectItem value="ANNUAL">Anual</SelectItem>
+                  </FormSelect>
+                </FormField>
+                <FormField id="startDate" label="Início" error={recurringForm.formState.errors.startDate?.message}>
+                  <DateInput id="startDate" {...recurringForm.register('startDate')} />
+                </FormField>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setRecurringDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit" disabled={createRecurringMutation.isPending}>
-                    {createRecurringMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Criar
-                  </Button>
+                  <Button type="submit" loading={createRecurringMutation.isPending}>Criar</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -278,44 +277,36 @@ export function BillsPage() {
               <DialogHeader>
                 <DialogTitle>Nova conta a pagar</DialogTitle>
               </DialogHeader>
-              <form onSubmit={billForm.handleSubmit((data) => createBillMutation.mutate(data))} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="description">Descrição</Label>
-                  <Input id="description" {...billForm.register('description')} placeholder="Conta de luz, Internet..." />
-                </div>
+              <form onSubmit={billForm.handleSubmit((data) => createBillMutation.mutate(data))} className="space-y-4" noValidate>
+                <FormField id="description" label="Descrição" error={billForm.formState.errors.description?.message}>
+                  <TextInput id="description" placeholder="Conta de luz, Internet..." {...billForm.register('description')} />
+                </FormField>
                 <div className="grid gap-2 grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">Valor</Label>
-                    <Input id="amount" type="number" step="0.01" {...billForm.register('amount', { valueAsNumber: true })} placeholder="150,00" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dueDate">Vencimento</Label>
-                    <Input id="dueDate" type="date" {...billForm.register('dueDate')} />
-                  </div>
+                  <FormField id="amount" label="Valor" error={billForm.formState.errors.amount?.message}>
+                    <Controller
+                      name="amount"
+                      control={billForm.control}
+                      render={({ field }) => <CurrencyInput id="amount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                    />
+                  </FormField>
+                  <FormField id="dueDate" label="Vencimento" error={billForm.formState.errors.dueDate?.message}>
+                    <DateInput id="dueDate" {...billForm.register('dueDate')} />
+                  </FormField>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="accountId">Conta (opcional)</Label>
-                  <Select value={billForm.watch('accountId')} onValueChange={(v) => billForm.setValue('accountId', v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma conta" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(accounts ?? []).map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Observações</Label>
-                  <Input id="notes" {...billForm.register('notes')} placeholder="Observações opcionais" />
-                </div>
+                <FormField id="accountId" label="Conta (opcional)" error={billForm.formState.errors.accountId?.message}>
+                  <FormSelect control={billForm.control} name="accountId" placeholder="Selecione uma conta">
+                    <SelectItem value="">Nenhuma</SelectItem>
+                    {(accounts ?? []).map((acc) => (
+                      <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                    ))}
+                  </FormSelect>
+                </FormField>
+                <FormField id="notes" label="Observações" error={billForm.formState.errors.notes?.message}>
+                  <Textarea id="notes" placeholder="Observações opcionais" {...billForm.register('notes')} />
+                </FormField>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setBillDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit" disabled={createBillMutation.isPending}>
-                    {createBillMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Criar
-                  </Button>
+                  <Button type="submit" loading={createBillMutation.isPending}>Criar</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -350,8 +341,8 @@ export function BillsPage() {
                       <p className="font-bold text-lg">{formatMoney(bill.amount.cents)}</p>
                       {bill.status !== 'PAID' && bill.status !== 'CANCELLED' && (
                         <>
-                          <Button size="sm" onClick={() => { setPayTarget(bill); payForm.reset({ accountId: undefined }); }}>Pagar</Button>
-                          <Button variant="ghost" size="icon" onClick={() => setCancelBillId(bill.id)}>
+                          <Button size="sm" onClick={() => { setPayTarget(bill); payForm.reset({ accountId: '' }); }}>Pagar</Button>
+                          <Button variant="ghost" size="icon" onClick={() => setCancelBillId(bill.id)} aria-label="Excluir conta">
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </>
@@ -393,7 +384,7 @@ export function BillsPage() {
                       <Button variant="outline" size="sm" onClick={() => generateMutation.mutate(bill.id)}>
                         Gerar próxima
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => deactivateRecurringMutation.mutate(bill.id)}>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteRecurringId(bill.id)} aria-label="Excluir conta recorrente">
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
@@ -417,48 +408,43 @@ export function BillsPage() {
           <DialogHeader>
             <DialogTitle>Pagar conta</DialogTitle>
           </DialogHeader>
-          <form onSubmit={payForm.handleSubmit((data) => payTarget && payMutation.mutate({ id: payTarget.id, data }))} className="space-y-4">
+          <form onSubmit={payForm.handleSubmit((data) => payTarget && payMutation.mutate({ id: payTarget.id, data }))} className="space-y-4" noValidate>
             <p className="text-sm text-muted-foreground">
               {payTarget?.description} · <span className="font-semibold">{payTarget ? formatMoney(payTarget.amount.cents) : ''}</span>
             </p>
-            <div className="space-y-2">
-              <Label htmlFor="accountId">Conta (opcional)</Label>
-              <Select value={payForm.watch('accountId')} onValueChange={(v) => payForm.setValue('accountId', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma conta" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(accounts ?? []).map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <FormField id="accountId" label="Conta (opcional)" error={payForm.formState.errors.accountId?.message}>
+              <FormSelect control={payForm.control} name="accountId" placeholder="Selecione uma conta">
+                <SelectItem value="">Nenhuma</SelectItem>
+                {(accounts ?? []).map((acc) => (
+                  <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                ))}
+              </FormSelect>
+            </FormField>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPayTarget(null)}>Cancelar</Button>
-              <Button type="submit" disabled={payMutation.isPending}>
-                {payMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Confirmar pagamento
-              </Button>
+              <Button type="submit" loading={payMutation.isPending}>Confirmar pagamento</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!cancelBillId} onOpenChange={(open) => !open && setCancelBillId(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancelar conta?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">Esta conta será cancelada.</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelBillId(null)}>Voltar</Button>
-            <Button variant="destructive" onClick={() => cancelBillId && cancelBillMutation.mutate(cancelBillId)}>
-              Cancelar conta
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={!!cancelBillId}
+        onOpenChange={(open) => !open && setCancelBillId(null)}
+        title="Excluir conta?"
+        description="Essa ação removerá permanentemente a conta. Contas já pagas não podem ser excluídas."
+        loading={cancelBillMutation.isPending}
+        onConfirm={() => cancelBillId && cancelBillMutation.mutate(cancelBillId)}
+      />
+
+      <ConfirmDeleteDialog
+        open={!!deleteRecurringId}
+        onOpenChange={(open) => !open && setDeleteRecurringId(null)}
+        title="Excluir conta recorrente?"
+        description="Essa ação removerá permanentemente a conta recorrente."
+        loading={deleteRecurringMutation.isPending}
+        onConfirm={() => deleteRecurringId && deleteRecurringMutation.mutate(deleteRecurringId)}
+      />
     </div>
   );
 }

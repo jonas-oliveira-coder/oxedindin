@@ -71,7 +71,7 @@ export function LoginPage() {
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
             <FormField id="email" label="Email" error={errors.email?.message}>
               <EmailInput
                 id="email"

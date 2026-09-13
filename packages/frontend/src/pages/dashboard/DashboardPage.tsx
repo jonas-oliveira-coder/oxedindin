@@ -2,9 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { cn, formatMoney, getStatusColor } from '@/lib/utils';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { cn, formatMoney, formatDateShort, formatDate, getMonthName, getStatusColor } from '@/lib/utils';
 import {
   Wallet,
   CreditCard,
@@ -129,7 +127,7 @@ export function DashboardPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Olá! Aqui está seu resumo financeiro de {format(new Date(), 'MMMM', { locale: ptBR })}.
+            Olá! Aqui está seu resumo financeiro de {new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(new Date())}.
           </p>
         </div>
       </div>
@@ -176,7 +174,7 @@ export function DashboardPage() {
                       <div>
                         <p className="font-medium">{invoice.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          Vence em {format(new Date(invoice.dueDate), 'dd/MM', { locale: ptBR })}
+                          Vence em {formatDateShort(invoice.dueDate)}
                         </p>
                       </div>
                     </div>
@@ -195,7 +193,7 @@ export function DashboardPage() {
                       <div>
                         <p className="font-medium">{invoice.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          Próxima: {format(new Date(invoice.dueDate), 'dd/MM', { locale: ptBR })}
+                          Próxima: {formatDateShort(invoice.dueDate)}
                         </p>
                       </div>
                     </div>
@@ -239,7 +237,7 @@ export function DashboardPage() {
                       <div>
                         <p className="font-medium">{item.description}</p>
                         <p className="text-sm text-muted-foreground">
-                          {format(new Date(item.dueDate), 'dd/MM/yyyy', { locale: ptBR })}
+                          {formatDate(item.dueDate)}
                         </p>
                       </div>
                     </div>
@@ -309,7 +307,7 @@ export function DashboardPage() {
                 <tbody>
                   {summary.cashflowProjection.slice(0, 6).map((month) => (
                     <tr key={month.month} className="border-b last:border-0">
-                      <td className="py-3 font-medium">{format(new Date(`${month.month}-01`), 'MMMM/yyyy', { locale: ptBR })}</td>
+                      <td className="py-3 font-medium">{getMonthName(month.month)}</td>
                       <td className="py-3 text-right">{formatMoney(month.bills.cents)}</td>
                       <td className="py-3 text-right">{formatMoney(month.installments.cents)}</td>
                       <td className="py-3 text-right">{formatMoney(month.cards.cents)}</td>

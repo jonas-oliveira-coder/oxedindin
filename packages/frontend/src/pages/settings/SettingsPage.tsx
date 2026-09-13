@@ -2,19 +2,19 @@ import { useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from '@/components/ui/use-toast';
-import { Loader2, Save, User as UserIcon } from 'lucide-react';
+import { Save, User as UserIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { settingsSchema, type SettingsInput } from '@/lib/validation';
+import { FormField, TextInput } from '@/components/forms';
 import { useAuth } from '@/hooks/use-auth';
 
 interface Settings {
@@ -73,7 +73,7 @@ export function SettingsPage() {
 
   const profileMutation = useMutation({
     mutationFn: async (data: ProfileInput) => {
-      const response = await api.patch('/users/me', data);
+      const response = await api.patch('/users/me', { name: data.name, avatarUrl: data.avatarUrl || null });
       return response.data;
     },
     onSuccess: () => {
@@ -81,7 +81,7 @@ export function SettingsPage() {
       refreshUser();
       toast({ title: 'Perfil atualizado', description: 'Suas informações foram salvas.' });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const settingsMutation = useMutation({
@@ -93,7 +93,7 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       toast({ title: 'Preferências salvas', description: 'Suas preferências foram atualizadas.' });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   if (isLoading) {
@@ -134,17 +134,15 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground">{user?.email}</p>
             </div>
           </div>
-          <form onSubmit={profileForm.handleSubmit((data) => profileMutation.mutate(data))} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Nome</Label>
-              <Input id="name" {...profileForm.register('name')} placeholder="Seu nome" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="avatarUrl">URL do avatar</Label>
-              <Input id="avatarUrl" {...profileForm.register('avatarUrl')} placeholder="https://exemplo.com/avatar.png" />
-            </div>
-            <Button type="submit" disabled={profileMutation.isPending}>
-              {profileMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          <form onSubmit={profileForm.handleSubmit((data) => profileMutation.mutate(data))} className="space-y-4" noValidate>
+            <FormField id="name" label="Nome" error={profileForm.formState.errors.name?.message}>
+              <TextInput id="name" placeholder="Seu nome" {...profileForm.register('name')} />
+            </FormField>
+            <FormField id="avatarUrl" label="URL do avatar" error={profileForm.formState.errors.avatarUrl?.message}>
+              <TextInput id="avatarUrl" placeholder="https://exemplo.com/avatar.png" {...profileForm.register('avatarUrl')} />
+            </FormField>
+            <Button type="submit" loading={profileMutation.isPending}>
+              {!profileMutation.isPending && <Save className="mr-2 h-4 w-4" />}
               Salvar perfil
             </Button>
           </form>
@@ -157,7 +155,7 @@ export function SettingsPage() {
           <CardDescription>Personalize a experiência do OxeDinDin</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={settingsForm.handleSubmit((data) => settingsMutation.mutate(data))} className="space-y-4">
+          <form onSubmit={settingsForm.handleSubmit((data) => settingsMutation.mutate(data))} className="space-y-4" noValidate>
             <div className="space-y-2">
               <Label htmlFor="theme">Tema</Label>
               <Select
@@ -220,8 +218,8 @@ export function SettingsPage() {
               </Select>
             </div>
             <Separator />
-            <Button type="submit" disabled={settingsMutation.isPending}>
-              {settingsMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            <Button type="submit" loading={settingsMutation.isPending}>
+              {!settingsMutation.isPending && <Save className="mr-2 h-4 w-4" />}
               Salvar preferências
             </Button>
           </form>

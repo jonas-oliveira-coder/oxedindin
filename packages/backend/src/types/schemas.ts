@@ -3,7 +3,6 @@ import {
   emailSchema,
   passwordSchema,
   nameSchema,
-  cpfSchema,
   documentSchema,
   phoneSchema,
   uuidSchema,

@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { z } from 'zod';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
-import { Loader2, Plus, Edit, Trash2, Paintbrush, Sparkles } from 'lucide-react';
+import { Plus, Edit, Trash2, Paintbrush, Sparkles } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createCategorySchema, updateCategorySchema, type CreateCategoryInput, type UpdateCategoryInput } from '@/lib/validation';
+import type { CreateCategoryInput, UpdateCategoryInput } from '@/lib/validation';
+import { FormField, TextInput } from '@/components/forms';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 interface Category {
   id: string;
@@ -19,6 +20,14 @@ interface Category {
   color?: string;
   isDefault: boolean;
 }
+
+const categoryFormSchema = z.object({
+  name: z.string().trim().min(1, 'Informe o nome.').max(50),
+  icon: z.string().max(50).optional().default(''),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Cor inválida. Use o formato #RRGGBB.').optional().or(z.literal('')),
+});
+
+type CategoryFormValues = z.infer<typeof categoryFormSchema>;
 
 async function fetchCategories(): Promise<Category[]> {
   const response = await api.get('/categories');
@@ -47,7 +56,7 @@ export function CategoriesPage() {
   const queryClient = useQueryClient();
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { data: categories, isLoading } = useQuery({
     queryKey: ['categories'],
@@ -61,7 +70,7 @@ export function CategoriesPage() {
       toast({ title: 'Categoria criada', description: 'Categoria criada com sucesso.' });
       setDialogOpen(false);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const updateMutation = useMutation({
@@ -70,8 +79,9 @@ export function CategoriesPage() {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       toast({ title: 'Categoria atualizada', description: 'Categoria atualizada com sucesso.' });
       setEditingCategory(null);
+      setDialogOpen(false);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
@@ -79,9 +89,9 @@ export function CategoriesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       toast({ title: 'Categoria excluída', description: 'Categoria excluída com sucesso.' });
-      setDeleteDialogOpen(null);
+      setDeleteId(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const initMutation = useMutation({
@@ -90,31 +100,43 @@ export function CategoriesPage() {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       toast({ title: 'Categorias padrão', description: 'Categorias padrão criadas.' });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
-  const createForm = useForm<CreateCategoryInput>({ resolver: zodResolver(createCategorySchema) });
-  const updateForm = useForm<UpdateCategoryInput>({ resolver: zodResolver(updateCategorySchema) });
-
-  const handleCreateSubmit = (data: CreateCategoryInput) => {
-    createMutation.mutate(data);
-    createForm.reset();
-  };
-
-  const handleUpdateSubmit = (data: UpdateCategoryInput) => {
-    if (editingCategory) updateMutation.mutate({ id: editingCategory.id, data });
-  };
+  const form = useForm<CategoryFormValues>({
+    resolver: zodResolver(categoryFormSchema),
+    defaultValues: { icon: '', color: '' },
+  });
 
   const openCreateDialog = () => {
     setEditingCategory(null);
-    createForm.reset();
+    form.reset({ icon: '', color: '' });
     setDialogOpen(true);
   };
 
   const openEditDialog = (category: Category) => {
     setEditingCategory(category);
-    updateForm.reset({ name: category.name, icon: category.icon, color: category.color });
+    form.reset({ name: category.name, icon: category.icon ?? '', color: category.color ?? '' });
     setDialogOpen(true);
+  };
+
+  const onSubmit = (values: CategoryFormValues) => {
+    if (editingCategory) {
+      updateMutation.mutate({
+        id: editingCategory.id,
+        data: {
+          name: values.name,
+          icon: values.icon || null,
+          color: values.color || null,
+        } as UpdateCategoryInput,
+      });
+    } else {
+      createMutation.mutate({
+        name: values.name,
+        icon: values.icon || undefined,
+        color: values.color || undefined,
+      } as CreateCategoryInput);
+    }
   };
 
   if (isLoading) {
@@ -142,8 +164,8 @@ export function CategoriesPage() {
           <p className="text-muted-foreground">Gerencie suas categorias de transações</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => initMutation.mutate()} disabled={initMutation.isPending}>
-            {initMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+          <Button variant="outline" onClick={() => initMutation.mutate()} loading={initMutation.isPending}>
+            {!initMutation.isPending && <Sparkles className="mr-2 h-4 w-4" />}
             Categorias padrão
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -157,25 +179,21 @@ export function CategoriesPage() {
               <DialogHeader>
                 <DialogTitle>{editingCategory ? 'Editar Categoria' : 'Nova Categoria'}</DialogTitle>
               </DialogHeader>
-              <form onSubmit={editingCategory ? updateForm.handleSubmit(handleUpdateSubmit) : createForm.handleSubmit(handleCreateSubmit)} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nome</Label>
-                  <Input id="name" {...(editingCategory ? updateForm.register('name') : createForm.register('name'))} placeholder="Alimentação" />
-                </div>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+                <FormField id="name" label="Nome" error={form.formState.errors.name?.message}>
+                  <TextInput id="name" placeholder="Alimentação" {...form.register('name')} />
+                </FormField>
                 <div className="grid gap-2 grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="icon">Ícone (emoji)</Label>
-                    <Input id="icon" {...(editingCategory ? updateForm.register('icon') : createForm.register('icon'))} placeholder="🍔" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="color">Cor</Label>
-                    <Input id="color" {...(editingCategory ? updateForm.register('color') : createForm.register('color'))} placeholder="#EF4444" />
-                  </div>
+                  <FormField id="icon" label="Ícone (emoji)" error={form.formState.errors.icon?.message}>
+                    <TextInput id="icon" placeholder="🍔" {...form.register('icon')} />
+                  </FormField>
+                  <FormField id="color" label="Cor" error={form.formState.errors.color?.message}>
+                    <TextInput id="color" placeholder="#EF4444" {...form.register('color')} />
+                  </FormField>
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                    {createMutation.isPending || updateMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
                     {editingCategory ? 'Salvar' : 'Criar'}
                   </Button>
                 </DialogFooter>
@@ -207,10 +225,10 @@ export function CategoriesPage() {
                   </div>
                   {!category.isDefault && (
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(category)}>
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(category)} aria-label="Editar categoria">
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteDialogOpen(category.id)}>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(category.id)} aria-label="Excluir categoria">
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
@@ -233,20 +251,14 @@ export function CategoriesPage() {
         </Card>
       )}
 
-      <Dialog open={!!deleteDialogOpen} onOpenChange={(open) => !open && setDeleteDialogOpen(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Excluir categoria?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">Esta ação não pode ser desfeita.</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => deleteDialogOpen && deleteMutation.mutate(deleteDialogOpen)}>
-              Excluir
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={!!deleteId}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        title="Excluir categoria?"
+        description="Essa ação removerá permanentemente a categoria. Categorias com transações, parcelas ou contas vinculadas não podem ser excluídas."
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
+      />
     </div>
   );
 }

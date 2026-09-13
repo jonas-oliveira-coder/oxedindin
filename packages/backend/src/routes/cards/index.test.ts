@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import cardsRoutes from './index.js';
 import { buildApp, TEST_USER_ID, OTHER_USER_ID } from '../../test/helpers.js';
-import { creditCard } from '../../db/schema/index.js';
+import { creditCard, invoice } from '../../db/schema/index.js';
 
 describe('cards routes', () => {
   let app: any;
@@ -135,5 +135,41 @@ describe('cards routes', () => {
     const res = await app.inject({ method: 'DELETE', url: '/api/v1/cards/88888888-8888-4888-8888-888888888888' });
     expect(res.statusCode).toBe(200);
     expect(db.all(creditCard)).toHaveLength(0);
+  });
+
+  it('blocks deleting a card that has invoices', async () => {
+    db.seed(creditCard, [{
+      id: '99999999-9999-4999-8999-999999999999',
+      userId: TEST_USER_ID,
+      name: 'Visa',
+      institution: 'Nubank',
+      brand: 'VISA',
+      last4: '1111',
+      limitCents: 50000,
+      availableLimitCents: 50000,
+      closingDay: 5,
+      dueDay: 10,
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(invoice, [{
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      cardId: '99999999-9999-4999-8999-999999999999',
+      periodStart: new Date(),
+      periodEnd: new Date(),
+      closingDate: new Date(),
+      dueDate: new Date(),
+      totalCents: 0,
+      paidCents: 0,
+      remainingCents: 0,
+      status: 'OPEN',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/cards/99999999-9999-4999-8999-999999999999' });
+    expect(res.statusCode).toBe(409);
+    expect(db.all(creditCard)).toHaveLength(1);
   });
 });

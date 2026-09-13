@@ -54,7 +54,7 @@ export function RegisterPage() {
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
             <FormField id="name" label="Nome completo" error={errors.name?.message}>
               <TextInput id="name" placeholder="João Silva" {...register('name')} disabled={isLoading} />
             </FormField>

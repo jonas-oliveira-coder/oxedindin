@@ -68,7 +68,7 @@ export function parseMoneyToCents(value: string | number): number | null {
     normalized = normalized.replace(/,/g, '');
   }
 
-  normalized = normalized.replace(/[^\d.\-]/g, '');
+  normalized = normalized.replace(/[^\d.-]/g, '');
 
   if (normalized === '' || normalized === '-' || normalized === '.') return null;
 

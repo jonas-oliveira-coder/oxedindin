@@ -220,7 +220,7 @@ export function InvoicesPage() {
           <DialogHeader>
             <DialogTitle>Pagar fatura</DialogTitle>
           </DialogHeader>
-          <form onSubmit={payForm.handleSubmit(handlePay)} className="space-y-4">
+          <form onSubmit={payForm.handleSubmit(handlePay)} className="space-y-4" noValidate>
             <div className="space-y-2">
               <Label htmlFor="amount">Valor a pagar (R$)</Label>
               <Input id="amount" type="number" step="0.01" min="0.01" {...payForm.register('amount', { valueAsNumber: true })} />

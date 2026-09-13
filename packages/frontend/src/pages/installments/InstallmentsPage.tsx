@@ -1,28 +1,29 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SelectItem } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getStatusColor } from '@/lib/utils';
-import { Plus, Loader2, TriangleAlert, CheckCircle2 } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { Plus, TriangleAlert, CheckCircle2 } from 'lucide-react';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema } from '@oxedindin/shared';
+import { FormField, TextInput, CurrencyInput, NumberInput, DateInput, FormSelect } from '@/components/forms';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 const createPlanFormSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  totalAmount: z.number().positive('Valor deve ser positivo'),
-  installmentsCount: z.number().int().min(1).max(60),
-  startDate: z.string().min(1, 'Data é obrigatória'),
-  firstInvoiceDate: z.string().min(1, 'Data é obrigatória'),
-  cardId: z.string().uuid('Selecione um cartão'),
-  categoryId: z.string().uuid().optional(),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  totalAmount: positiveMoneyCentsSchema,
+  installmentsCount: z.number({ invalid_type_error: 'Informe o número de parcelas.' }).int('Número de parcelas inválido.').min(1, 'O número de parcelas deve ser positivo.').max(60, 'Máximo de 60 parcelas.'),
+  startDate: civilDateSchema,
+  firstInvoiceDate: civilDateSchema,
+  cardId: uuidSchema,
+  categoryId: uuidSchema.optional().or(z.literal('')),
 });
 
 type CreatePlanFormInput = z.infer<typeof createPlanFormSchema>;
@@ -43,7 +44,7 @@ interface IdName {
 }
 
 const paySchema = z.object({
-  accountId: z.string().uuid().optional(),
+  accountId: uuidSchema.optional().or(z.literal('')),
 });
 
 const statusLabels: Record<string, string> = {
@@ -53,8 +54,8 @@ const statusLabels: Record<string, string> = {
   CANCELLED: 'Cancelada',
 };
 
-async function fetchInstallments(status?: string): Promise<Installment[]> {
-  const response = await api.get('/installments', { params: status ? { status } : {} });
+async function fetchInstallments(): Promise<Installment[]> {
+  const response = await api.get('/installments');
   return response.data.data;
 }
 
@@ -74,23 +75,26 @@ export function InstallmentsPage() {
   const [payTarget, setPayTarget] = useState<Installment | null>(null);
   const [cancelPlanId, setCancelPlanId] = useState<string | null>(null);
 
-  const { data: installments, isLoading } = useQuery({ queryKey: ['installments'], queryFn: () => fetchInstallments() });
+  const { data: installments, isLoading } = useQuery({ queryKey: ['installments'], queryFn: fetchInstallments });
   const { data: cards } = useQuery({ queryKey: ['cards', 'active'], queryFn: fetchCards });
   const { data: accounts } = useQuery({ queryKey: ['accounts', 'active'], queryFn: fetchAccounts });
 
-  const createForm = useForm<CreatePlanFormInput>({ resolver: zodResolver(createPlanFormSchema) });
-  const payForm = useForm<z.infer<typeof paySchema>>({ resolver: zodResolver(paySchema) });
+  const createForm = useForm<CreatePlanFormInput>({
+    resolver: zodResolver(createPlanFormSchema),
+    defaultValues: { categoryId: '' },
+  });
+  const payForm = useForm<z.infer<typeof paySchema>>({ resolver: zodResolver(paySchema), defaultValues: { accountId: '' } });
 
   const createMutation = useMutation({
     mutationFn: async (data: CreatePlanFormInput) => {
       await api.post('/transactions/installment', {
         description: data.description,
-        totalAmount: Math.round(data.totalAmount * 100),
+        totalAmount: data.totalAmount,
         installmentsCount: data.installmentsCount,
-        startDate: new Date(`${data.startDate}T00:00:00.000Z`).toISOString(),
-        firstInvoiceDate: new Date(`${data.firstInvoiceDate}T00:00:00.000Z`).toISOString(),
+        startDate: data.startDate,
+        firstInvoiceDate: data.firstInvoiceDate,
         cardId: data.cardId,
-        categoryId: data.categoryId,
+        categoryId: data.categoryId || undefined,
       });
     },
     onSuccess: () => {
@@ -99,13 +103,13 @@ export function InstallmentsPage() {
       toast({ title: 'Parcelamento criado', description: 'Compra parcelada registrada com sucesso.' });
       setCreateOpen(false);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const payMutation = useMutation({
     mutationFn: async ({ installment, data }: { installment: Installment; data: z.infer<typeof paySchema> }) => {
       await api.post(`/installments/${installment.planId}/installments/${installment.number}/pay`, {
-        accountId: data.accountId,
+        accountId: data.accountId || undefined,
       });
     },
     onSuccess: () => {
@@ -114,7 +118,7 @@ export function InstallmentsPage() {
       toast({ title: 'Parcela paga', description: 'Parcela paga com sucesso.' });
       setPayTarget(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const cancelMutation = useMutation({
@@ -127,7 +131,7 @@ export function InstallmentsPage() {
       toast({ title: 'Parcelamento cancelado', description: 'As parcelas pendentes foram canceladas.' });
       setCancelPlanId(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const grouped = new Map<string, { plan: NonNullable<Installment['plan']>; items: Installment[] }>();
@@ -141,7 +145,7 @@ export function InstallmentsPage() {
 
   const openPayDialog = (installment: Installment) => {
     setPayTarget(installment);
-    payForm.reset({ accountId: undefined });
+    payForm.reset({ accountId: '' });
   };
 
   if (isLoading) {
@@ -179,51 +183,40 @@ export function InstallmentsPage() {
             <DialogHeader>
               <DialogTitle>Nova compra parcelada</DialogTitle>
             </DialogHeader>
-            <form onSubmit={createForm.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="description">Descrição</Label>
-                <Input id="description" {...createForm.register('description')} placeholder="Smartphone, Notebook..." />
-              </div>
+            <form onSubmit={createForm.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4" noValidate>
+              <FormField id="description" label="Descrição" error={createForm.formState.errors.description?.message}>
+                <TextInput id="description" placeholder="Smartphone, Notebook..." {...createForm.register('description')} />
+              </FormField>
               <div className="grid gap-2 grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="totalAmount">Valor total</Label>
-                  <Input id="totalAmount" type="number" step="0.01" {...createForm.register('totalAmount', { valueAsNumber: true })} placeholder="3000,00" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="installmentsCount">Nº de parcelas</Label>
-                  <Input id="installmentsCount" type="number" min={1} max={60} {...createForm.register('installmentsCount', { valueAsNumber: true })} placeholder="10" />
-                </div>
+                <FormField id="totalAmount" label="Valor total" error={createForm.formState.errors.totalAmount?.message}>
+                  <Controller
+                    name="totalAmount"
+                    control={createForm.control}
+                    render={({ field }) => <CurrencyInput id="totalAmount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                  />
+                </FormField>
+                <FormField id="installmentsCount" label="Nº de parcelas" error={createForm.formState.errors.installmentsCount?.message}>
+                  <NumberInput id="installmentsCount" min={1} max={60} placeholder="10" {...createForm.register('installmentsCount', { valueAsNumber: true })} />
+                </FormField>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="cardId">Cartão</Label>
-                <Select value={createForm.watch('cardId')} onValueChange={(v) => createForm.setValue('cardId', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o cartão" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(cards ?? []).map((card) => (
-                      <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <FormField id="cardId" label="Cartão" error={createForm.formState.errors.cardId?.message}>
+                <FormSelect control={createForm.control} name="cardId" placeholder="Selecione o cartão">
+                  {(cards ?? []).map((card) => (
+                    <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
+                  ))}
+                </FormSelect>
+              </FormField>
               <div className="grid gap-2 grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Data da compra</Label>
-                  <Input id="startDate" type="date" {...createForm.register('startDate')} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="firstInvoiceDate">Primeira fatura</Label>
-                  <Input id="firstInvoiceDate" type="date" {...createForm.register('firstInvoiceDate')} />
-                </div>
+                <FormField id="startDate" label="Data da compra" error={createForm.formState.errors.startDate?.message}>
+                  <DateInput id="startDate" {...createForm.register('startDate')} />
+                </FormField>
+                <FormField id="firstInvoiceDate" label="Primeira fatura" error={createForm.formState.errors.firstInvoiceDate?.message}>
+                  <DateInput id="firstInvoiceDate" {...createForm.register('firstInvoiceDate')} />
+                </FormField>
               </div>
-              <p className="text-xs text-muted-foreground">As datas serão convertidas automaticamente para o formato ISO.</p>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
-                <Button type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Criar
-                </Button>
+                <Button type="submit" loading={createMutation.isPending}>Criar</Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -297,48 +290,35 @@ export function InstallmentsPage() {
           <DialogHeader>
             <DialogTitle>Pagar parcela {payTarget?.number}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={payForm.handleSubmit((data) => payTarget && payMutation.mutate({ installment: payTarget, data }))} className="space-y-4">
+          <form onSubmit={payForm.handleSubmit((data) => payTarget && payMutation.mutate({ installment: payTarget, data }))} className="space-y-4" noValidate>
             <p className="text-sm text-muted-foreground">
               Valor: <span className="font-semibold">{payTarget ? formatMoney(payTarget.amount.cents) : ''}</span>
             </p>
-            <div className="space-y-2">
-              <Label htmlFor="accountId">Conta (opcional)</Label>
-              <Select value={payForm.watch('accountId')} onValueChange={(v) => payForm.setValue('accountId', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma conta" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(accounts ?? []).map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <FormField id="accountId" label="Conta (opcional)" error={payForm.formState.errors.accountId?.message}>
+              <FormSelect control={payForm.control} name="accountId" placeholder="Selecione uma conta">
+                <SelectItem value="">Nenhuma</SelectItem>
+                {(accounts ?? []).map((acc) => (
+                  <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                ))}
+              </FormSelect>
+            </FormField>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPayTarget(null)}>Cancelar</Button>
-              <Button type="submit" disabled={payMutation.isPending}>
-                {payMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Confirmar
-              </Button>
+              <Button type="submit" loading={payMutation.isPending}>Confirmar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!cancelPlanId} onOpenChange={(open) => !open && setCancelPlanId(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancelar parcelamento?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">As parcelas pendentes serão canceladas e o limite restaurado.</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelPlanId(null)}>Voltar</Button>
-            <Button variant="destructive" onClick={() => cancelPlanId && cancelMutation.mutate(cancelPlanId)}>
-              Cancelar parcelamento
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={!!cancelPlanId}
+        onOpenChange={(open) => !open && setCancelPlanId(null)}
+        title="Cancelar parcelamento?"
+        description="As parcelas pendentes serão canceladas e o limite restaurado."
+        confirmLabel="Cancelar parcelamento"
+        loading={cancelMutation.isPending}
+        onConfirm={() => cancelPlanId && cancelMutation.mutate(cancelPlanId)}
+      />
     </div>
   );
 }

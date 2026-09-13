@@ -5,14 +5,14 @@ test.describe('Auth pages (smoke)', () => {
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: 'Entrar no OxeDinDin' })).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
-    await expect(page.getByLabel('Senha')).toBeVisible();
+    await expect(page.getByLabel('Senha', { exact: true })).toBeVisible();
   });
 
   test('shows a validation error for an invalid email', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('Email').fill('not-an-email');
-    await page.getByRole('button', { name: 'Entrar' }).click();
-    await expect(page.getByText('Email inválido')).toBeVisible();
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await expect(page.getByText('Informe um email válido.')).toBeVisible();
   });
 
   test('renders the register page', async ({ page }) => {

@@ -38,6 +38,15 @@ export function formatDateTime(date: string | Date, locale = 'pt-BR'): string {
   return d.toLocaleString(locale);
 }
 
+export function formatDateShort(date: string | Date): string {
+  if (date == null) return '';
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return '';
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
+}
+
 export function getMonthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }

@@ -182,7 +182,7 @@ export function AccountsPage() {
             <DialogHeader>
               <DialogTitle>{editingAccount ? 'Editar Conta' : 'Nova Conta Bancária'}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <FormField id="name" label="Nome da conta" error={form.formState.errors.name?.message}>
                 <TextInput id="name" placeholder="Minha Conta" {...form.register('name')} />
               </FormField>

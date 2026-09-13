@@ -197,7 +197,7 @@ export function CardsPage() {
             <DialogHeader>
               <DialogTitle>{editingCard ? 'Editar Cartão' : 'Novo Cartão de Crédito'}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <FormField id="name" label="Nome/Apelido" error={form.formState.errors.name?.message}>
                 <TextInput id="name" placeholder="Meu Cartão" {...form.register('name')} />
               </FormField>

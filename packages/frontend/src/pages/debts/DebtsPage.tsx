@@ -1,20 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SelectItem } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getStatusColor, getDebtTypeLabel } from '@/lib/utils';
-import { Plus, Loader2, Trash2, Share2, CheckCircle2 } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { Plus, Trash2, Share2, CheckCircle2 } from 'lucide-react';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema, emailSchema } from '@oxedindin/shared';
+import { FormField, TextInput, CurrencyInput, DateInput, EmailInput, FormSelect } from '@/components/forms';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 interface Debt {
   id: string;
@@ -33,25 +34,24 @@ interface IdName {
   name: string;
 }
 
-const debtFormSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  totalAmount: z.number().positive('Valor deve ser positivo'),
-  dueDate: z.string().min(1, 'Data é obrigatória'),
-  type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']),
-  relatedPersonId: z.string().uuid().optional(),
-  notes: z.string().max(500).optional(),
-});
+const debtTypeEnum = z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']);
 
-const owedFormSchema = debtFormSchema.extend({
-  personId: z.string().uuid('Selecione uma pessoa'),
+const debtFormSchema = z.object({
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  totalAmount: positiveMoneyCentsSchema,
+  dueDate: civilDateSchema,
+  type: debtTypeEnum,
+  relatedPersonId: uuidSchema.optional().or(z.literal('')),
+  personId: uuidSchema.optional().or(z.literal('')),
+  notes: z.string().max(500).optional().or(z.literal('')),
 });
 
 const paySchema = z.object({
-  amount: z.number().positive(),
+  amount: positiveMoneyCentsSchema,
 });
 
 const shareSchema = z.object({
-  email: z.string().email('Email inválido'),
+  email: emailSchema,
 });
 
 type DebtFormInput = z.infer<typeof debtFormSchema>;
@@ -78,6 +78,7 @@ export function DebtsPage() {
   const [owedDialogOpen, setOwedDialogOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<{ debt: Debt; kind: 'debt' | 'owed' } | null>(null);
   const [shareTarget, setShareTarget] = useState<Debt | null>(null);
+  const [deleteDebtId, setDeleteDebtId] = useState<string | null>(null);
 
   const { data: debts, isLoading } = useQuery({ queryKey: ['debts'], queryFn: fetchDebts });
   const { data: owed } = useQuery({ queryKey: ['debtsOwed'], queryFn: fetchOwed });
@@ -85,11 +86,11 @@ export function DebtsPage() {
 
   const debtForm = useForm<DebtFormInput>({
     resolver: zodResolver(debtFormSchema),
-    defaultValues: { type: 'PERSONAL_LOAN' },
+    defaultValues: { type: 'PERSONAL_LOAN', relatedPersonId: '', personId: '', notes: '' },
   });
-  const owedForm = useForm<z.infer<typeof owedFormSchema>>({
-    resolver: zodResolver(owedFormSchema),
-    defaultValues: { type: 'PERSONAL_LOAN' },
+  const owedForm = useForm<DebtFormInput>({
+    resolver: zodResolver(debtFormSchema),
+    defaultValues: { type: 'PERSONAL_LOAN', relatedPersonId: '', personId: '', notes: '' },
   });
   const payForm = useForm<PayFormInput>({ resolver: zodResolver(paySchema) });
   const shareForm = useForm<z.infer<typeof shareSchema>>({ resolver: zodResolver(shareSchema) });
@@ -98,11 +99,11 @@ export function DebtsPage() {
     mutationFn: async (data: DebtFormInput) => {
       await api.post('/debts', {
         description: data.description,
-        totalAmount: Math.round(data.totalAmount * 100),
-        dueDate: new Date(`${data.dueDate}T00:00:00.000Z`).toISOString(),
+        totalAmount: data.totalAmount,
+        dueDate: data.dueDate,
         type: data.type,
-        relatedPersonId: data.relatedPersonId,
-        notes: data.notes,
+        relatedPersonId: data.relatedPersonId || undefined,
+        notes: data.notes || undefined,
       });
     },
     onSuccess: () => {
@@ -110,18 +111,18 @@ export function DebtsPage() {
       toast({ title: 'Dívida criada', description: 'Dívida registrada com sucesso.' });
       setDebtDialogOpen(false);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const createOwedMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof owedFormSchema>) => {
+    mutationFn: async (data: DebtFormInput) => {
       await api.post('/debts/owed', {
         description: data.description,
-        totalAmount: Math.round(data.totalAmount * 100),
-        dueDate: new Date(`${data.dueDate}T00:00:00.000Z`).toISOString(),
+        totalAmount: data.totalAmount,
+        dueDate: data.dueDate,
         type: data.type,
         personId: data.personId,
-        notes: data.notes,
+        notes: data.notes || undefined,
       });
     },
     onSuccess: () => {
@@ -129,13 +130,12 @@ export function DebtsPage() {
       toast({ title: 'Valor a receber criado', description: 'Valor a receber registrado.' });
       setOwedDialogOpen(false);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const payMutation = useMutation({
     mutationFn: async ({ id, kind, data }: { id: string; kind: 'debt' | 'owed'; data: PayFormInput }) => {
-      const amount = Math.round(data.amount * 100);
-      await api.post(`/debts/${kind === 'debt' ? '' : 'owed/'}${id}/pay`, { amount });
+      await api.post(`/debts/${kind === 'debt' ? '' : 'owed/'}${id}/pay`, { amount: data.amount });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['debts'] });
@@ -144,7 +144,7 @@ export function DebtsPage() {
       toast({ title: 'Pagamento registrado', description: 'Pagamento registrado com sucesso.' });
       setPayTarget(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const shareMutation = useMutation({
@@ -155,18 +155,19 @@ export function DebtsPage() {
       toast({ title: 'Dívida compartilhada', description: 'Compartilhamento solicitado.' });
       setShareTarget(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
-  const cancelMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       await api.delete(`/debts/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['debts'] });
-      toast({ title: 'Dívida cancelada', description: 'Dívida cancelada.' });
+      toast({ title: 'Dívida excluída', description: 'Dívida excluída com sucesso.' });
+      setDeleteDebtId(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   if (isLoading) {
@@ -217,7 +218,7 @@ export function DebtsPage() {
               </Button>
             )}
             {kind === 'debt' && debt.status !== 'CANCELLED' && (
-              <Button variant="ghost" size="icon" onClick={() => cancelMutation.mutate(debt.id)}>
+              <Button variant="ghost" size="icon" onClick={() => setDeleteDebtId(debt.id)} aria-label="Excluir dívida">
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             )}
@@ -226,6 +227,16 @@ export function DebtsPage() {
         </div>
       </CardContent>
     </Card>
+  );
+
+  const debtTypeItems = (
+    <>
+      <SelectItem value="PERSONAL_LOAN">Empréstimo pessoal</SelectItem>
+      <SelectItem value="CREDIT_CARD">Cartão de crédito</SelectItem>
+      <SelectItem value="PURCHASE">Compra</SelectItem>
+      <SelectItem value="BORROWED_MONEY">Dinheiro emprestado</SelectItem>
+      <SelectItem value="OTHER">Outro</SelectItem>
+    </>
   );
 
   return (
@@ -247,53 +258,37 @@ export function DebtsPage() {
               <DialogHeader>
                 <DialogTitle>Novo valor a receber</DialogTitle>
               </DialogHeader>
-              <form onSubmit={owedForm.handleSubmit((data) => createOwedMutation.mutate(data))} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="description">Descrição</Label>
-                  <Input id="description" {...owedForm.register('description')} placeholder="Empréstimo para..." />
-                </div>
+              <form onSubmit={owedForm.handleSubmit((data) => createOwedMutation.mutate(data))} className="space-y-4" noValidate>
+                <FormField id="description" label="Descrição" error={owedForm.formState.errors.description?.message}>
+                  <TextInput id="description" placeholder="Empréstimo para..." {...owedForm.register('description')} />
+                </FormField>
                 <div className="grid gap-2 grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="totalAmount">Valor total</Label>
-                    <Input id="totalAmount" type="number" step="0.01" {...owedForm.register('totalAmount', { valueAsNumber: true })} placeholder="1000,00" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dueDate">Vencimento</Label>
-                    <Input id="dueDate" type="date" {...owedForm.register('dueDate')} />
-                  </div>
+                  <FormField id="totalAmount" label="Valor total" error={owedForm.formState.errors.totalAmount?.message}>
+                    <Controller
+                      name="totalAmount"
+                      control={owedForm.control}
+                      render={({ field }) => <CurrencyInput id="totalAmount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                    />
+                  </FormField>
+                  <FormField id="dueDate" label="Vencimento" error={owedForm.formState.errors.dueDate?.message}>
+                    <DateInput id="dueDate" {...owedForm.register('dueDate')} />
+                  </FormField>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="personId">Pessoa</Label>
-                  <Select value={owedForm.watch('personId')} onValueChange={(v) => owedForm.setValue('personId', v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione a pessoa" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(people ?? []).map((person) => (
-                        <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="type">Tipo</Label>
-                  <Select value={owedForm.watch('type')} onValueChange={(v) => owedForm.setValue('type', v as DebtFormInput['type'])}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PERSONAL_LOAN">Empréstimo</SelectItem>
-                      <SelectItem value="BORROWED_MONEY">Dinheiro emprestado</SelectItem>
-                      <SelectItem value="OTHER">Outro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <FormField id="personId" label="Pessoa" error={owedForm.formState.errors.personId?.message}>
+                  <FormSelect control={owedForm.control} name="personId" placeholder="Selecione a pessoa">
+                    {(people ?? []).map((person) => (
+                      <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>
+                    ))}
+                  </FormSelect>
+                </FormField>
+                <FormField id="type" label="Tipo" error={owedForm.formState.errors.type?.message}>
+                  <FormSelect control={owedForm.control} name="type" placeholder="Selecione">
+                    {debtTypeItems}
+                  </FormSelect>
+                </FormField>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setOwedDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit" disabled={createOwedMutation.isPending}>
-                    {createOwedMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Criar
-                  </Button>
+                  <Button type="submit" loading={createOwedMutation.isPending}>Criar</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -310,55 +305,38 @@ export function DebtsPage() {
               <DialogHeader>
                 <DialogTitle>Nova dívida</DialogTitle>
               </DialogHeader>
-              <form onSubmit={debtForm.handleSubmit((data) => createDebtMutation.mutate(data))} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="description">Descrição</Label>
-                  <Input id="description" {...debtForm.register('description')} placeholder="Empréstimo, financiamento..." />
-                </div>
+              <form onSubmit={debtForm.handleSubmit((data) => createDebtMutation.mutate(data))} className="space-y-4" noValidate>
+                <FormField id="description" label="Descrição" error={debtForm.formState.errors.description?.message}>
+                  <TextInput id="description" placeholder="Empréstimo, financiamento..." {...debtForm.register('description')} />
+                </FormField>
                 <div className="grid gap-2 grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="totalAmount">Valor total</Label>
-                    <Input id="totalAmount" type="number" step="0.01" {...debtForm.register('totalAmount', { valueAsNumber: true })} placeholder="1000,00" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dueDate">Vencimento</Label>
-                    <Input id="dueDate" type="date" {...debtForm.register('dueDate')} />
-                  </div>
+                  <FormField id="totalAmount" label="Valor total" error={debtForm.formState.errors.totalAmount?.message}>
+                    <Controller
+                      name="totalAmount"
+                      control={debtForm.control}
+                      render={({ field }) => <CurrencyInput id="totalAmount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                    />
+                  </FormField>
+                  <FormField id="dueDate" label="Vencimento" error={debtForm.formState.errors.dueDate?.message}>
+                    <DateInput id="dueDate" {...debtForm.register('dueDate')} />
+                  </FormField>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="type">Tipo</Label>
-                  <Select value={debtForm.watch('type')} onValueChange={(v) => debtForm.setValue('type', v as DebtFormInput['type'])}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PERSONAL_LOAN">Empréstimo pessoal</SelectItem>
-                      <SelectItem value="CREDIT_CARD">Cartão de crédito</SelectItem>
-                      <SelectItem value="PURCHASE">Compra</SelectItem>
-                      <SelectItem value="BORROWED_MONEY">Dinheiro emprestado</SelectItem>
-                      <SelectItem value="OTHER">Outro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="relatedPersonId">Pessoa (opcional)</Label>
-                  <Select value={debtForm.watch('relatedPersonId')} onValueChange={(v) => debtForm.setValue('relatedPersonId', v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(people ?? []).map((person) => (
-                        <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <FormField id="type" label="Tipo" error={debtForm.formState.errors.type?.message}>
+                  <FormSelect control={debtForm.control} name="type" placeholder="Selecione">
+                    {debtTypeItems}
+                  </FormSelect>
+                </FormField>
+                <FormField id="relatedPersonId" label="Pessoa (opcional)" error={debtForm.formState.errors.relatedPersonId?.message}>
+                  <FormSelect control={debtForm.control} name="relatedPersonId" placeholder="Selecione">
+                    <SelectItem value="">Nenhuma</SelectItem>
+                    {(people ?? []).map((person) => (
+                      <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>
+                    ))}
+                  </FormSelect>
+                </FormField>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setDebtDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit" disabled={createDebtMutation.isPending}>
-                    {createDebtMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Criar
-                  </Button>
+                  <Button type="submit" loading={createDebtMutation.isPending}>Criar</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -404,20 +382,20 @@ export function DebtsPage() {
           <DialogHeader>
             <DialogTitle>{payTarget?.kind === 'owed' ? 'Receber pagamento' : 'Pagar dívida'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={payForm.handleSubmit((data) => payTarget && payMutation.mutate({ id: payTarget.debt.id, kind: payTarget.kind, data }))} className="space-y-4">
+          <form onSubmit={payForm.handleSubmit((data) => payTarget && payMutation.mutate({ id: payTarget.debt.id, kind: payTarget.kind, data }))} className="space-y-4" noValidate>
             <p className="text-sm text-muted-foreground">
               {payTarget?.debt.description} · Restante {payTarget ? formatMoney(payTarget.debt.remainingAmount.cents) : ''}
             </p>
-            <div className="space-y-2">
-              <Label htmlFor="amount">Valor do pagamento (R$)</Label>
-              <Input id="amount" type="number" step="0.01" min="0.01" {...payForm.register('amount', { valueAsNumber: true })} />
-            </div>
+            <FormField id="amount" label="Valor do pagamento" error={payForm.formState.errors.amount?.message}>
+              <Controller
+                name="amount"
+                control={payForm.control}
+                render={({ field }) => <CurrencyInput id="amount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+              />
+            </FormField>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPayTarget(null)}>Cancelar</Button>
-              <Button type="submit" disabled={payMutation.isPending}>
-                {payMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Confirmar
-              </Button>
+              <Button type="submit" loading={payMutation.isPending}>Confirmar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -428,21 +406,26 @@ export function DebtsPage() {
           <DialogHeader>
             <DialogTitle>Compartilhar dívida</DialogTitle>
           </DialogHeader>
-          <form onSubmit={shareForm.handleSubmit((data) => shareTarget && shareMutation.mutate({ id: shareTarget.id, email: data.email }))} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email do devedor</Label>
-              <Input id="email" type="email" {...shareForm.register('email')} placeholder="devedor@exemplo.com" />
-            </div>
+          <form onSubmit={shareForm.handleSubmit((data) => shareTarget && shareMutation.mutate({ id: shareTarget.id, email: data.email }))} className="space-y-4" noValidate>
+            <FormField id="email" label="Email do devedor" error={shareForm.formState.errors.email?.message}>
+              <EmailInput id="email" placeholder="devedor@exemplo.com" {...shareForm.register('email')} />
+            </FormField>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShareTarget(null)}>Cancelar</Button>
-              <Button type="submit" disabled={shareMutation.isPending}>
-                {shareMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Compartilhar
-              </Button>
+              <Button type="submit" loading={shareMutation.isPending}>Compartilhar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={!!deleteDebtId}
+        onOpenChange={(open) => !open && setDeleteDebtId(null)}
+        title="Excluir dívida?"
+        description="Essa ação removerá permanentemente a dívida. Dívidas com pagamentos registrados não podem ser excluídas."
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteDebtId && deleteMutation.mutate(deleteDebtId)}
+      />
     </div>
   );
 }

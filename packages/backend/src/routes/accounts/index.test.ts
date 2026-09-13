@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import accountsRoutes from './index.js';
 import { buildApp, TEST_USER_ID, OTHER_USER_ID } from '../../test/helpers.js';
-import { bankAccount } from '../../db/schema/index.js';
+import { bankAccount, transaction } from '../../db/schema/index.js';
 
 describe('accounts routes', () => {
   let app: any;
@@ -125,5 +125,36 @@ describe('accounts routes', () => {
     const res = await app.inject({ method: 'DELETE', url: '/api/v1/accounts/55555555-5555-4555-8555-555555555555' });
     expect(res.statusCode).toBe(200);
     expect(db.all(bankAccount)).toHaveLength(0);
+  });
+
+  it('blocks deleting an account that has transactions', async () => {
+    db.seed(bankAccount, [{
+      id: '66666666-6666-4666-8666-666666666666',
+      userId: TEST_USER_ID,
+      name: 'Itaú',
+      institution: 'Itaú',
+      type: 'CHECKING',
+      balanceCents: 0,
+      initialBalanceCents: 0,
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(transaction, [{
+      id: '99999999-9999-4999-8999-999999999999',
+      userId: TEST_USER_ID,
+      accountId: '66666666-6666-4666-8666-666666666666',
+      description: 'Compra',
+      amountCents: 100,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'PIX',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/accounts/66666666-6666-4666-8666-666666666666' });
+    expect(res.statusCode).toBe(409);
+    expect(db.all(bankAccount)).toHaveLength(1);
   });
 });

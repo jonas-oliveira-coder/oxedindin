@@ -94,7 +94,7 @@ describe('createTransactionSchema', () => {
       description: 'Supermercado',
       amount: 10050,
       type: 'EXPENSE',
-      date: new Date().toISOString(),
+      date: '2024-01-15',
       paymentMethod: 'PIX',
     });
     expect(result.success).toBe(true);
@@ -105,7 +105,7 @@ describe('createTransactionSchema', () => {
       description: 'Supermercado',
       amount: 0,
       type: 'EXPENSE',
-      date: new Date().toISOString(),
+      date: '2024-01-15',
       paymentMethod: 'PIX',
     });
     expect(result.success).toBe(false);
@@ -156,7 +156,7 @@ describe('uuid id fields', () => {
       description: 'Supermercado',
       amount: 10050,
       type: 'EXPENSE',
-      date: new Date().toISOString(),
+      date: '2024-01-15',
       paymentMethod: 'PIX',
       accountId: uuid,
       cardId: uuid,
@@ -170,7 +170,7 @@ describe('uuid id fields', () => {
       description: 'Supermercado',
       amount: 10050,
       type: 'EXPENSE',
-      date: new Date().toISOString(),
+      date: '2024-01-15',
       paymentMethod: 'PIX',
       accountId: 'not-a-uuid',
     });
@@ -183,7 +183,7 @@ describe('createBillSchema', () => {
     const result = createBillSchema.safeParse({
       description: 'Conta de luz',
       amount: 15000,
-      dueDate: new Date().toISOString(),
+      dueDate: '2024-01-15',
     });
     expect(result.success).toBe(true);
   });
@@ -192,7 +192,7 @@ describe('createBillSchema', () => {
     const result = createBillSchema.safeParse({
       description: 'Conta de luz',
       amount: 0,
-      dueDate: new Date().toISOString(),
+      dueDate: '2024-01-15',
     });
     expect(result.success).toBe(false);
   });
@@ -205,7 +205,7 @@ describe('createRecurringBillSchema', () => {
       amount: 3990,
       frequency: 'MONTHLY',
       dueDay: 10,
-      startDate: new Date().toISOString(),
+      startDate: '2024-01-15',
     });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.dateType).toBe('FIXED');
@@ -217,7 +217,7 @@ describe('createRecurringBillSchema', () => {
       amount: 3990,
       frequency: 'YEARLY',
       dueDay: 10,
-      startDate: new Date().toISOString(),
+      startDate: '2024-01-15',
     });
     expect(result.success).toBe(false);
   });
@@ -228,7 +228,7 @@ describe('createDebtSchema', () => {
     const result = createDebtSchema.safeParse({
       description: 'Empréstimo',
       totalAmount: 100000,
-      dueDate: new Date().toISOString(),
+      dueDate: '2024-01-15',
       type: 'PERSONAL_LOAN',
     });
     expect(result.success).toBe(true);
@@ -238,7 +238,7 @@ describe('createDebtSchema', () => {
     const result = createDebtSchema.safeParse({
       description: 'Empréstimo',
       totalAmount: 100000,
-      dueDate: new Date().toISOString(),
+      dueDate: '2024-01-15',
       type: 'MORTGAGE',
     });
     expect(result.success).toBe(false);
@@ -263,8 +263,8 @@ describe('createInstallmentPlanSchema', () => {
       description: 'Notebook',
       totalAmount: 300000,
       installmentsCount: 10,
-      startDate: new Date().toISOString(),
-      firstInvoiceDate: new Date().toISOString(),
+      startDate: '2024-01-15',
+      firstInvoiceDate: '2024-01-15',
       cardId: 'a1b2c3d4-1234-5678-9abc-def012345678',
     });
     expect(result.success).toBe(true);
@@ -275,8 +275,8 @@ describe('createInstallmentPlanSchema', () => {
       description: 'Notebook',
       totalAmount: 300000,
       installmentsCount: 10,
-      startDate: new Date().toISOString(),
-      firstInvoiceDate: new Date().toISOString(),
+      startDate: '2024-01-15',
+      firstInvoiceDate: '2024-01-15',
       cardId: 'not-a-uuid',
     });
     expect(result.success).toBe(false);

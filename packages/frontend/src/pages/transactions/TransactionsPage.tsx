@@ -175,7 +175,7 @@ export function TransactionsPage() {
             <DialogHeader>
               <DialogTitle>Nova Transação</DialogTitle>
             </DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <FormField id="description" label="Descrição" error={form.formState.errors.description?.message}>
                 <TextInput id="description" placeholder="Supermercado, Uber, Salário..." {...form.register('description')} />
               </FormField>

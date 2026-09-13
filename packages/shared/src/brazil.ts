@@ -68,12 +68,12 @@ function checkCnpjDigits(cnpj: string): boolean {
 
   let sum = 0;
   for (let i = 0; i < 12; i++) sum += parseInt(cnpj[i], 10) * weights1[i];
-  let firstDigit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  const firstDigit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
   if (firstDigit !== parseInt(cnpj[12], 10)) return false;
 
   sum = 0;
   for (let i = 0; i < 13; i++) sum += parseInt(cnpj[i], 10) * weights2[i];
-  let secondDigit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  const secondDigit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
   return secondDigit === parseInt(cnpj[13], 10);
 }
 
