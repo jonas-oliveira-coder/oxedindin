@@ -250,6 +250,7 @@ export const createTransactionSchema = z.object({
     accountId: uuidSchema.optional(),
     cardId: uuidSchema.optional(),
     notes: z.string().max(500).optional(),
+    installmentsCount: z.number().int('Número de parcelas inválido.').positive('O número de parcelas deve ser positivo.').max(60, 'Máximo de 60 parcelas.').optional(),
   }),
 });
 

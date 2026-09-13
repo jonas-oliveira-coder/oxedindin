@@ -48,6 +48,105 @@ function getInvoiceForDate(date: Date, closingDay: number, dueDay: number): { cl
   return { closingDate, dueDate, periodStart: start, periodEnd: end };
 }
 
+async function createInstallmentPlan(app: any, input: {
+  userId: string;
+  description: string;
+  totalAmount: number;
+  installmentsCount: number;
+  startDate: Date;
+  firstInvoiceDate: Date;
+  cardId: string;
+  categoryId?: string | null;
+}): Promise<{ plan: any; installments: any[] }> {
+  const { userId, description, totalAmount, installmentsCount, startDate, firstInvoiceDate, cardId, categoryId } = input;
+
+  const [card] = await app.db.select()
+    .from(creditCard)
+    .where(and(eq(creditCard.id, cardId), eq(creditCard.userId, userId)))
+    .limit(1);
+  if (!card) throw app.httpErrors.badRequest('Cartão não encontrado.');
+
+  if (categoryId) {
+    const [cat] = await app.db.select()
+      .from(category)
+      .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
+      .limit(1);
+    if (!cat) throw app.httpErrors.badRequest('Categoria não encontrada.');
+  }
+
+  if (totalAmount > Number(card.availableLimitCents)) {
+    throw app.httpErrors.badRequest('Limite disponível insuficiente.');
+  }
+
+  const installmentValues = calculateInstallmentValue(totalAmount, installmentsCount);
+  const installmentValue = installmentValues[0];
+
+  const [plan] = await app.db.insert(installmentPlan).values({
+    userId,
+    cardId,
+    description,
+    totalAmountCents: totalAmount,
+    installmentsCount,
+    installmentValueCents: BigInt(installmentValue),
+    startDate,
+    firstInvoiceDate,
+    categoryId,
+  }).returning();
+
+  const createdInstallments = [];
+  for (let i = 0; i < installmentsCount; i++) {
+    const dueDate = new Date(firstInvoiceDate);
+    dueDate.setMonth(dueDate.getMonth() + i);
+
+    const invoiceInfo = getInvoiceForDate(dueDate, card.closingDay, card.dueDay);
+
+    const [existingInvoice] = await app.db.select()
+      .from(invoice)
+      .where(and(eq(invoice.cardId, cardId), eq(invoice.periodStart, invoiceInfo.periodStart), eq(invoice.periodEnd, invoiceInfo.periodEnd)))
+      .limit(1);
+
+    let invoiceRecord = existingInvoice;
+    if (!invoiceRecord) {
+      const [newInvoice] = await app.db.insert(invoice).values({
+        cardId,
+        periodStart: invoiceInfo.periodStart,
+        periodEnd: invoiceInfo.periodEnd,
+        closingDate: invoiceInfo.closingDate,
+        dueDate: invoiceInfo.dueDate,
+        totalCents: 0n,
+        paidCents: 0n,
+        remainingCents: 0n,
+        status: 'OPEN',
+      }).returning();
+      invoiceRecord = newInvoice;
+    }
+
+    const [newInstallment] = await app.db.insert(installment).values({
+      planId: plan.id,
+      invoiceId: invoiceRecord.id,
+      number: i + 1,
+      amountCents: BigInt(installmentValues[i]),
+      dueDate: invoiceInfo.dueDate,
+      status: 'PENDING',
+    }).returning();
+
+    await app.db.update(invoice)
+      .set({
+        totalCents: sql`${invoice.totalCents} + ${installmentValues[i]}`,
+        remainingCents: sql`${invoice.remainingCents} + ${installmentValues[i]}`,
+      })
+      .where(eq(invoice.id, invoiceRecord.id));
+
+    createdInstallments.push(newInstallment);
+  }
+
+  await app.db.update(creditCard)
+    .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${totalAmount}` })
+    .where(eq(creditCard.id, cardId));
+
+  return { plan, installments: createdInstallments };
+}
+
 const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     schema: {
@@ -152,7 +251,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: createTransactionSchema,
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const { description, amount, type, categoryId, date, paymentMethod, accountId, cardId, notes } = request.body;
+    const { description, amount, type, categoryId, date, paymentMethod, accountId, cardId, notes, installmentsCount } = request.body;
     const userId = request.authUser!.id;
 
     if (accountId) {
@@ -177,6 +276,48 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
         .limit(1);
       if (!cat) throw app.httpErrors.badRequest('Categoria não encontrada.');
+    }
+
+    if (installmentsCount && installmentsCount > 1 && paymentMethod === 'CREDIT_CARD' && cardId) {
+      const [cardForPlan] = await app.db.select()
+        .from(creditCard)
+        .where(and(eq(creditCard.id, cardId), eq(creditCard.userId, userId)))
+        .limit(1);
+      if (!cardForPlan) throw app.httpErrors.badRequest('Cartão não encontrado.');
+
+      const purchaseDate = new Date(date);
+      const firstInvoiceDate = getInvoiceForDate(purchaseDate, cardForPlan.closingDay, cardForPlan.dueDay).dueDate;
+
+      const { plan, installments } = await createInstallmentPlan(app, {
+        userId,
+        description,
+        totalAmount: amount,
+        installmentsCount,
+        startDate: purchaseDate,
+        firstInvoiceDate,
+        cardId,
+        categoryId,
+      });
+
+      await app.auditLog({
+        userId,
+        action: 'INSTALLMENT_PLAN_CREATED',
+        entityType: 'InstallmentPlan',
+        entityId: plan.id,
+        newData: request.body,
+        ip: request.ip,
+        userAgent: request.headers['user-agent'],
+      });
+
+      return reply.status(201).send({
+        ...plan,
+        totalAmount: { cents: Number(plan.totalAmountCents), currency: 'BRL' as const },
+        installmentValue: { cents: Number(plan.installmentValueCents), currency: 'BRL' as const },
+        installments: installments.map((i: any) => ({
+          ...i,
+          amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
+        })),
+      });
     }
 
     const [newTransaction] = await app.db.insert(transaction).values({
@@ -285,89 +426,16 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { description, totalAmount, installmentsCount, startDate, firstInvoiceDate, cardId, categoryId } = request.body;
     const userId = request.authUser!.id;
 
-    const [card] = await app.db.select()
-      .from(creditCard)
-      .where(and(eq(creditCard.id, cardId), eq(creditCard.userId, userId)))
-      .limit(1);
-    if (!card) throw app.httpErrors.badRequest('Cartão não encontrado.');
-
-    if (categoryId) {
-      const [cat] = await app.db.select()
-        .from(category)
-        .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
-        .limit(1);
-      if (!cat) throw app.httpErrors.badRequest('Categoria não encontrada.');
-    }
-
-    if (totalAmount > Number(card.availableLimitCents)) {
-      throw app.httpErrors.badRequest('Limite disponível insuficiente.');
-    }
-
-    const installmentValues = calculateInstallmentValue(totalAmount, installmentsCount);
-    const installmentValue = installmentValues[0];
-
-    const [plan] = await app.db.insert(installmentPlan).values({
+    const { plan, installments: createdInstallments } = await createInstallmentPlan(app, {
       userId,
-      cardId,
       description,
-      totalAmountCents: totalAmount,
+      totalAmount,
       installmentsCount,
-      installmentValueCents: BigInt(installmentValue),
       startDate: new Date(startDate),
       firstInvoiceDate: new Date(firstInvoiceDate),
+      cardId,
       categoryId,
-    }).returning();
-
-    const createdInstallments = [];
-    for (let i = 0; i < installmentsCount; i++) {
-      const dueDate = new Date(firstInvoiceDate);
-      dueDate.setMonth(dueDate.getMonth() + i);
-
-      const invoiceInfo = getInvoiceForDate(dueDate, card.closingDay, card.dueDay);
-
-      const [existingInvoice] = await app.db.select()
-        .from(invoice)
-        .where(and(eq(invoice.cardId, cardId), eq(invoice.periodStart, invoiceInfo.periodStart), eq(invoice.periodEnd, invoiceInfo.periodEnd)))
-        .limit(1);
-
-      let invoiceRecord = existingInvoice;
-      if (!invoiceRecord) {
-        const [newInvoice] = await app.db.insert(invoice).values({
-          cardId,
-          periodStart: invoiceInfo.periodStart,
-          periodEnd: invoiceInfo.periodEnd,
-          closingDate: invoiceInfo.closingDate,
-          dueDate: invoiceInfo.dueDate,
-          totalCents: 0n,
-          paidCents: 0n,
-          remainingCents: 0n,
-          status: 'OPEN',
-        }).returning();
-        invoiceRecord = newInvoice;
-      }
-
-      const [newInstallment] = await app.db.insert(installment).values({
-        planId: plan.id,
-        invoiceId: invoiceRecord.id,
-        number: i + 1,
-        amountCents: BigInt(installmentValues[i]),
-        dueDate: invoiceInfo.dueDate,
-        status: 'PENDING',
-      }).returning();
-
-      await app.db.update(invoice)
-        .set({
-          totalCents: sql`${invoice.totalCents} + ${installmentValues[i]}`,
-          remainingCents: sql`${invoice.remainingCents} + ${installmentValues[i]}`,
-        })
-        .where(eq(invoice.id, invoiceRecord.id));
-
-      createdInstallments.push(newInstallment);
-    }
-
-    await app.db.update(creditCard)
-      .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${totalAmount}` })
-      .where(eq(creditCard.id, cardId));
+    });
 
     await app.auditLog({
       userId,
@@ -427,33 +495,172 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().uuid() }),
       body: z.object({
         description: z.string().min(1).max(200).optional(),
-        amount: z.number().int().optional(),
+        amount: z.number().int().positive().optional(),
+        type: z.enum(['EXPENSE', 'INCOME', 'TRANSFER']).optional(),
         categoryId: z.string().uuid().nullable().optional(),
         date: z.string().datetime().optional(),
         paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).optional(),
+        accountId: z.string().uuid().nullable().optional(),
+        cardId: z.string().uuid().nullable().optional(),
         notes: z.string().max(500).nullable().optional(),
       }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
+    const userId = request.authUser!.id;
+    const body = request.body;
+
     const [existing] = await app.db.select()
       .from(transaction)
-      .where(and(eq(transaction.id, request.params.id), eq(transaction.userId, request.authUser!.id)))
+      .where(and(eq(transaction.id, request.params.id), eq(transaction.userId, userId)))
       .limit(1);
 
     if (!existing) {
       throw app.httpErrors.notFound('Transação não encontrada.');
     }
 
-    const { amount, date, ...updateRest } = request.body;
-    const updateData: any = { ...updateRest };
-    if (amount !== undefined) updateData.amountCents = amount;
-    if (date !== undefined) updateData.date = new Date(date);
+    if (existing.installmentPlanId || (existing.description && existing.description.startsWith('Pagamento'))) {
+      throw app.httpErrors.conflict('Esta transação foi gerada por um parcelamento e não pode ser editada diretamente. Gerencie-a na origem.');
+    }
+
+    const nextAccountId = body.accountId !== undefined ? body.accountId : existing.accountId;
+    const nextCardId = body.cardId !== undefined ? body.cardId : existing.cardId;
+    const nextType = body.type ?? existing.type;
+    const nextAmount = body.amount !== undefined ? body.amount : Number(existing.amountCents);
+    const nextDate = body.date !== undefined ? new Date(body.date) : new Date(existing.date);
+
+    if (nextAccountId) {
+      const [account] = await app.db.select()
+        .from(bankAccount)
+        .where(and(eq(bankAccount.id, nextAccountId), eq(bankAccount.userId, userId)))
+        .limit(1);
+      if (!account) throw app.httpErrors.badRequest('Conta não encontrada.');
+    }
+
+    if (nextCardId) {
+      const [card] = await app.db.select()
+        .from(creditCard)
+        .where(and(eq(creditCard.id, nextCardId), eq(creditCard.userId, userId)))
+        .limit(1);
+      if (!card) throw app.httpErrors.badRequest('Cartão não encontrado.');
+    }
+
+    if (body.categoryId) {
+      const [cat] = await app.db.select()
+        .from(category)
+        .where(and(eq(category.id, body.categoryId), eq(category.userId, userId)))
+        .limit(1);
+      if (!cat) throw app.httpErrors.badRequest('Categoria não encontrada.');
+    }
+
+    const oldAmount = Number(existing.amountCents);
+
+    if (existing.accountId) {
+      if (existing.type === 'EXPENSE') {
+        await app.db.update(bankAccount)
+          .set({ balanceCents: sql`${bankAccount.balanceCents} + ${oldAmount}` })
+          .where(eq(bankAccount.id, existing.accountId));
+      } else if (existing.type === 'INCOME') {
+        await app.db.update(bankAccount)
+          .set({ balanceCents: sql`${bankAccount.balanceCents} - ${oldAmount}` })
+          .where(eq(bankAccount.id, existing.accountId));
+      }
+    }
+
+    if (existing.cardId) {
+      const [oldCard] = await app.db.select()
+        .from(creditCard)
+        .where(eq(creditCard.id, existing.cardId))
+        .limit(1);
+      if (oldCard) {
+        const { periodStart, periodEnd } = getInvoiceForDate(new Date(existing.date), oldCard.closingDay, oldCard.dueDay);
+        const [linkedInvoice] = await app.db.select()
+          .from(invoice)
+          .where(and(eq(invoice.cardId, existing.cardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
+          .limit(1);
+        if (linkedInvoice) {
+          await app.db.update(invoice)
+            .set({
+              totalCents: sql`${invoice.totalCents} - ${oldAmount}`,
+              remainingCents: sql`${invoice.remainingCents} - ${oldAmount}`,
+            })
+            .where(eq(invoice.id, linkedInvoice.id));
+        }
+
+        await app.db.update(creditCard)
+          .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${oldAmount}` })
+          .where(eq(creditCard.id, existing.cardId));
+      }
+    }
+
+    const updateData: any = {};
+    if (body.description !== undefined) updateData.description = body.description;
+    if (body.amount !== undefined) updateData.amountCents = body.amount;
+    if (body.type !== undefined) updateData.type = body.type;
+    if (body.categoryId !== undefined) updateData.categoryId = body.categoryId;
+    if (body.date !== undefined) updateData.date = new Date(body.date);
+    if (body.paymentMethod !== undefined) updateData.paymentMethod = body.paymentMethod;
+    if (body.accountId !== undefined) updateData.accountId = body.accountId;
+    if (body.cardId !== undefined) updateData.cardId = body.cardId;
+    if (body.notes !== undefined) updateData.notes = body.notes;
 
     const [updatedTransaction] = await app.db.update(transaction)
       .set(updateData)
       .where(eq(transaction.id, request.params.id))
       .returning();
+
+    if (nextAccountId) {
+      if (nextType === 'EXPENSE') {
+        await app.db.update(bankAccount)
+          .set({ balanceCents: sql`${bankAccount.balanceCents} - ${nextAmount}` })
+          .where(eq(bankAccount.id, nextAccountId));
+      } else if (nextType === 'INCOME') {
+        await app.db.update(bankAccount)
+          .set({ balanceCents: sql`${bankAccount.balanceCents} + ${nextAmount}` })
+          .where(eq(bankAccount.id, nextAccountId));
+      }
+    }
+
+    if (nextCardId) {
+      const [newCard] = await app.db.select()
+        .from(creditCard)
+        .where(eq(creditCard.id, nextCardId))
+        .limit(1);
+      if (newCard) {
+        const { closingDate, dueDate, periodStart, periodEnd } = getInvoiceForDate(nextDate, newCard.closingDay, newCard.dueDay);
+        const [existingInvoice] = await app.db.select()
+          .from(invoice)
+          .where(and(eq(invoice.cardId, nextCardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
+          .limit(1);
+
+        let invoiceRecord = existingInvoice;
+        if (!invoiceRecord) {
+          const [newInvoice] = await app.db.insert(invoice).values({
+            cardId: nextCardId,
+            periodStart,
+            periodEnd,
+            closingDate,
+            dueDate,
+            totalCents: 0n,
+            paidCents: 0n,
+            remainingCents: 0n,
+            status: 'OPEN',
+          }).returning();
+          invoiceRecord = newInvoice;
+        }
+
+        await app.db.update(invoice)
+          .set({
+            totalCents: sql`${invoice.totalCents} + ${nextAmount}`,
+            remainingCents: sql`${invoice.remainingCents} + ${nextAmount}`,
+          })
+          .where(eq(invoice.id, invoiceRecord.id));
+
+        await app.db.update(creditCard)
+          .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${nextAmount}` })
+          .where(eq(creditCard.id, nextCardId));
+      }
+    }
 
     await app.auditLog({
       userId: request.authUser!.id,

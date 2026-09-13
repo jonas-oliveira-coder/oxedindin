@@ -9,11 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getTransactionTypeColor, cleanParams } from '@/lib/utils';
-import { Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createTransactionSchema, type CreateTransactionInput } from '@/lib/validation';
-import { FormField, TextInput, CurrencyInput, DateInput, Textarea, FormSelect } from '@/components/forms';
+import { FormField, TextInput, CurrencyInput, DateInput, Textarea, FormSelect, NumberInput } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { todayCivilDate } from '@oxedindin/shared';
 import { cn } from '@/lib/utils';
@@ -29,6 +29,7 @@ interface Transaction {
   account?: { id: string; name: string } | null;
   card?: { id: string; name: string } | null;
   notes?: string;
+  installmentPlanId?: string | null;
   createdAt: string;
 }
 
@@ -68,6 +69,21 @@ async function deleteTransaction(id: string): Promise<void> {
   await api.delete(`/transactions/${id}`);
 }
 
+async function updateTransaction(id: string, data: TransactionPatchInput): Promise<Transaction> {
+  const response = await api.patch(`/transactions/${id}`, data);
+  return response.data;
+}
+
+function isInstallmentGenerated(transaction: Transaction): boolean {
+  return Boolean(transaction.installmentPlanId) || transaction.description.startsWith('Pagamento');
+}
+
+type TransactionPatchInput = Omit<Partial<CreateTransactionInput>, 'accountId' | 'cardId' | 'categoryId'> & {
+  accountId?: string | null;
+  cardId?: string | null;
+  categoryId?: string | null;
+};
+
 const transactionTypeLabels: Record<string, string> = {
   EXPENSE: 'Despesa',
   INCOME: 'Receita',
@@ -88,6 +104,7 @@ export function TransactionsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Transaction | null>(null);
   const [filters, setFilters] = useState({
     page: 1,
     limit: 20,
@@ -130,6 +147,19 @@ export function TransactionsPage() {
     onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: TransactionPatchInput }) => updateTransaction(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['installments'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      toast({ title: 'Transação atualizada', description: 'Transação atualizada com sucesso.' });
+      setEditing(null);
+    },
+    onError: (error) => toast({ title: 'Não foi possível atualizar', description: getErrorMessage(error), variant: 'destructive' }),
+  });
+
   const form = useForm<CreateTransactionInput>({
     resolver: zodResolver(createTransactionSchema),
     defaultValues: {
@@ -139,6 +169,13 @@ export function TransactionsPage() {
     },
   });
 
+  const editForm = useForm<CreateTransactionInput>({
+    resolver: zodResolver(createTransactionSchema),
+  });
+
+  const watchedPaymentMethod = form.watch('paymentMethod');
+  const watchedCardId = form.watch('cardId');
+
   const onSubmit = (data: CreateTransactionInput) => {
     createMutation.mutate({
       ...data,
@@ -146,8 +183,38 @@ export function TransactionsPage() {
       cardId: data.cardId || undefined,
       categoryId: data.categoryId || undefined,
       notes: data.notes || undefined,
+      installmentsCount: data.installmentsCount && data.installmentsCount > 1 ? data.installmentsCount : undefined,
     });
     form.reset({ type: 'EXPENSE', paymentMethod: 'CREDIT_CARD', date: todayCivilDate() });
+  };
+
+  const openEdit = (transaction: Transaction) => {
+    editForm.reset({
+      description: transaction.description,
+      amount: transaction.amount.cents,
+      type: transaction.type as CreateTransactionInput['type'],
+      categoryId: transaction.category?.id || undefined,
+      date: transaction.date.slice(0, 10),
+      paymentMethod: transaction.paymentMethod as CreateTransactionInput['paymentMethod'],
+      accountId: transaction.account?.id || undefined,
+      cardId: transaction.card?.id || undefined,
+      notes: transaction.notes || '',
+    });
+    setEditing(transaction);
+  };
+
+  const onEditSubmit = (data: CreateTransactionInput) => {
+    if (!editing) return;
+    editMutation.mutate({
+      id: editing.id,
+      data: {
+        ...data,
+        accountId: data.accountId || null,
+        cardId: data.cardId || null,
+        categoryId: data.categoryId || null,
+        notes: data.notes || undefined,
+      },
+    });
   };
 
   const handleFilterChange = (key: string, value: any) => {
@@ -264,6 +331,13 @@ export function TransactionsPage() {
                 </FormField>
               </div>
 
+              {watchedPaymentMethod === 'CREDIT_CARD' && watchedCardId && (
+                <FormField id="installmentsCount" label="Parcelar em (opcional)" error={form.formState.errors.installmentsCount?.message}>
+                  <NumberInput id="installmentsCount" min={1} max={60} placeholder="1 = à vista" {...form.register('installmentsCount', { valueAsNumber: true })} />
+                  <p className="text-xs text-muted-foreground">Deixe 1 ou vazio para lançar à vista.</p>
+                </FormField>
+              )}
+
               <FormField id="notes" label="Observações" error={form.formState.errors.notes?.message}>
                 <Textarea id="notes" placeholder="Observações opcionais" {...form.register('notes')} />
               </FormField>
@@ -271,6 +345,95 @@ export function TransactionsPage() {
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
                 <Button type="submit" loading={createMutation.isPending}>Salvar</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Editar Transação</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4" noValidate>
+              <FormField id="edit-description" label="Descrição" error={editForm.formState.errors.description?.message}>
+                <TextInput id="edit-description" placeholder="Supermercado, Uber, Salário..." {...editForm.register('description')} />
+              </FormField>
+
+              <div className="grid gap-2 grid-cols-2">
+                <FormField id="edit-amount" label="Valor" error={editForm.formState.errors.amount?.message}>
+                  <Controller
+                    name="amount"
+                    control={editForm.control}
+                    render={({ field }) => <CurrencyInput id="edit-amount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                  />
+                </FormField>
+                <FormField id="edit-type" label="Tipo" error={editForm.formState.errors.type?.message}>
+                  <FormSelect control={editForm.control} name="type" placeholder="Selecione">
+                    <SelectItem value="EXPENSE">Despesa</SelectItem>
+                    <SelectItem value="INCOME">Receita</SelectItem>
+                    <SelectItem value="TRANSFER">Transferência</SelectItem>
+                  </FormSelect>
+                </FormField>
+              </div>
+
+              <FormField id="edit-categoryId" label="Categoria" error={editForm.formState.errors.categoryId?.message}>
+                <FormSelect control={editForm.control} name="categoryId" placeholder="Selecione uma categoria">
+                  <SelectItem value="">Sem categoria</SelectItem>
+                  {(fetchedCategories ?? []).map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      <span className="flex items-center gap-2">
+                        {cat.color && <span className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }} />}
+                        {cat.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </FormSelect>
+              </FormField>
+
+              <div className="grid gap-2 grid-cols-2">
+                <FormField id="edit-date" label="Data" error={editForm.formState.errors.date?.message}>
+                  <DateInput id="edit-date" {...editForm.register('date')} />
+                </FormField>
+                <FormField id="edit-paymentMethod" label="Forma de pagamento" error={editForm.formState.errors.paymentMethod?.message}>
+                  <FormSelect control={editForm.control} name="paymentMethod" placeholder="Selecione">
+                    <SelectItem value="CASH">Dinheiro</SelectItem>
+                    <SelectItem value="DEBIT_CARD">Débito</SelectItem>
+                    <SelectItem value="CREDIT_CARD">Crédito</SelectItem>
+                    <SelectItem value="PIX">PIX</SelectItem>
+                    <SelectItem value="BANK_TRANSFER">Transferência</SelectItem>
+                    <SelectItem value="BOLETO">Boleto</SelectItem>
+                    <SelectItem value="OTHER">Outro</SelectItem>
+                  </FormSelect>
+                </FormField>
+              </div>
+
+              <div className="grid gap-2 grid-cols-2">
+                <FormField id="edit-accountId" label="Conta (opcional)" error={editForm.formState.errors.accountId?.message}>
+                  <FormSelect control={editForm.control} name="accountId" placeholder="Selecione">
+                    <SelectItem value="">Nenhuma</SelectItem>
+                    {(fetchedAccounts ?? []).map((acc) => (
+                      <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                    ))}
+                  </FormSelect>
+                </FormField>
+                <FormField id="edit-cardId" label="Cartão (opcional)" error={editForm.formState.errors.cardId?.message}>
+                  <FormSelect control={editForm.control} name="cardId" placeholder="Selecione">
+                    <SelectItem value="">Nenhum</SelectItem>
+                    {(fetchedCards ?? []).map((card) => (
+                      <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
+                    ))}
+                  </FormSelect>
+                </FormField>
+              </div>
+
+              <FormField id="edit-notes" label="Observações" error={editForm.formState.errors.notes?.message}>
+                <Textarea id="edit-notes" placeholder="Observações opcionais" {...editForm.register('notes')} />
+              </FormField>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
+                <Button type="submit" loading={editMutation.isPending}>Salvar</Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -347,7 +510,7 @@ export function TransactionsPage() {
         <CardContent>
           {transactions.length > 0 ? (
             <div>
-              <div className="hidden md:grid grid-cols-[1.7fr_1.1fr_0.9fr_1fr_1.1fr_1fr_1fr_48px] gap-3 px-4 py-3 text-sm font-medium text-muted-foreground border-b">
+              <div className="hidden md:grid grid-cols-[1.7fr_1.1fr_0.9fr_1fr_1.1fr_1fr_1fr_96px] gap-3 px-4 py-3 text-sm font-medium text-muted-foreground border-b">
                 <div>Descrição</div>
                 <div>Categoria</div>
                 <div>Data</div>
@@ -380,13 +543,20 @@ export function TransactionsPage() {
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <p className={cn('font-semibold', getTransactionTypeColor(transaction.type))}>{formatMoney(transaction.amount.cents)}</p>
                       <span className="text-xs text-muted-foreground">{transactionTypeLabels[transaction.type]}</span>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteId(transaction.id)} aria-label="Excluir transação">
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {!isInstallmentGenerated(transaction) && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(transaction)} aria-label="Editar transação">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteId(transaction.id)} aria-label="Excluir transação">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="hidden md:grid grid-cols-[1.7fr_1.1fr_0.9fr_1fr_1.1fr_1fr_1fr_48px] gap-3 px-4 py-3 border-b hover:bg-accent/50 items-center">
+                  <div className="hidden md:grid grid-cols-[1.7fr_1.1fr_0.9fr_1fr_1.1fr_1fr_1fr_96px] gap-3 px-4 py-3 border-b hover:bg-accent/50 items-center">
                     <div className="font-medium truncate">{transaction.description}</div>
                     <div className="truncate">
                       {transaction.category && (
@@ -408,6 +578,13 @@ export function TransactionsPage() {
                       </span>
                     </div>
                     <div className="flex justify-end">
+                      {!isInstallmentGenerated(transaction) ? (
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(transaction)} aria-label="Editar transação">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">parcelamento</span>
+                      )}
                       <Button variant="ghost" size="icon" onClick={() => setDeleteId(transaction.id)} aria-label="Excluir transação">
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>

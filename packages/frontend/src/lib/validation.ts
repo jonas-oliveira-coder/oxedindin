@@ -116,6 +116,20 @@ export const updateCardSchema = z.object({
 export const transactionTypeSchema = z.enum(['EXPENSE', 'INCOME', 'TRANSFER']);
 export const paymentMethodSchema = z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']);
 
+const optionalInstallmentsCountSchema = z.preprocess(
+  (value) => {
+    if (value === '' || value === null) return undefined;
+    if (typeof value === 'number' && Number.isNaN(value)) return undefined;
+    return value;
+  },
+  z
+    .number({ invalid_type_error: 'Informe o número de parcelas.' })
+    .int('Número de parcelas inválido.')
+    .positive('O número de parcelas deve ser positivo.')
+    .max(60, 'Máximo de 60 parcelas.')
+    .optional(),
+);
+
 export const createTransactionSchema = z.object({
   description: z.string().trim().min(1, 'Informe a descrição.').max(200),
   amount: positiveMoneyCentsSchema,
@@ -126,6 +140,7 @@ export const createTransactionSchema = z.object({
   accountId: uuidSchema.optional(),
   cardId: uuidSchema.optional(),
   notes: z.string().max(500).optional(),
+  installmentsCount: optionalInstallmentsCountSchema,
 });
 
 export const createCategorySchema = z.object({
