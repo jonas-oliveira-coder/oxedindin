@@ -131,7 +131,7 @@ export class AuthService {
 
   async registerPasskeyStart(userId: string) {
     const userRecord = await db.select().from(user).where(eq(user.id, userId)).limit(1);
-    if (!userRecord[0]) throw new Error('User not found');
+    if (!userRecord[0]) throw new Error('Usuário não encontrado.');
     const userData = userRecord[0];
 
     const existingPasskeys = await db.select().from(passkey).where(eq(passkey.userId, userId));
@@ -282,7 +282,7 @@ export class AuthService {
       .where(and(eq(passkey.id, passkeyId), eq(passkey.userId, userId)))
       .limit(1);
 
-    if (!passkeyRecord[0]) throw new Error('Passkey not found');
+    if (!passkeyRecord[0]) throw new Error('Passkey não encontrada.');
 
     await db.delete(passkey).where(eq(passkey.id, passkeyId));
 
@@ -315,7 +315,7 @@ export class AuthService {
     if (numbers) charset += NUMBERS;
     if (symbols) charset += SYMBOLS;
 
-    if (!charset) throw new Error('At least one character type must be selected');
+    if (!charset) throw new Error('Selecione pelo menos um tipo de caractere.');
     const requiredCharsets = [
       uppercase ? UPPER : '',
       lowercase ? LOWER : '',
@@ -324,7 +324,7 @@ export class AuthService {
     ].filter(Boolean);
 
     if (length < requiredCharsets.length) {
-      throw new Error('Password length is too short for the selected character types');
+      throw new Error('O comprimento da senha é muito curto para os tipos selecionados.');
     }
 
     const array = new Uint8Array(length);

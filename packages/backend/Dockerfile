@@ -15,7 +15,7 @@ WORKDIR /repo
 COPY packages/backend ./packages/backend
 COPY packages/shared ./packages/shared
 
-RUN npm run build --workspace=@oxedindin/backend
+RUN npm run build --workspace=@oxedindin/shared && npm run build --workspace=@oxedindin/backend
 
 # Production image
 FROM node:20-alpine AS runner
@@ -28,6 +28,7 @@ COPY --from=builder /repo/packages/backend/drizzle ./drizzle
 COPY --from=builder /repo/node_modules ./node_modules
 COPY --from=builder /repo/packages/backend/node_modules ./node_modules
 COPY --from=builder /repo/packages/backend/package.json ./package.json
+COPY --from=builder /repo/packages/shared ./packages/shared
 
 EXPOSE 3000
 

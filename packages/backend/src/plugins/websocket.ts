@@ -90,8 +90,8 @@ export default fp(async (app) => {
               ws.send(JSON.stringify({ type: 'auth_success', userId: currentUserId }));
               app.log.info({ userId: currentUserId }, 'WebSocket authenticated');
             } catch (err) {
-              ws.send(JSON.stringify({ type: 'error', message: 'Invalid token' }));
-              ws.close(4001, 'Invalid token');
+              ws.send(JSON.stringify({ type: 'error', message: 'Token inválido.' }));
+              ws.close(4001, 'Token inválido.');
             }
           } else if (message.type === 'subscribe' && currentUserId) {
             const client = clients.get(currentUserId);

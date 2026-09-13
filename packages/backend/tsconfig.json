@@ -17,8 +17,7 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@oxedindin/shared": ["../shared/src"]
+      "@/*": ["src/*"]
     },
     "noImplicitAny": false,
     "strictNullChecks": false,

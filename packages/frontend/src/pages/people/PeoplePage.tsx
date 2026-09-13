@@ -153,7 +153,7 @@ export function PeoplePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Pessoas</h1>
           <p className="text-muted-foreground">Gerencie pessoas para dívidas compartilhadas</p>
@@ -235,17 +235,17 @@ export function PeoplePage() {
           {people.map((person) => (
             <Card key={person.id}>
               <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
                       {person.type === 'COMPANY' ? <Building2 className="h-5 w-5 text-primary" /> : <User className="h-5 w-5 text-primary" />}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className="font-semibold">{person.name}</h3>
                         <Badge variant="secondary">{person.type === 'COMPANY' ? 'Empresa' : 'Pessoa Física'}</Badge>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                         {person.email && (
                           <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" />{person.email}</span>
                         )}

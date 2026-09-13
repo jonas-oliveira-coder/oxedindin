@@ -4,6 +4,7 @@ import { eq, and, gte, lte, desc, asc, count, sql, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { createDebtSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
 import { debt, person, sharedDebt, user, bankAccount, transaction, notification } from '../../db/schema/index.js';
+import { emailSchema } from '@oxedindin/shared';
 
 const debtorUser = alias(user, 'debts_debtor_user');
 const creditorUser = alias(user, 'debts_creditor_user');
@@ -98,7 +99,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(person)
         .where(and(eq(person.id, relatedPersonId), eq(person.userId, userId)))
         .limit(1);
-      if (!personRecord) throw app.httpErrors.badRequest('Person not found');
+      if (!personRecord) throw app.httpErrors.badRequest('Pessoa não encontrada.');
     }
 
     const [newDebt] = await app.db.insert(debt).values({
@@ -155,7 +156,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(eq(debt.id, request.params.id), eq(debt.userId, request.authUser!.id)))
       .limit(1);
 
-    if (!debtWithPerson) throw app.httpErrors.notFound('Debt not found');
+    if (!debtWithPerson) throw app.httpErrors.notFound('Dívida não encontrada.');
 
     const sharedDebtsData = await app.db.select({
       sharedDebt,
@@ -194,7 +195,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(debt)
       .where(and(eq(debt.id, request.params.id), eq(debt.userId, request.authUser!.id)))
       .limit(1);
-    if (!existing) throw app.httpErrors.notFound('Debt not found');
+    if (!existing) throw app.httpErrors.notFound('Dívida não encontrada.');
 
     const updateData = { ...request.body };
     if (updateData.totalAmount !== undefined) {
@@ -257,15 +258,15 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(debt)
       .where(and(eq(debt.id, request.params.id), eq(debt.userId, userId)))
       .limit(1);
-    if (!existing) throw app.httpErrors.notFound('Debt not found');
-    if (amount > Number(existing.remainingAmountCents)) throw app.httpErrors.badRequest('Payment exceeds remaining amount');
+    if (!existing) throw app.httpErrors.notFound('Dívida não encontrada.');
+    if (amount > Number(existing.remainingAmountCents)) throw app.httpErrors.badRequest('O pagamento excede o valor restante.');
 
     if (accountId) {
       const [account] = await app.db.select()
         .from(bankAccount)
         .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
         .limit(1);
-      if (!account) throw app.httpErrors.badRequest('Account not found');
+      if (!account) throw app.httpErrors.badRequest('Conta não encontrada.');
 
       await app.db.update(bankAccount)
         .set({ balanceCents: sql`${bankAccount.balanceCents} - ${amount}` })
@@ -336,7 +337,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Debt not found');
+      throw app.httpErrors.notFound('Dívida não encontrada.');
     }
 
     if (Number(existing.paidAmountCents) > 0) {
@@ -356,6 +357,72 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     });
 
     return { success: true };
+  });
+
+  app.post('/:id/link-person', {
+    schema: {
+      params: z.object({ id: z.string().uuid() }),
+      body: z.object({ email: emailSchema }),
+    },
+    preHandler: [app.authenticate],
+  }, async (request: any, reply: any) => {
+    const { email } = request.body;
+    const userId = request.authUser!.id;
+
+    const [existing] = await app.db.select()
+      .from(debt)
+      .where(and(eq(debt.id, request.params.id), eq(debt.userId, userId)))
+      .limit(1);
+
+    if (!existing) throw app.httpErrors.notFound('Dívida não encontrada.');
+
+    const personRecord = await app.db.select()
+      .from(person)
+      .where(and(eq(person.userId, userId), eq(person.email, email)))
+      .limit(1);
+
+    let linkedPersonId = personRecord[0]?.id;
+
+    if (!linkedPersonId) {
+      const [newPerson] = await app.db.insert(person).values({
+        userId,
+        email,
+        name: email,
+        type: 'INDIVIDUAL',
+      }).returning();
+      linkedPersonId = newPerson.id;
+    }
+
+    await app.db.update(debt)
+      .set({ relatedPersonId: linkedPersonId })
+      .where(eq(debt.id, request.params.id));
+
+    await app.auditLog({
+      userId,
+      action: 'DEBT_PERSON_LINKED',
+      entityType: 'Debt',
+      entityId: request.params.id,
+      newData: { email, personId: linkedPersonId },
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
+
+    const [debtWithPerson] = await app.db.select({
+      debt,
+      relatedPerson: person,
+    })
+      .from(debt)
+      .leftJoin(person, eq(debt.relatedPersonId, person.id))
+      .where(eq(debt.id, request.params.id))
+      .limit(1);
+
+    return {
+      ...debtWithPerson!.debt,
+      relatedPerson: debtWithPerson!.relatedPerson,
+      totalAmount: { cents: Number(debtWithPerson!.debt.totalAmountCents), currency: 'BRL' as const },
+      paidAmount: { cents: Number(debtWithPerson!.debt.paidAmountCents), currency: 'BRL' as const },
+      remainingAmount: { cents: Number(debtWithPerson!.debt.remainingAmountCents), currency: 'BRL' as const },
+    };
   });
 
   app.get('/owed', {
@@ -455,7 +522,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(person)
       .where(and(eq(person.id, personId), eq(person.userId, userId)))
       .limit(1);
-    if (!personRecord) throw app.httpErrors.badRequest('Person not found');
+    if (!personRecord) throw app.httpErrors.badRequest('Pessoa não encontrada.');
 
     const [newDebt] = await app.db.insert(debt).values({
       userId,
@@ -511,7 +578,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(eq(debt.id, request.params.id), eq(person.userId, request.authUser!.id)))
       .limit(1);
 
-    if (!debtWithPerson) throw app.httpErrors.notFound('Debt not found');
+    if (!debtWithPerson) throw app.httpErrors.notFound('Dívida não encontrada.');
 
     const sharedDebtsData = await app.db.select({
       sharedDebt,
@@ -555,7 +622,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .innerJoin(person, eq(debt.relatedPersonId, person.id))
       .where(and(eq(debt.id, request.params.id), eq(person.userId, request.authUser!.id)))
       .limit(1);
-    if (!existing) throw app.httpErrors.notFound('Debt not found');
+    if (!existing) throw app.httpErrors.notFound('Dívida não encontrada.');
 
     const updateData = { ...request.body };
     if (updateData.totalAmount !== undefined) {
@@ -618,8 +685,8 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .innerJoin(person, eq(debt.relatedPersonId, person.id))
       .where(and(eq(debt.id, request.params.id), eq(person.userId, userId)))
       .limit(1);
-    if (!existing) throw app.httpErrors.notFound('Debt not found');
-    if (amount > Number(existing.debt.remainingAmountCents)) throw app.httpErrors.badRequest('Payment exceeds remaining amount');
+    if (!existing) throw app.httpErrors.notFound('Dívida não encontrada.');
+    if (amount > Number(existing.debt.remainingAmountCents)) throw app.httpErrors.badRequest('O pagamento excede o valor restante.');
 
     const newPaid = Number(existing.debt.paidAmountCents) + amount;
     const newRemaining = Number(existing.debt.totalAmountCents) - newPaid;
@@ -666,7 +733,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: {
       params: z.object({ id: z.string().uuid() }),
       body: z.object({
-        email: z.string().email(),
+        email: emailSchema,
       }),
     },
     preHandler: [app.authenticate],
@@ -682,7 +749,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .innerJoin(person, eq(debt.relatedPersonId, person.id))
       .where(and(eq(debt.id, request.params.id), eq(person.userId, userId)))
       .limit(1);
-    if (!debtWithPerson) throw app.httpErrors.notFound('Debt not found');
+    if (!debtWithPerson) throw app.httpErrors.notFound('Dívida não encontrada.');
 
     const [debtorUser] = await app.db.select()
       .from(user)
@@ -694,7 +761,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(sharedDebt)
         .where(and(eq(sharedDebt.debtId, debtWithPerson.debt.id), eq(sharedDebt.debtorUserId, debtorUser.id)))
         .limit(1);
-      if (existingShare) throw app.httpErrors.conflict('Debt already shared with this user');
+      if (existingShare) throw app.httpErrors.conflict('Esta dívida já foi compartilhada com este usuário.');
 
       const [sharedDebtRecord] = await app.db.insert(sharedDebt).values({
         debtId: debtWithPerson.debt.id,

@@ -166,7 +166,7 @@ export function AccountsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Contas Bancárias</h1>
           <p className="text-muted-foreground">Gerencie suas contas bancárias e saldos</p>
@@ -251,17 +251,17 @@ export function AccountsPage() {
           {accounts.map((account) => (
             <Card key={account.id}>
               <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-lg bg-primary/10">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="p-3 rounded-lg bg-primary/10 shrink-0">
                       <svg className="h-6 w-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <rect x="2" y="3" width="20" height="14" rx="2" />
                         <path d="M8 21h8" />
                         <path d="M12 17v4" />
                       </svg>
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className="font-semibold text-lg">{account.name}</h3>
                         <span className={cn('px-2 py-0.5 text-xs rounded-full', account.status === 'ACTIVE' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground')}>
                           {account.status === 'ACTIVE' ? 'Ativa' : 'Inativa'}
@@ -271,7 +271,7 @@ export function AccountsPage() {
                       {account.number && <p className="text-sm text-muted-foreground">Conta: {account.number} • Ag: {account.agency}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-4">
                     <div className="text-right">
                       <p className="text-2xl font-bold">{formatMoney(account.balance.cents)}</p>
                       <p className="text-sm text-muted-foreground">Saldo inicial: {formatMoney(account.initialBalance.cents)}</p>

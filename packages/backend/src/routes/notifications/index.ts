@@ -45,7 +45,7 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(eq(notification.id, request.params.id), eq(notification.userId, request.authUser!.id)))
       .limit(1);
 
-    if (!notificationRecord) throw app.httpErrors.notFound('Notification not found');
+    if (!notificationRecord) throw app.httpErrors.notFound('Notificação não encontrada.');
 
     await app.db.update(notification)
       .set({ read: true })

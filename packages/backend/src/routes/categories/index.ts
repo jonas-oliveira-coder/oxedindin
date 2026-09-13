@@ -86,11 +86,11 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Category not found');
+      throw app.httpErrors.notFound('Categoria não encontrada.');
     }
 
     if (existing.isDefault) {
-      throw app.httpErrors.forbidden('Cannot modify default category');
+      throw app.httpErrors.forbidden('Não é possível modificar uma categoria padrão.');
     }
 
     const [updatedCategory] = await app.db.update(category)
@@ -124,11 +124,11 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Category not found');
+      throw app.httpErrors.notFound('Categoria não encontrada.');
     }
 
     if (existing.isDefault) {
-      throw app.httpErrors.forbidden('Cannot delete default category');
+      throw app.httpErrors.forbidden('Não é possível excluir uma categoria padrão.');
     }
 
     const [catTransactions, catPlans, catRecurring, catBills] = await Promise.all([

@@ -160,7 +160,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(bankAccount)
         .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
         .limit(1);
-      if (!account) throw app.httpErrors.badRequest('Account not found');
+      if (!account) throw app.httpErrors.badRequest('Conta não encontrada.');
     }
 
     if (cardId) {
@@ -168,7 +168,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(creditCard)
         .where(and(eq(creditCard.id, cardId), eq(creditCard.userId, userId)))
         .limit(1);
-      if (!card) throw app.httpErrors.badRequest('Card not found');
+      if (!card) throw app.httpErrors.badRequest('Cartão não encontrado.');
     }
 
     if (categoryId) {
@@ -176,7 +176,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(category)
         .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
         .limit(1);
-      if (!cat) throw app.httpErrors.badRequest('Category not found');
+      if (!cat) throw app.httpErrors.badRequest('Categoria não encontrada.');
     }
 
     const [newTransaction] = await app.db.insert(transaction).values({
@@ -289,18 +289,18 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(creditCard)
       .where(and(eq(creditCard.id, cardId), eq(creditCard.userId, userId)))
       .limit(1);
-    if (!card) throw app.httpErrors.badRequest('Card not found');
+    if (!card) throw app.httpErrors.badRequest('Cartão não encontrado.');
 
     if (categoryId) {
       const [cat] = await app.db.select()
         .from(category)
         .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
         .limit(1);
-      if (!cat) throw app.httpErrors.badRequest('Category not found');
+      if (!cat) throw app.httpErrors.badRequest('Categoria não encontrada.');
     }
 
     if (totalAmount > Number(card.availableLimitCents)) {
-      throw app.httpErrors.badRequest('Insufficient available limit');
+      throw app.httpErrors.badRequest('Limite disponível insuficiente.');
     }
 
     const installmentValues = calculateInstallmentValue(totalAmount, installmentsCount);
@@ -410,7 +410,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!tx) {
-      throw app.httpErrors.notFound('Transaction not found');
+      throw app.httpErrors.notFound('Transação não encontrada.');
     }
 
     return {
@@ -442,7 +442,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Transaction not found');
+      throw app.httpErrors.notFound('Transação não encontrada.');
     }
 
     const { amount, date, ...updateRest } = request.body;
@@ -484,7 +484,7 @@ const [existing] = await app.db.select()
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Transaction not found');
+      throw app.httpErrors.notFound('Transação não encontrada.');
     }
 
     if (existing.installmentPlanId || (existing.description && existing.description.startsWith('Pagamento'))) {

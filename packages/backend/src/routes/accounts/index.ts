@@ -80,7 +80,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!account) {
-      throw app.httpErrors.notFound('Account not found');
+      throw app.httpErrors.notFound('Conta não encontrada.');
     }
 
     return {
@@ -147,7 +147,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Account not found');
+      throw app.httpErrors.notFound('Conta não encontrada.');
     }
 
     const [account] = await app.db.update(bankAccount)
@@ -185,7 +185,7 @@ const [existing] = await app.db.select()
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Account not found');
+      throw app.httpErrors.notFound('Conta não encontrada.');
     }
 
     const [accountsTransactions, accountsBills, accountsRecurring, accountsCards] = await Promise.all([

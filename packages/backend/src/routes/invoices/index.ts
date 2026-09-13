@@ -129,7 +129,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!invoiceData) {
-      throw app.httpErrors.notFound('Invoice not found');
+      throw app.httpErrors.notFound('Fatura não encontrada.');
     }
 
     const [card] = await app.db.select()
@@ -138,7 +138,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!card) {
-      throw app.httpErrors.forbidden('Access denied');
+      throw app.httpErrors.forbidden('Acesso negado.');
     }
 
     const transactionsData = await app.db.select({
@@ -201,7 +201,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!invoiceData) {
-      throw app.httpErrors.notFound('Invoice not found');
+      throw app.httpErrors.notFound('Fatura não encontrada.');
     }
 
     const [card] = await app.db.select()
@@ -210,11 +210,11 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!card) {
-      throw app.httpErrors.forbidden('Access denied');
+      throw app.httpErrors.forbidden('Acesso negado.');
     }
 
     if (amount > Number(invoiceData.invoice.remainingCents)) {
-      throw app.httpErrors.badRequest('Payment amount exceeds remaining balance');
+      throw app.httpErrors.badRequest('O valor do pagamento excede o saldo restante.');
     }
 
     if (accountId) {
@@ -222,7 +222,7 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(bankAccount)
         .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
         .limit(1);
-      if (!account) throw app.httpErrors.badRequest('Account not found');
+      if (!account) throw app.httpErrors.badRequest('Conta não encontrada.');
 
       await app.db.update(bankAccount)
         .set({ balanceCents: sql`${bankAccount.balanceCents} - ${amount}` })

@@ -77,7 +77,7 @@ export function DebtsPage() {
   const [debtDialogOpen, setDebtDialogOpen] = useState(false);
   const [owedDialogOpen, setOwedDialogOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<{ debt: Debt; kind: 'debt' | 'owed' } | null>(null);
-  const [shareTarget, setShareTarget] = useState<Debt | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ debt: Debt; kind: 'debt' | 'owed' } | null>(null);
   const [deleteDebtId, setDeleteDebtId] = useState<string | null>(null);
 
   const { data: debts, isLoading } = useQuery({ queryKey: ['debts'], queryFn: fetchDebts });
@@ -148,11 +148,17 @@ export function DebtsPage() {
   });
 
   const shareMutation = useMutation({
-    mutationFn: async ({ id, email }: { id: string; email: string }) => {
-      await api.post(`/debts/owed/${id}/share`, { email });
+    mutationFn: async ({ id, kind, email }: { id: string; kind: 'debt' | 'owed'; email: string }) => {
+      if (kind === 'owed') {
+        await api.post(`/debts/owed/${id}/share`, { email });
+      } else {
+        await api.post(`/debts/${id}/link-person`, { email });
+      }
     },
     onSuccess: () => {
-      toast({ title: 'Dívida compartilhada', description: 'Compartilhamento solicitado.' });
+      queryClient.invalidateQueries({ queryKey: ['debts'] });
+      queryClient.invalidateQueries({ queryKey: ['debtsOwed'] });
+      toast({ title: 'Dívida compartilhada', description: 'Pessoa vinculada com sucesso.' });
       setShareTarget(null);
     },
     onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
@@ -190,9 +196,9 @@ export function DebtsPage() {
   const renderDebt = (debt: Debt, kind: 'debt' | 'owed') => (
     <Card key={debt.id}>
       <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"> 
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
               <h3 className="font-semibold">{debt.description}</h3>
               <Badge variant="outline" className={getStatusColor(debt.status)}>
                 {debt.status === 'PAID' ? 'Paga' : debt.status === 'OVERDUE' ? 'Vencida' : debt.status === 'ACTIVE' ? 'Ativa' : debt.status}
@@ -207,14 +213,20 @@ export function DebtsPage() {
               Restante: <span className="font-medium">{formatMoney(debt.remainingAmount.cents)}</span> de {formatMoney(debt.totalAmount.cents)}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {debt.remainingAmount.cents > 0 && debt.status !== 'CANCELLED' && (
               <Button size="sm" onClick={() => { setPayTarget({ debt, kind }); payForm.reset({ amount: undefined }); }}>Pagar</Button>
             )}
             {kind === 'owed' && debt.remainingAmount.cents > 0 && (
-              <Button variant="outline" size="sm" onClick={() => { setShareTarget(debt); shareForm.reset(); }}>
+              <Button variant="outline" size="sm" onClick={() => { setShareTarget({ debt, kind }); shareForm.reset(); }}>
                 <Share2 className="mr-1 h-4 w-4" />
                 Compartilhar
+              </Button>
+            )}
+            {kind === 'debt' && debt.status !== 'CANCELLED' && debt.remainingAmount.cents > 0 && (
+              <Button variant="outline" size="sm" onClick={() => { setShareTarget({ debt, kind }); shareForm.reset(); }}>
+                <Share2 className="mr-1 h-4 w-4" />
+                Vincular pessoa
               </Button>
             )}
             {kind === 'debt' && debt.status !== 'CANCELLED' && (
@@ -241,7 +253,7 @@ export function DebtsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dívidas</h1>
           <p className="text-muted-foreground">Gerencie suas dívidas e valores a receber</p>
@@ -404,15 +416,19 @@ export function DebtsPage() {
       <Dialog open={!!shareTarget} onOpenChange={(open) => !open && setShareTarget(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Compartilhar dívida</DialogTitle>
+            <DialogTitle>{shareTarget?.kind === 'owed' ? 'Compartilhar dívida' : 'Vincular pessoa'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={shareForm.handleSubmit((data) => shareTarget && shareMutation.mutate({ id: shareTarget.id, email: data.email }))} className="space-y-4" noValidate>
-            <FormField id="email" label="Email do devedor" error={shareForm.formState.errors.email?.message}>
-              <EmailInput id="email" placeholder="devedor@exemplo.com" {...shareForm.register('email')} />
+          <form onSubmit={shareForm.handleSubmit((data) => shareTarget && shareMutation.mutate({ id: shareTarget.debt.id, kind: shareTarget.kind, email: data.email }))} className="space-y-4" noValidate>
+            <p className="text-sm text-muted-foreground">
+              {shareTarget?.debt.description} ·{' '}
+              <span className="font-semibold">{shareTarget ? formatMoney(shareTarget.debt.remainingAmount.cents) : ''}</span>
+            </p>
+            <FormField id="email" label={shareTarget?.kind === 'owed' ? 'Email do devedor' : 'Email da pessoa'} error={shareForm.formState.errors.email?.message}>
+              <EmailInput id="email" placeholder="pessoa@exemplo.com" {...shareForm.register('email')} />
             </FormField>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShareTarget(null)}>Cancelar</Button>
-              <Button type="submit" loading={shareMutation.isPending}>Compartilhar</Button>
+              <Button type="submit" loading={shareMutation.isPending}>{shareTarget?.kind === 'owed' ? 'Compartilhar' : 'Vincular'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

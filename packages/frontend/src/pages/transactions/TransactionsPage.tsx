@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
-import { formatMoney, formatDate, getTransactionTypeColor } from '@/lib/utils';
+import { formatMoney, formatDate, getTransactionTypeColor, cleanParams } from '@/lib/utils';
 import { Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,7 +39,8 @@ interface Category {
 }
 
 async function fetchTransactions(params?: Record<string, unknown>): Promise<{ data: Transaction[]; meta: any }> {
-  const response = await api.get('/transactions', { params });
+  const cleaned = cleanParams(params);
+  const response = await api.get('/transactions', { params: cleaned });
   return response.data;
 }
 
@@ -66,6 +67,22 @@ async function createTransaction(data: CreateTransactionInput): Promise<Transact
 async function deleteTransaction(id: string): Promise<void> {
   await api.delete(`/transactions/${id}`);
 }
+
+const transactionTypeLabels: Record<string, string> = {
+  EXPENSE: 'Despesa',
+  INCOME: 'Receita',
+  TRANSFER: 'Transferência',
+};
+
+const paymentMethodLabels: Record<string, string> = {
+  CASH: 'Dinheiro',
+  DEBIT_CARD: 'Débito',
+  CREDIT_CARD: 'Crédito',
+  PIX: 'PIX',
+  BANK_TRANSFER: 'Transferência',
+  BOLETO: 'Boleto',
+  OTHER: 'Outro',
+};
 
 export function TransactionsPage() {
   const queryClient = useQueryClient();
@@ -159,7 +176,7 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Transações</h1>
           <p className="text-muted-foreground">Registre e gerencie suas transações financeiras</p>
@@ -329,8 +346,8 @@ export function TransactionsPage() {
       <Card>
         <CardContent>
           {transactions.length > 0 ? (
-            <div className="space-y-0">
-              <div className="hidden md:grid grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_80px] gap-4 px-4 py-3 text-sm font-medium text-muted-foreground border-b">
+            <div>
+              <div className="hidden md:grid grid-cols-[1.7fr_1.1fr_0.9fr_1fr_1.1fr_1fr_1fr_48px] gap-3 px-4 py-3 text-sm font-medium text-muted-foreground border-b">
                 <div>Descrição</div>
                 <div>Categoria</div>
                 <div>Data</div>
@@ -340,32 +357,61 @@ export function TransactionsPage() {
                 <div className="text-right">Tipo</div>
                 <div></div>
               </div>
+
               {transactions.map((transaction) => (
-                <div key={transaction.id} className="md:grid grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_80px] gap-4 px-4 py-3 border-b last:border-0 hover:bg-accent/50 items-center">
-                  <div className="font-medium">{transaction.description}</div>
-                  <div>
-                    {transaction.category && (
-                      <span className="flex items-center gap-1">
-                        {transaction.category.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: transaction.category.color }} />}
-                        {transaction.category.name}
+                <div key={transaction.id}>
+                  <div className="flex items-start justify-between gap-3 border-b px-4 py-3 md:hidden">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{transaction.description}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        {transaction.category && (
+                          <span className="flex items-center gap-1.5">
+                            {transaction.category.color && (
+                              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: transaction.category.color }} />
+                            )}
+                            {transaction.category.name}
+                          </span>
+                        )}
+                        <span>{formatDate(transaction.date)}</span>
+                        <span>{paymentMethodLabels[transaction.paymentMethod] || transaction.paymentMethod}</span>
+                        {transaction.account?.name && <span>{transaction.account.name}</span>}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <p className={cn('font-semibold', getTransactionTypeColor(transaction.type))}>{formatMoney(transaction.amount.cents)}</p>
+                      <span className="text-xs text-muted-foreground">{transactionTypeLabels[transaction.type]}</span>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteId(transaction.id)} aria-label="Excluir transação">
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="hidden md:grid grid-cols-[1.7fr_1.1fr_0.9fr_1fr_1.1fr_1fr_1fr_48px] gap-3 px-4 py-3 border-b hover:bg-accent/50 items-center">
+                    <div className="font-medium truncate">{transaction.description}</div>
+                    <div className="truncate">
+                      {transaction.category && (
+                        <span className="flex items-center gap-1.5">
+                          {transaction.category.color && (
+                            <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: transaction.category.color }} />
+                          )}
+                          <span className="truncate">{transaction.category.name}</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(transaction.date)}</div>
+                    <div className="text-sm text-muted-foreground whitespace-nowrap">{paymentMethodLabels[transaction.paymentMethod] || transaction.paymentMethod}</div>
+                    <div className="text-sm text-muted-foreground truncate">{transaction.account?.name || transaction.card?.name || '-'}</div>
+                    <div className={cn('text-right font-medium whitespace-nowrap', getTransactionTypeColor(transaction.type))}>{formatMoney(transaction.amount.cents)}</div>
+                    <div className="text-right">
+                      <span className={cn('inline-block px-2 py-0.5 text-xs rounded-full', getTransactionTypeColor(transaction.type))}>
+                        {transactionTypeLabels[transaction.type]}
                       </span>
-                    )}
-                  </div>
-                  <div className="text-sm text-muted-foreground">{formatDate(transaction.date)}</div>
-                  <div className="text-sm text-muted-foreground">{transaction.paymentMethod}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {transaction.account?.name || transaction.card?.name || '-'}
-                  </div>
-                  <div className="text-right font-medium">{formatMoney(transaction.amount.cents)}</div>
-                  <div className="text-right">
-                    <span className={cn('px-2 py-0.5 text-xs rounded-full', getTransactionTypeColor(transaction.type))}>
-                      {transaction.type === 'EXPENSE' ? 'Despesa' : transaction.type === 'INCOME' ? 'Receita' : 'Transferência'}
-                    </span>
-                  </div>
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => setDeleteId(transaction.id)} aria-label="Excluir transação">
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(transaction.id)} aria-label="Excluir transação">
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}

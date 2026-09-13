@@ -118,7 +118,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!plan) {
-      throw app.httpErrors.notFound('Installment plan not found');
+      throw app.httpErrors.notFound('Parcelamento não encontrado.');
     }
 
     const planWithCard = await app.db.select({
@@ -171,7 +171,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Installment plan not found');
+      throw app.httpErrors.notFound('Parcelamento não encontrado.');
     }
 
     const [updatedPlan] = await app.db.update(installmentPlan)
@@ -222,7 +222,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Installment plan not found');
+      throw app.httpErrors.notFound('Parcelamento não encontrado.');
     }
 
     const pendingInstallments = await app.db.select()
@@ -310,11 +310,11 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!installmentRecord) {
-      throw app.httpErrors.notFound('Installment not found');
+      throw app.httpErrors.notFound('Parcela não encontrada.');
     }
 
     if (installmentRecord.installment.status === 'PAID') {
-      throw app.httpErrors.badRequest('Installment already paid');
+      throw app.httpErrors.badRequest('Esta parcela já foi paga.');
     }
 
     const paymentAmount = amount || Number(installmentRecord.installment.amountCents);
@@ -324,7 +324,7 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(bankAccount)
         .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
         .limit(1);
-      if (!account) throw app.httpErrors.badRequest('Account not found');
+      if (!account) throw app.httpErrors.badRequest('Conta não encontrada.');
 
       await app.db.update(bankAccount)
         .set({ balanceCents: sql`${bankAccount.balanceCents} - ${paymentAmount}` })

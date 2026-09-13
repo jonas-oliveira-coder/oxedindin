@@ -167,7 +167,7 @@ export function InstallmentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Parcelamentos</h1>
           <p className="text-muted-foreground">Gerencie suas compras parceladas</p>
@@ -244,9 +244,9 @@ export function InstallmentsPage() {
                   {items
                     .sort((a, b) => a.number - b.number)
                     .map((installment) => (
-                      <div key={installment.id} className="flex items-center justify-between p-3 rounded-lg border">
+                      <div key={installment.id} className="flex flex-col gap-2 p-3 rounded-lg border sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-sm font-medium">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium">
                             {installment.number}
                           </div>
                           <div>

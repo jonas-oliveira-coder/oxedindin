@@ -95,21 +95,21 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(bankAccount)
         .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
         .limit(1);
-      if (!account) throw app.httpErrors.badRequest('Account not found');
+      if (!account) throw app.httpErrors.badRequest('Conta não encontrada.');
     }
     if (cardId) {
       const [card] = await app.db.select()
         .from(creditCard)
         .where(and(eq(creditCard.id, cardId), eq(creditCard.userId, userId)))
         .limit(1);
-      if (!card) throw app.httpErrors.badRequest('Card not found');
+      if (!card) throw app.httpErrors.badRequest('Cartão não encontrado.');
     }
     if (categoryId) {
       const [cat] = await app.db.select()
         .from(category)
         .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
         .limit(1);
-      if (!cat) throw app.httpErrors.badRequest('Category not found');
+      if (!cat) throw app.httpErrors.badRequest('Categoria não encontrada.');
     }
 
     const nextDueDate = getNextDueDate(frequency, dueDay, new Date(startDate));
@@ -179,7 +179,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
       .limit(1);
 
-    if (!billWithRelations) throw app.httpErrors.notFound('Recurring bill not found');
+    if (!billWithRelations) throw app.httpErrors.notFound('Conta recorrente não encontrada.');
 
     return {
       ...billWithRelations.recurringBill,
@@ -212,7 +212,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(recurringBill)
       .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
       .limit(1);
-    if (!existing) throw app.httpErrors.notFound('Recurring bill not found');
+    if (!existing) throw app.httpErrors.notFound('Conta recorrente não encontrada.');
 
     const { amount, endDate, ...updateRest } = request.body;
     const updateData: any = { ...updateRest };
@@ -267,7 +267,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Recurring bill not found');
+      throw app.httpErrors.notFound('Conta recorrente não encontrada.');
     }
 
     await app.db.delete(recurringBill).where(eq(recurringBill.id, request.params.id));
@@ -293,7 +293,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(recurringBill)
       .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
       .limit(1);
-    if (!recurringBillRecord) throw app.httpErrors.notFound('Recurring bill not found');
+    if (!recurringBillRecord) throw app.httpErrors.notFound('Conta recorrente não encontrada.');
 
     const [newBill] = await app.db.insert(bill).values({
       userId: request.authUser!.id,
@@ -384,14 +384,14 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(bankAccount)
         .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
         .limit(1);
-      if (!account) throw app.httpErrors.badRequest('Account not found');
+      if (!account) throw app.httpErrors.badRequest('Conta não encontrada.');
     }
     if (categoryId) {
       const [cat] = await app.db.select()
         .from(category)
         .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
         .limit(1);
-      if (!cat) throw app.httpErrors.badRequest('Category not found');
+      if (!cat) throw app.httpErrors.badRequest('Categoria não encontrada.');
     }
 
     const [newBill] = await app.db.insert(bill).values({
@@ -447,7 +447,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(eq(bill.id, request.params.id), eq(bill.userId, request.authUser!.id)))
       .limit(1);
 
-    if (!billWithRelations) throw app.httpErrors.notFound('Bill not found');
+    if (!billWithRelations) throw app.httpErrors.notFound('Conta não encontrada.');
 
     return {
       ...billWithRelations.bill,
@@ -478,7 +478,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(bill)
       .where(and(eq(bill.id, request.params.id), eq(bill.userId, request.authUser!.id)))
       .limit(1);
-    if (!existing) throw app.httpErrors.notFound('Bill not found');
+    if (!existing) throw app.httpErrors.notFound('Conta não encontrada.');
 
     const { amount, dueDate, ...updateRest } = request.body;
     const updateData: any = { ...updateRest };
@@ -541,15 +541,15 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(bill)
       .where(and(eq(bill.id, request.params.id), eq(bill.userId, userId)))
       .limit(1);
-    if (!existing) throw app.httpErrors.notFound('Bill not found');
-    if (existing.status === 'PAID') throw app.httpErrors.badRequest('Bill already paid');
+    if (!existing) throw app.httpErrors.notFound('Conta não encontrada.');
+    if (existing.status === 'PAID') throw app.httpErrors.badRequest('Esta conta já foi paga.');
 
     if (accountId) {
       const [account] = await app.db.select()
         .from(bankAccount)
         .where(and(eq(bankAccount.id, accountId), eq(bankAccount.userId, userId)))
         .limit(1);
-      if (!account) throw app.httpErrors.badRequest('Account not found');
+      if (!account) throw app.httpErrors.badRequest('Conta não encontrada.');
 
       await app.db.update(bankAccount)
         .set({ balanceCents: sql`${bankAccount.balanceCents} - ${existing.amountCents}` })
@@ -615,7 +615,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Bill not found');
+      throw app.httpErrors.notFound('Conta não encontrada.');
     }
 
     if (existing.status === 'PAID') {

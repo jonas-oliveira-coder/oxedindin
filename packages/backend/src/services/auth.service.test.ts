@@ -27,7 +27,7 @@ describe('AuthService.generateSecurePassword', () => {
 
   it('throws when no character type is selected', async () => {
     await expect(service.generateSecurePassword({ uppercase: false, lowercase: false, numbers: false, symbols: false }))
-      .rejects.toThrow('At least one character type must be selected');
+      .rejects.toThrow('Selecione pelo menos um tipo de caractere.');
   });
 
   it('generates unique passwords across calls', async () => {

@@ -19,7 +19,7 @@ export default fp(async (app) => {
       const token = request.cookies?.accessToken || request.headers.authorization?.replace('Bearer ', '');
 
       if (!token) {
-        throw app.httpErrors.unauthorized('Authentication required');
+        throw app.httpErrors.unauthorized('Autenticação necessária.');
       }
 
       const decoded = (await request.jwtVerify()) as { sub: string; sessionId: string };
@@ -36,14 +36,14 @@ export default fp(async (app) => {
       const row = sessionRecord[0];
 
       if (!row || row.session.revokedAt || row.session.expiresAt < new Date()) {
-        throw app.httpErrors.unauthorized('Session expired or revoked');
+        throw app.httpErrors.unauthorized('Sessão expirada ou revogada.');
       }
 
       request.authUser = row.user;
       request.authUser.session = row.session;
     } catch (err: any) {
       if (err.statusCode === 401) throw err;
-      throw app.httpErrors.unauthorized('Invalid token');
+      throw app.httpErrors.unauthorized('Token inválido.');
     }
   };
 

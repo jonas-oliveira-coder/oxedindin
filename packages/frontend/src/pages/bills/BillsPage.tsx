@@ -211,7 +211,7 @@ export function BillsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Contas a Pagar</h1>
           <p className="text-muted-foreground">Gerencie suas contas e boletos</p>
@@ -325,9 +325,9 @@ export function BillsPage() {
             bills.map((bill) => (
               <Card key={bill.id}>
                 <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className="font-semibold">{bill.description}</h3>
                         <Badge variant="outline" className={getStatusColor(bill.status)}>
                           {bill.status === 'PAID' ? 'Paga' : bill.status === 'OVERDUE' ? 'Vencida' : bill.status === 'CANCELLED' ? 'Cancelada' : 'Pendente'}
@@ -337,7 +337,7 @@ export function BillsPage() {
                       <p className="text-sm text-muted-foreground">Vence em {formatDate(bill.dueDate)}</p>
                       {bill.notes && <p className="text-sm text-muted-foreground">{bill.notes}</p>}
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-3">
                       <p className="font-bold text-lg">{formatMoney(bill.amount.cents)}</p>
                       {bill.status !== 'PAID' && bill.status !== 'CANCELLED' && (
                         <>
@@ -368,9 +368,9 @@ export function BillsPage() {
             recurring.map((bill) => (
               <Card key={bill.id}>
                 <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h3 className="font-semibold">{bill.description}</h3>
                         <Badge variant="secondary">{getFrequencyLabel(bill.frequency)}</Badge>
                         {bill.status === 'INACTIVE' && <Badge variant="outline">Inativa</Badge>}
@@ -379,7 +379,7 @@ export function BillsPage() {
                         Dia {bill.dueDay} · Próximo: {formatDate(bill.nextDueDate)}
                       </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <p className="font-bold text-lg">{formatMoney(bill.amount.cents)}</p>
                       <Button variant="outline" size="sm" onClick={() => generateMutation.mutate(bill.id)}>
                         Gerar próxima

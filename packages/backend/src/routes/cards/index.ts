@@ -52,7 +52,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
         .where(and(eq(bankAccount.id, body.accountId), eq(bankAccount.userId, request.authUser!.id)))
         .limit(1);
       if (!account) {
-        throw app.httpErrors.badRequest('Account not found');
+        throw app.httpErrors.badRequest('Conta não encontrada.');
       }
     }
 
@@ -107,7 +107,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!cardWithAccount) {
-      throw app.httpErrors.notFound('Card not found');
+      throw app.httpErrors.notFound('Cartão não encontrado.');
     }
 
     return {
@@ -133,7 +133,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!card) {
-      throw app.httpErrors.notFound('Card not found');
+      throw app.httpErrors.notFound('Cartão não encontrado.');
     }
 
     const [invoices, totalResult] = await Promise.all([
@@ -170,7 +170,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!card) {
-      throw app.httpErrors.notFound('Card not found');
+      throw app.httpErrors.notFound('Cartão não encontrado.');
     }
 
     const now = new Date();
@@ -185,7 +185,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!currentInvoice) {
-      throw app.httpErrors.notFound('Current invoice not found');
+      throw app.httpErrors.notFound('Fatura atual não encontrada.');
     }
 
     const invoiceTransactions = await app.db.select({
@@ -222,7 +222,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!card) {
-      throw app.httpErrors.notFound('Card not found');
+      throw app.httpErrors.notFound('Cartão não encontrado.');
     }
 
     const now = new Date();
@@ -233,7 +233,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!nextInvoice) {
-      throw app.httpErrors.notFound('Next invoice not found');
+      throw app.httpErrors.notFound('Próxima fatura não encontrada.');
     }
 
     return {
@@ -259,7 +259,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!card) {
-      throw app.httpErrors.notFound('Card not found');
+      throw app.httpErrors.notFound('Cartão não encontrado.');
     }
 
     const plans = await app.db.select({ id: installmentPlan.id })
@@ -314,7 +314,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Card not found');
+      throw app.httpErrors.notFound('Cartão não encontrado.');
     }
 
     if (request.body.accountId) {
@@ -323,7 +323,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
         .where(and(eq(bankAccount.id, request.body.accountId), eq(bankAccount.userId, request.authUser!.id)))
         .limit(1);
       if (!account) {
-        throw app.httpErrors.badRequest('Account not found');
+        throw app.httpErrors.badRequest('Conta não encontrada.');
       }
     }
 
@@ -379,7 +379,7 @@ const [existing] = await app.db.select()
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Card not found');
+      throw app.httpErrors.notFound('Cartão não encontrado.');
     }
 
     const [cardInvoices, cardPlans, cardTransactions] = await Promise.all([

@@ -9,7 +9,7 @@
     "dev": "npm run dev --workspaces --if-present",
     "dev:backend": "npm run dev --workspace=@oxedindin/backend",
     "dev:frontend": "npm run dev --workspace=@oxedindin/frontend",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace=@oxedindin/shared && npm run build --workspace=@oxedindin/backend && npm run build --workspace=@oxedindin/frontend",
     "build:backend": "npm run build --workspace=@oxedindin/backend",
     "build:frontend": "npm run build --workspace=@oxedindin/frontend",
     "lint": "npm run lint --workspaces --if-present",

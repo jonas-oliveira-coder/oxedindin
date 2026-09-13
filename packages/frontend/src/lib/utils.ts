@@ -6,6 +6,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function cleanParams(params?: Record<string, unknown>): Record<string, unknown> {
+  if (!params) return {};
+  return Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== '' && v !== null && v !== undefined),
+  );
+}
+
 export function formatMoney(cents: number, currency = 'BRL', locale = 'pt-BR'): string {
   return new Intl.NumberFormat(locale, {
     style: 'currency',

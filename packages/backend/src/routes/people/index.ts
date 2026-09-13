@@ -38,7 +38,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
         .from(person)
         .where(and(eq(person.userId, request.authUser!.id), eq(person.email, request.body.email)))
         .limit(1);
-      if (existing) throw app.httpErrors.conflict('Person with this email already exists');
+      if (existing) throw app.httpErrors.conflict('Já existe uma pessoa com este email.');
     }
 
     const [newPerson] = await app.db.insert(person).values({
@@ -68,7 +68,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(eq(person.id, request.params.id), eq(person.userId, request.authUser!.id)))
       .limit(1);
 
-    if (!personRecord) throw app.httpErrors.notFound('Person not found');
+    if (!personRecord) throw app.httpErrors.notFound('Pessoa não encontrada.');
 
     const debtsData = await app.db.select({
       ...getTableColumns(debt),
@@ -113,14 +113,14 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
       .from(person)
       .where(and(eq(person.id, request.params.id), eq(person.userId, request.authUser!.id)))
       .limit(1);
-    if (!existing) throw app.httpErrors.notFound('Person not found');
+    if (!existing) throw app.httpErrors.notFound('Pessoa não encontrada.');
 
     if (request.body.email && request.body.email !== existing.email) {
       const [duplicate] = await app.db.select()
         .from(person)
         .where(and(eq(person.userId, request.authUser!.id), eq(person.email, request.body.email)))
         .limit(1);
-      if (duplicate) throw app.httpErrors.conflict('Person with this email already exists');
+      if (duplicate) throw app.httpErrors.conflict('Já existe uma pessoa com este email.');
     }
 
     const [updatedPerson] = await app.db.update(person)
@@ -152,7 +152,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
       .limit(1);
 
     if (!existing) {
-      throw app.httpErrors.notFound('Person not found');
+      throw app.httpErrors.notFound('Pessoa não encontrada.');
     }
 
     const [linkedDebts] = await app.db.select()

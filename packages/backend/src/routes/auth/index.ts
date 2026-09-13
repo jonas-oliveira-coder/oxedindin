@@ -21,7 +21,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const existingUser = await app.db.select().from(user).where(eq(user.email, email)).limit(1);
     if (existingUser[0]) {
-      throw app.httpErrors.conflict('Email already registered');
+      throw app.httpErrors.conflict('Este email já está cadastrado.');
     }
 
     const passwordHash = await authService.hashPassword(password);
@@ -85,7 +85,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const userRecord = await app.db.select().from(user).where(eq(user.email, email)).limit(1);
     const userData = userRecord[0];
     if (!userData || !userData.passwordHash) {
-      throw app.httpErrors.unauthorized('Invalid credentials');
+      throw app.httpErrors.unauthorized('Credenciais inválidas.');
     }
 
     const valid = await authService.verifyPassword(password, userData.passwordHash);
@@ -98,7 +98,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
         ip: request.ip,
         userAgent: request.headers['user-agent'],
       });
-      throw app.httpErrors.unauthorized('Invalid credentials');
+      throw app.httpErrors.unauthorized('Credenciais inválidas.');
     }
 
     const { session: newSession, accessToken, refreshToken } = await authService.createSession(
@@ -169,14 +169,14 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const refreshToken = request.cookies?.refreshToken || request.headers.authorization?.replace('Bearer ', '');
 
     if (!refreshToken) {
-      throw app.httpErrors.unauthorized('Refresh token required');
+      throw app.httpErrors.unauthorized('Token de renovação obrigatório.');
     }
 
     try {
       const decoded = app.jwt.verify(refreshToken, { key: app.config.env.JWT_REFRESH_SECRET }) as { sub: string; sessionId: string; type?: string };
 
       if (decoded.type !== 'refresh') {
-        throw app.httpErrors.unauthorized('Invalid token type');
+        throw app.httpErrors.unauthorized('Tipo de token inválido.');
       }
 
       const sessionRecord = await app.db.select({
@@ -194,7 +194,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
       const sessionData = sessionRecord[0];
       if (!sessionData) {
-        throw app.httpErrors.unauthorized('Session expired or revoked');
+        throw app.httpErrors.unauthorized('Sessão expirada ou revogada.');
       }
 
       const { session: newSession, accessToken: newAccessToken, refreshToken: newRefreshToken } = await authService.createSession(
@@ -233,7 +233,7 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
         refreshToken: newRefreshToken,
       };
     } catch (err) {
-      throw app.httpErrors.unauthorized('Invalid refresh token');
+      throw app.httpErrors.unauthorized('Token de renovação inválido.');
     }
   });
 
@@ -248,12 +248,12 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const userRecord = await app.db.select().from(user).where(eq(user.id, userId)).limit(1);
     const userData = userRecord[0];
     if (!userData || !userData.passwordHash) {
-      throw app.httpErrors.notFound('User not found');
+      throw app.httpErrors.notFound('Usuário não encontrado.');
     }
 
     const valid = await authService.verifyPassword(currentPassword, userData.passwordHash);
     if (!valid) {
-      throw app.httpErrors.unauthorized('Current password is incorrect');
+      throw app.httpErrors.unauthorized('A senha atual está incorreta.');
     }
 
     const newPasswordHash = await authService.hashPassword(newPassword);
@@ -318,12 +318,12 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     const foundUser = userRecord.find(u => (u.settings as Record<string, unknown>)?.resetToken === token);
 
     if (!foundUser) {
-      throw app.httpErrors.badRequest('Invalid or expired reset token');
+      throw app.httpErrors.badRequest('Token de redefinição inválido ou expirado.');
     }
 
     const settings = foundUser.settings as Record<string, unknown>;
     if (!settings.resetTokenExpiresAt || new Date(settings.resetTokenExpiresAt as string) < new Date()) {
-      throw app.httpErrors.badRequest('Reset token expired');
+      throw app.httpErrors.badRequest('Token de redefinição expirado.');
     }
 
     const passwordHash = await authService.hashPassword(password);
