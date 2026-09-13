@@ -129,13 +129,22 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Coolify webhook
+      - name: Restart Coolify service
         env:
-          COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          SERVICE_UUID: ${{ secrets.SERVICE_UUID }}
         run: |
-          if [ -n "$COOLIFY_WEBHOOK_URL" ]; then
-            curl -X POST "$COOLIFY_WEBHOOK_URL" \
-              -H "Content-Type: application/json"
-          else
-            echo "COOLIFY_WEBHOOK_URL not set; skipping webhook"
+          if [ -z "$COOLIFY_URL" ] || [ -z "$COOLIFY_TOKEN" ] || [ -z "$SERVICE_UUID" ]; then
+            echo "COOLIFY_URL, COOLIFY_TOKEN or SERVICE_UUID not set; skipping Coolify API restart"
+            exit 0
           fi
+
+          echo "Restarting Coolify service..."
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $COOLIFY_TOKEN" \
+            --header "Accept: application/json" \
+            "$COOLIFY_URL/api/v1/services/$SERVICE_UUID/restart?latest=true"
+          echo
+          echo "Coolify restart requested successfully."
