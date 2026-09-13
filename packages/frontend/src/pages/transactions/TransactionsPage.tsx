@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getTransactionTypeColor } from '@/lib/utils';
-import { Plus, Trash2, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createTransactionSchema, type CreateTransactionInput } from '@/lib/validation';
+import { FormField, TextInput, CurrencyInput, DateInput, Textarea, FormSelect } from '@/components/forms';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { todayCivilDate } from '@oxedindin/shared';
 import { cn } from '@/lib/utils';
 
 interface Transaction {
@@ -35,7 +38,7 @@ interface Category {
   color?: string;
 }
 
-async function fetchTransactions(params?: { page?: number; limit?: number; startDate?: string; endDate?: string; categoryId?: string; accountId?: string; cardId?: string; type?: string }): Promise<{ data: Transaction[]; meta: any }> {
+async function fetchTransactions(params?: Record<string, unknown>): Promise<{ data: Transaction[]; meta: any }> {
   const response = await api.get('/transactions', { params });
   return response.data;
 }
@@ -67,7 +70,7 @@ async function deleteTransaction(id: string): Promise<void> {
 export function TransactionsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     page: 1,
     limit: 20,
@@ -84,20 +87,9 @@ export function TransactionsPage() {
     queryFn: () => fetchTransactions(filters),
   });
 
-  const { data: fetchedCategories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: fetchCategories,
-  });
-
-  const { data: fetchedAccounts } = useQuery({
-    queryKey: ['accounts', 'active'],
-    queryFn: fetchAccounts,
-  });
-
-  const { data: fetchedCards } = useQuery({
-    queryKey: ['cards', 'active'],
-    queryFn: fetchCards,
-  });
+  const { data: fetchedCategories } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
+  const { data: fetchedAccounts } = useQuery({ queryKey: ['accounts', 'active'], queryFn: fetchAccounts });
+  const { data: fetchedCards } = useQuery({ queryKey: ['cards', 'active'], queryFn: fetchCards });
 
   const createMutation = useMutation({
     mutationFn: createTransaction,
@@ -107,9 +99,7 @@ export function TransactionsPage() {
       toast({ title: 'Transação criada', description: 'Transação registrada com sucesso.' });
       setDialogOpen(false);
     },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
@@ -118,11 +108,9 @@ export function TransactionsPage() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast({ title: 'Transação excluída', description: 'Transação removida com sucesso.' });
-      setDeleteDialogOpen(null);
+      setDeleteId(null);
     },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
+    onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const form = useForm<CreateTransactionInput>({
@@ -130,21 +118,19 @@ export function TransactionsPage() {
     defaultValues: {
       type: 'EXPENSE',
       paymentMethod: 'CREDIT_CARD',
-      date: new Date().toISOString(),
+      date: todayCivilDate(),
     },
   });
 
-  const handleSubmit = (data: CreateTransactionInput) => {
-    createMutation.mutate(data);
-    form.reset({ type: 'EXPENSE', paymentMethod: 'CREDIT_CARD', date: new Date().toISOString() });
-  };
-
-  const handleDelete = (id: string) => {
-    setDeleteDialogOpen(id);
-  };
-
-  const handleConfirmDelete = (id: string) => {
-    deleteMutation.mutate(id);
+  const onSubmit = (data: CreateTransactionInput) => {
+    createMutation.mutate({
+      ...data,
+      accountId: data.accountId || undefined,
+      cardId: data.cardId || undefined,
+      categoryId: data.categoryId || undefined,
+      notes: data.notes || undefined,
+    });
+    form.reset({ type: 'EXPENSE', paymentMethod: 'CREDIT_CARD', date: todayCivilDate() });
   };
 
   const handleFilterChange = (key: string, value: any) => {
@@ -189,112 +175,85 @@ export function TransactionsPage() {
             <DialogHeader>
               <DialogTitle>Nova Transação</DialogTitle>
             </DialogHeader>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="description">Descrição</Label>
-                <Input id="description" {...form.register('description')} placeholder="Supermercado, Uber, Salário..." />
-              </div>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField id="description" label="Descrição" error={form.formState.errors.description?.message}>
+                <TextInput id="description" placeholder="Supermercado, Uber, Salário..." {...form.register('description')} />
+              </FormField>
+
               <div className="grid gap-2 grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="amount">Valor</Label>
-                  <Input id="amount" type="number" step="0.01" min="0.01" {...form.register('amount', { valueAsNumber: true })} placeholder="0,00" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="type">Tipo</Label>
-                  <Select {...form.register('type')}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="EXPENSE">Despesa</SelectItem>
-                      <SelectItem value="INCOME">Receita</SelectItem>
-                      <SelectItem value="TRANSFER">Transferência</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <FormField id="amount" label="Valor" error={form.formState.errors.amount?.message}>
+                  <Controller
+                    name="amount"
+                    control={form.control}
+                    render={({ field }) => <CurrencyInput id="amount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                  />
+                </FormField>
+                <FormField id="type" label="Tipo" error={form.formState.errors.type?.message}>
+                  <FormSelect control={form.control} name="type" placeholder="Selecione">
+                    <SelectItem value="EXPENSE">Despesa</SelectItem>
+                    <SelectItem value="INCOME">Receita</SelectItem>
+                    <SelectItem value="TRANSFER">Transferência</SelectItem>
+                  </FormSelect>
+                </FormField>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="categoryId">Categoria</Label>
-                <Select {...form.register('categoryId')}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione uma categoria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Sem categoria</SelectItem>
-                    {(fetchedCategories ?? []).map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        <span className="flex items-center gap-2">
-                          {cat.color && <span className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }} />}
-                          {cat.name}
-                        </span>
-                      </SelectItem>
+
+              <FormField id="categoryId" label="Categoria" error={form.formState.errors.categoryId?.message}>
+                <FormSelect control={form.control} name="categoryId" placeholder="Selecione uma categoria">
+                  <SelectItem value="">Sem categoria</SelectItem>
+                  {(fetchedCategories ?? []).map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      <span className="flex items-center gap-2">
+                        {cat.color && <span className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }} />}
+                        {cat.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </FormSelect>
+              </FormField>
+
+              <div className="grid gap-2 grid-cols-2">
+                <FormField id="date" label="Data" error={form.formState.errors.date?.message}>
+                  <DateInput id="date" {...form.register('date')} />
+                </FormField>
+                <FormField id="paymentMethod" label="Forma de pagamento" error={form.formState.errors.paymentMethod?.message}>
+                  <FormSelect control={form.control} name="paymentMethod" placeholder="Selecione">
+                    <SelectItem value="CASH">Dinheiro</SelectItem>
+                    <SelectItem value="DEBIT_CARD">Débito</SelectItem>
+                    <SelectItem value="CREDIT_CARD">Crédito</SelectItem>
+                    <SelectItem value="PIX">PIX</SelectItem>
+                    <SelectItem value="BANK_TRANSFER">Transferência</SelectItem>
+                    <SelectItem value="BOLETO">Boleto</SelectItem>
+                    <SelectItem value="OTHER">Outro</SelectItem>
+                  </FormSelect>
+                </FormField>
+              </div>
+
+              <div className="grid gap-2 grid-cols-2">
+                <FormField id="accountId" label="Conta (opcional)" error={form.formState.errors.accountId?.message}>
+                  <FormSelect control={form.control} name="accountId" placeholder="Selecione">
+                    <SelectItem value="">Nenhuma</SelectItem>
+                    {(fetchedAccounts ?? []).map((acc) => (
+                      <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </FormSelect>
+                </FormField>
+                <FormField id="cardId" label="Cartão (opcional)" error={form.formState.errors.cardId?.message}>
+                  <FormSelect control={form.control} name="cardId" placeholder="Selecione">
+                    <SelectItem value="">Nenhum</SelectItem>
+                    {(fetchedCards ?? []).map((card) => (
+                      <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
+                    ))}
+                  </FormSelect>
+                </FormField>
               </div>
-              <div className="grid gap-2 grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="date">Data</Label>
-                  <Input id="date" type="date" {...form.register('date')} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="paymentMethod">Forma de pagamento</Label>
-                  <Select {...form.register('paymentMethod')}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CASH">Dinheiro</SelectItem>
-                      <SelectItem value="DEBIT_CARD">Débito</SelectItem>
-                      <SelectItem value="CREDIT_CARD">Crédito</SelectItem>
-                      <SelectItem value="PIX">PIX</SelectItem>
-                      <SelectItem value="BANK_TRANSFER">Transferência</SelectItem>
-                      <SelectItem value="BOLETO">Boleto</SelectItem>
-                      <SelectItem value="OTHER">Outro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid gap-2 grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="accountId">Conta (opcional)</Label>
-                  <Select {...form.register('accountId')}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Nenhuma</SelectItem>
-                      {(fetchedAccounts ?? []).map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cardId">Cartão (opcional)</Label>
-                  <Select {...form.register('cardId')}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Nenhum</SelectItem>
-                      {(fetchedCards ?? []).map((card) => (
-                        <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Observações</Label>
-                <Input id="notes" {...form.register('notes')} placeholder="Observações opcionais" />
-              </div>
+
+              <FormField id="notes" label="Observações" error={form.formState.errors.notes?.message}>
+                <Textarea id="notes" placeholder="Observações opcionais" {...form.register('notes')} />
+              </FormField>
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                <Button type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Salvar
-                </Button>
+                <Button type="submit" loading={createMutation.isPending}>Salvar</Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -316,11 +275,9 @@ export function TransactionsPage() {
               <Input id="endDate" type="date" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="categoryId">Categoria</Label>
+              <Label>Categoria</Label>
               <Select value={filters.categoryId} onValueChange={(value) => handleFilterChange('categoryId', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Todas</SelectItem>
                   {(fetchedCategories ?? []).map((cat) => (
@@ -330,11 +287,9 @@ export function TransactionsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="accountId">Conta</Label>
+              <Label>Conta</Label>
               <Select value={filters.accountId} onValueChange={(value) => handleFilterChange('accountId', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Todas</SelectItem>
                   {(fetchedAccounts ?? []).map((acc) => (
@@ -344,11 +299,9 @@ export function TransactionsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="cardId">Cartão</Label>
+              <Label>Cartão</Label>
               <Select value={filters.cardId} onValueChange={(value) => handleFilterChange('cardId', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Todos</SelectItem>
                   {(fetchedCards ?? []).map((card) => (
@@ -358,11 +311,9 @@ export function TransactionsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="type">Tipo</Label>
+              <Label>Tipo</Label>
               <Select value={filters.type} onValueChange={(value) => handleFilterChange('type', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Todos</SelectItem>
                   <SelectItem value="EXPENSE">Despesas</SelectItem>
@@ -412,7 +363,7 @@ export function TransactionsPage() {
                     </span>
                   </div>
                   <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(transaction.id)}>
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteId(transaction.id)} aria-label="Excluir transação">
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
@@ -447,20 +398,14 @@ export function TransactionsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!deleteDialogOpen} onOpenChange={(open) => !open && setDeleteDialogOpen(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Excluir transação?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">Esta ação não pode ser desfeita.</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => deleteDialogOpen && handleConfirmDelete(deleteDialogOpen)}>
-              Excluir
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={!!deleteId}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        title="Excluir transação?"
+        description="Essa ação removerá permanentemente a transação e revertirá seus efeitos no saldo. Essa ação não pode ser desfeita."
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
+      />
     </div>
   );
 }
