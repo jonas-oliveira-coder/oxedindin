@@ -15,6 +15,13 @@
       "when": 1789045200000,
       "tag": "0001_normalize_legacy_prisma_names",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789336422672,
+      "tag": "0002_sleepy_storm",
+      "breakpoints": true
     }
   ]
 }

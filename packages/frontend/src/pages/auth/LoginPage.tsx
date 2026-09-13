@@ -65,7 +65,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-muted/50 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <Logo className="mx-auto mb-4 h-28 w-64" />
+          <Logo variant="full" className="mx-auto mb-4 h-28 w-auto" />
           <CardTitle className="text-2xl">Entrar no OxeDinDin</CardTitle>
           <CardDescription>Gerencie suas finanças com segurança</CardDescription>
         </CardHeader>

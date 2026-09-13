@@ -269,6 +269,21 @@ export const sharedDebt = pgTable('SharedDebt', {
   uniqueDebtDebtor: uniqueIndex('shared_debt_debt_id_debtor_user_id_key').on(table.debtId, table.debtorUserId),
 }));
 
+export const debtSplit = pgTable('DebtSplit', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  debtId: text('debt_id').notNull().references(() => debt.id, { onDelete: 'cascade' }),
+  personId: text('person_id').notNull().references(() => person.id, { onDelete: 'cascade' }),
+  amountCents: bigint('amount_cents', { mode: 'bigint' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  debtIdIdx: index('debt_split_debt_id_idx').on(table.debtId),
+  personIdIdx: index('debt_split_person_id_idx').on(table.personId),
+  userIdIdx: index('debt_split_user_id_idx').on(table.userId),
+  uniqueDebtPerson: uniqueIndex('debt_split_debt_id_person_id_key').on(table.debtId, table.personId),
+}));
+
 export const notification = pgTable('Notification', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
@@ -446,12 +461,20 @@ export const debtRelations = relations(debt, ({ one, many }) => ({
   relatedPerson: one(person, { fields: [debt.relatedPersonId], references: [person.id], relationName: 'owedDebts' }),
   creditor: one(user, { fields: [debt.creditorId], references: [user.id], relationName: 'owedDebts' }),
   sharedDebts: many(sharedDebt),
+  debtSplits: many(debtSplit),
 }));
 
 export const personRelations = relations(person, ({ one, many }) => ({
   user: one(user, { fields: [person.userId], references: [user.id] }),
   debts: many(debt, { relationName: 'owedDebts' }),
   sharedDebts: many(sharedDebt),
+  debtSplits: many(debtSplit),
+}));
+
+export const debtSplitRelations = relations(debtSplit, ({ one }) => ({
+  user: one(user, { fields: [debtSplit.userId], references: [user.id] }),
+  debt: one(debt, { fields: [debtSplit.debtId], references: [debt.id] }),
+  person: one(person, { fields: [debtSplit.personId], references: [person.id] }),
 }));
 
 export const sharedDebtRelations = relations(sharedDebt, ({ one }) => ({
@@ -496,6 +519,7 @@ export const schema = {
   debt,
   person,
   sharedDebt,
+  debtSplit,
   notification,
   notificationPreferences,
   passkey,

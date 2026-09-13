@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import debtsRoutes from './index.js';
 import { buildApp, TEST_USER_ID, OTHER_USER_ID } from '../../test/helpers.js';
-import { debt } from '../../db/schema/index.js';
+import { debt, person, debtSplit } from '../../db/schema/index.js';
 
 describe('debts routes', () => {
   let app: any;
@@ -131,5 +131,72 @@ describe('debts routes', () => {
     const res = await app.inject({ method: 'DELETE', url: '/api/v1/debts/45678901-4567-4234-8234-456789012345' });
     expect(res.statusCode).toBe(200);
     expect(db.all(debt)).toHaveLength(0);
+  });
+
+  it('creates a debt split for a person', async () => {
+    db.seed(debt, [{
+      id: '56789012-5678-4234-8234-567890123456',
+      userId: TEST_USER_ID,
+      description: 'Dividir',
+      totalAmountCents: 100000,
+      paidAmountCents: 0,
+      remainingAmountCents: 100000,
+      dueDate: new Date(),
+      type: 'PURCHASE',
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(person, [{
+      id: '11111111-1111-4111-8111-111111111111',
+      userId: TEST_USER_ID,
+      name: 'Maria',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/debts/56789012-5678-4234-8234-567890123456/splits',
+      payload: { personId: '11111111-1111-4111-8111-111111111111', amountCents: 40000 },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json().amount).toEqual({ cents: 40000, currency: 'BRL' });
+    expect(db.all(debtSplit)).toHaveLength(1);
+    expect(db.all(debtSplit)[0].debtId).toBe('56789012-5678-4234-8234-567890123456');
+  });
+
+  it('rejects a split exceeding the remaining debt value', async () => {
+    db.seed(debt, [{
+      id: '67890123-6789-4234-8234-678901234567',
+      userId: TEST_USER_ID,
+      description: 'Limite',
+      totalAmountCents: 10000,
+      paidAmountCents: 0,
+      remainingAmountCents: 10000,
+      dueDate: new Date(),
+      type: 'OTHER',
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(person, [{
+      id: '22222222-2222-4222-8222-222222222222',
+      userId: TEST_USER_ID,
+      name: 'João',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/debts/67890123-6789-4234-8234-678901234567/splits',
+      payload: { personId: '22222222-2222-4222-8222-222222222222', amountCents: 20000 },
+    });
+
+    expect(res.statusCode).toBe(400);
   });
 });

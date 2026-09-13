@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getStatusColor, getDebtTypeLabel } from '@/lib/utils';
-import { Plus, Trash2, Share2, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, Share2, CheckCircle2, Scale } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema, emailSchema } from '@oxedindin/shared';
@@ -27,6 +27,8 @@ interface Debt {
   type: string;
   status: string;
   relatedPerson?: { id: string; name: string } | null;
+  splits?: Array<{ id: string; personId: string; person?: { id: string; name: string } | null; amount: { cents: number; currency: string } }>;
+  splitTotal?: { cents: number; currency: string };
 }
 
 interface IdName {
@@ -54,8 +56,14 @@ const shareSchema = z.object({
   email: emailSchema,
 });
 
+const splitSchema = z.object({
+  personId: uuidSchema,
+  amount: positiveMoneyCentsSchema,
+});
+
 type DebtFormInput = z.infer<typeof debtFormSchema>;
 type PayFormInput = z.infer<typeof paySchema>;
+type SplitFormInput = z.infer<typeof splitSchema>;
 
 async function fetchDebts(): Promise<Debt[]> {
   const response = await api.get('/debts');
@@ -78,6 +86,7 @@ export function DebtsPage() {
   const [owedDialogOpen, setOwedDialogOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<{ debt: Debt; kind: 'debt' | 'owed' } | null>(null);
   const [shareTarget, setShareTarget] = useState<{ debt: Debt; kind: 'debt' | 'owed' } | null>(null);
+  const [splitTarget, setSplitTarget] = useState<Debt | null>(null);
   const [deleteDebtId, setDeleteDebtId] = useState<string | null>(null);
 
   const { data: debts, isLoading } = useQuery({ queryKey: ['debts'], queryFn: fetchDebts });
@@ -94,6 +103,7 @@ export function DebtsPage() {
   });
   const payForm = useForm<PayFormInput>({ resolver: zodResolver(paySchema) });
   const shareForm = useForm<z.infer<typeof shareSchema>>({ resolver: zodResolver(shareSchema) });
+  const splitForm = useForm<SplitFormInput>({ resolver: zodResolver(splitSchema) });
 
   const createDebtMutation = useMutation({
     mutationFn: async (data: DebtFormInput) => {
@@ -119,7 +129,7 @@ export function DebtsPage() {
       await api.post('/debts/owed', {
         description: data.description,
         totalAmount: data.totalAmount,
-        dueDate: data.dueDate,
+        dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
         type: data.type,
         personId: data.personId,
         notes: data.notes || undefined,
@@ -176,6 +186,24 @@ export function DebtsPage() {
     onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
+  const splitMutation = useMutation({
+    mutationFn: async ({ debtId, data }: { debtId: string; data: SplitFormInput }) => {
+      await api.post(`/debts/${debtId}/splits`, {
+        personId: data.personId,
+        amountCents: data.amount,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['debts'] });
+      queryClient.invalidateQueries({ queryKey: ['debtsOwed'] });
+      queryClient.invalidateQueries({ queryKey: ['debtOptions'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast({ title: 'Divisão criada', description: 'Valor dividido com a pessoa.' });
+      setSplitTarget(null);
+    },
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -211,11 +239,28 @@ export function DebtsPage() {
             </p>
             <p className="text-sm text-muted-foreground">
               Restante: <span className="font-medium">{formatMoney(debt.remainingAmount.cents)}</span> de {formatMoney(debt.totalAmount.cents)}
+              {debt.splitTotal && debt.splitTotal.cents > 0 ? ` · dividido ${formatMoney(debt.splitTotal.cents)}` : ''}
             </p>
+            {debt.splits && debt.splits.length > 0 && (
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                {debt.splits.map((s) => (
+                  <Badge key={s.id} variant="outline" className="gap-1">
+                    {s.person?.name ?? 'Pessoa'}
+                    <span className="font-medium">{formatMoney(s.amount.cents)}</span>
+                  </Badge>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {debt.remainingAmount.cents > 0 && debt.status !== 'CANCELLED' && (
               <Button size="sm" onClick={() => { setPayTarget({ debt, kind }); payForm.reset({ amount: undefined }); }}>Pagar</Button>
+            )}
+            {debt.remainingAmount.cents > 0 && debt.status !== 'CANCELLED' && (
+              <Button variant="outline" size="sm" onClick={() => { setSplitTarget(debt); splitForm.reset({ personId: undefined, amount: undefined }); }}>
+                <Scale className="mr-1 h-4 w-4" />
+                Dividir
+              </Button>
             )}
             {kind === 'owed' && debt.remainingAmount.cents > 0 && (
               <Button variant="outline" size="sm" onClick={() => { setShareTarget({ debt, kind }); shareForm.reset(); }}>
@@ -429,6 +474,38 @@ export function DebtsPage() {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShareTarget(null)}>Cancelar</Button>
               <Button type="submit" loading={shareMutation.isPending}>{shareTarget?.kind === 'owed' ? 'Compartilhar' : 'Vincular'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!splitTarget} onOpenChange={(open) => !open && setSplitTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dividir dívida</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={splitForm.handleSubmit((data) => splitTarget && splitMutation.mutate({ debtId: splitTarget.id, data }))} className="space-y-4" noValidate>
+            <p className="text-sm text-muted-foreground">
+              {splitTarget?.description} ·{' '}
+              <span className="font-semibold">{splitTarget ? formatMoney(splitTarget.remainingAmount.cents) : ''}</span>
+            </p>
+            <FormField id="personId" label="Pessoa" error={splitForm.formState.errors.personId?.message}>
+              <FormSelect control={splitForm.control} name="personId" placeholder="Selecione a pessoa">
+                {(people ?? []).map((person) => (
+                  <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>
+                ))}
+              </FormSelect>
+            </FormField>
+            <FormField id="amount" label="Valor da parte da pessoa" error={splitForm.formState.errors.amount?.message}>
+              <Controller
+                name="amount"
+                control={splitForm.control}
+                render={({ field }) => <CurrencyInput id="amount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+              />
+            </FormField>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setSplitTarget(null)}>Cancelar</Button>
+              <Button type="submit" loading={splitMutation.isPending}>Dividir</Button>
             </DialogFooter>
           </form>
         </DialogContent>

@@ -8,12 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { SelectItem } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
-import { Plus, Edit, Trash2, User, Building2, Mail, Phone, FileText } from 'lucide-react';
+import { formatMoney } from '@/lib/utils';
+import { Plus, Edit, Trash2, User, Building2, Mail, Phone, FileText, Share2 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { personTypeSchema, type CreatePersonInput } from '@/lib/validation';
-import { nameSchema, emailSchema, phoneSchema, documentSchema, formatPhone } from '@oxedindin/shared';
-import { FormField, TextInput, EmailInput, PhoneInput, CpfInput, CnpjInput, Textarea, FormSelect } from '@/components/forms';
+import { nameSchema, emailSchema, phoneSchema, documentSchema, positiveMoneyCentsSchema, formatPhone } from '@oxedindin/shared';
+import { FormField, TextInput, EmailInput, PhoneInput, CpfInput, CnpjInput, Textarea, FormSelect, CurrencyInput, DateInput } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 interface Person {
@@ -26,6 +27,30 @@ interface Person {
   notes?: string | null;
 }
 
+interface IdLabel {
+  id: string;
+  label: string;
+}
+
+const debtTypeEnum = z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']);
+
+const debtLinkKindEnum = z.enum(['', 'RESPONSIBLE_PAID', 'RESPONSIBLE_OWED', 'SPLIT']);
+
+const amountOptionalSchema = z.preprocess(
+  (v) => (v === '' || v === null ? undefined : v),
+  positiveMoneyCentsSchema.optional(),
+);
+
+const debtTypeItems = (
+  <>
+    <SelectItem value="PERSONAL_LOAN">Empréstimo pessoal</SelectItem>
+    <SelectItem value="CREDIT_CARD">Cartão de crédito</SelectItem>
+    <SelectItem value="PURCHASE">Compra</SelectItem>
+    <SelectItem value="BORROWED_MONEY">Dinheiro emprestado</SelectItem>
+    <SelectItem value="OTHER">Outro</SelectItem>
+  </>
+);
+
 const personFormSchema = z.object({
   name: nameSchema,
   email: emailSchema.optional().or(z.literal('')),
@@ -33,41 +58,130 @@ const personFormSchema = z.object({
   phone: phoneSchema.optional().or(z.literal('')),
   document: documentSchema.optional().or(z.literal('')),
   notes: z.string().max(500).optional().or(z.literal('')),
+  debtLinkKind: debtLinkKindEnum.default(''),
+  debtDescription: z.string().max(200).optional().or(z.literal('')),
+  debtTotalAmount: amountOptionalSchema,
+  debtDueDate: z.string().optional().or(z.literal('')),
+  debtType: debtTypeEnum.optional(),
+  splitDebtId: z.string().optional().or(z.literal('')),
+  splitAmount: amountOptionalSchema,
+});
+
+const linkFormSchema = z.object({
+  debtLinkKind: debtLinkKindEnum.default('RESPONSIBLE_PAID'),
+  debtDescription: z.string().max(200).optional().or(z.literal('')),
+  debtTotalAmount: amountOptionalSchema,
+  debtDueDate: z.string().optional().or(z.literal('')),
+  debtType: debtTypeEnum.optional(),
+  splitDebtId: z.string().optional().or(z.literal('')),
+  splitAmount: amountOptionalSchema,
 });
 
 type PersonFormValues = z.infer<typeof personFormSchema>;
+type LinkFormValues = z.infer<typeof linkFormSchema>;
+
+const personFormDefaults = {
+  name: '',
+  type: 'INDIVIDUAL',
+  email: '',
+  phone: '',
+  document: '',
+  notes: '',
+  debtLinkKind: '',
+  debtDescription: '',
+  debtTotalAmount: undefined,
+  debtDueDate: '',
+  debtType: 'PERSONAL_LOAN',
+  splitDebtId: '',
+  splitAmount: undefined,
+} satisfies PersonFormValues;
+
+const linkFormDefaults = {
+  debtLinkKind: 'RESPONSIBLE_PAID',
+  debtDescription: '',
+  debtTotalAmount: undefined,
+  debtDueDate: '',
+  debtType: 'PERSONAL_LOAN',
+  splitDebtId: '',
+  splitAmount: undefined,
+} satisfies LinkFormValues;
 
 async function fetchPeople(): Promise<Person[]> {
   const response = await api.get('/people');
   return response.data.data;
 }
 
-async function createPerson(data: CreatePersonInput): Promise<Person> {
-  const response = await api.post('/people', data);
-  return response.data;
+async function fetchDebtOptions(): Promise<IdLabel[]> {
+  const [debts, owed] = await Promise.all([
+    api.get('/debts'),
+    api.get('/debts/owed'),
+  ]);
+  const items: IdLabel[] = [];
+  for (const d of debts.data.data ?? []) {
+    items.push({ id: d.id, label: `A pagar: ${d.description} (${formatMoney(d.remainingAmount.cents)})` });
+  }
+  for (const d of owed.data.data ?? []) {
+    items.push({ id: d.id, label: `A receber: ${d.description} (${formatMoney(d.remainingAmount.cents)})` });
+  }
+  return items;
 }
 
-async function updatePerson(id: string, data: Partial<CreatePersonInput>): Promise<Person> {
-  const response = await api.patch(`/people/${id}`, data);
-  return response.data;
-}
-
-async function deletePerson(id: string): Promise<void> {
-  await api.delete(`/people/${id}`);
+function personPayload(values: PersonFormValues): CreatePersonInput {
+  return {
+    name: values.name,
+    email: values.email || undefined,
+    type: values.type,
+    phone: values.phone || undefined,
+    document: values.document || undefined,
+    notes: values.notes || undefined,
+  };
 }
 
 export function PeoplePage() {
   const queryClient = useQueryClient();
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [linkTarget, setLinkTarget] = useState<Person | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { data: people, isLoading } = useQuery({ queryKey: ['people'], queryFn: fetchPeople });
+  const { data: debtOptions = [] } = useQuery({ queryKey: ['debtOptions'], queryFn: fetchDebtOptions });
 
   const createMutation = useMutation({
-    mutationFn: createPerson,
+    mutationFn: async (values: PersonFormValues) => {
+      const created = await api.post('/people', personPayload(values));
+      const personId = created.data.id;
+      const kind = values.debtLinkKind;
+      if (kind === 'RESPONSIBLE_PAID') {
+        await api.post('/debts', {
+          description: values.debtDescription,
+          totalAmount: values.debtTotalAmount,
+          dueDate: values.debtDueDate,
+          type: values.debtType,
+          relatedPersonId: personId,
+        });
+      } else if (kind === 'RESPONSIBLE_OWED') {
+        await api.post('/debts/owed', {
+          description: values.debtDescription,
+          totalAmount: values.debtTotalAmount,
+          dueDate: values.debtDueDate ? new Date(values.debtDueDate).toISOString() : undefined,
+          type: values.debtType,
+          personId,
+        });
+      } else if (kind === 'SPLIT' && values.splitDebtId) {
+        await api.post(`/debts/${values.splitDebtId}/splits`, {
+          personId,
+          amountCents: values.splitAmount,
+        });
+      }
+      return personId;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] });
+      queryClient.invalidateQueries({ queryKey: ['debts'] });
+      queryClient.invalidateQueries({ queryKey: ['debtsOwed'] });
+      queryClient.invalidateQueries({ queryKey: ['debtOptions'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast({ title: 'Pessoa criada', description: 'Pessoa cadastrada com sucesso.' });
       setDialogOpen(false);
     },
@@ -75,7 +189,7 @@ export function PeoplePage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<CreatePersonInput> }) => updatePerson(id, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<CreatePersonInput> }) => api.patch(`/people/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] });
       toast({ title: 'Pessoa atualizada', description: 'Pessoa atualizada com sucesso.' });
@@ -85,8 +199,45 @@ export function PeoplePage() {
     onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
+  const linkMutation = useMutation({
+    mutationFn: async ({ person, values }: { person: Person; values: LinkFormValues }) => {
+      const kind = values.debtLinkKind;
+      if (kind === 'RESPONSIBLE_PAID') {
+        await api.post('/debts', {
+          description: values.debtDescription,
+          totalAmount: values.debtTotalAmount,
+          dueDate: values.debtDueDate,
+          type: values.debtType,
+          relatedPersonId: person.id,
+        });
+      } else if (kind === 'RESPONSIBLE_OWED') {
+        await api.post('/debts/owed', {
+          description: values.debtDescription,
+          totalAmount: values.debtTotalAmount,
+          dueDate: values.debtDueDate ? new Date(values.debtDueDate).toISOString() : undefined,
+          type: values.debtType,
+          personId: person.id,
+        });
+      } else if (kind === 'SPLIT' && values.splitDebtId) {
+        await api.post(`/debts/${values.splitDebtId}/splits`, {
+          personId: person.id,
+          amountCents: values.splitAmount,
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['debts'] });
+      queryClient.invalidateQueries({ queryKey: ['debtsOwed'] });
+      queryClient.invalidateQueries({ queryKey: ['debtOptions'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast({ title: 'Dívida vinculada', description: 'Pessoa vinculada à dívida com sucesso.' });
+      setLinkTarget(null);
+    },
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
+  });
+
   const deleteMutation = useMutation({
-    mutationFn: deletePerson,
+    mutationFn: (id: string) => api.delete(`/people/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['people'] });
       toast({ title: 'Pessoa excluída', description: 'Pessoa excluída com sucesso.' });
@@ -97,20 +248,28 @@ export function PeoplePage() {
 
   const form = useForm<PersonFormValues>({
     resolver: zodResolver(personFormSchema),
-    defaultValues: { type: 'INDIVIDUAL', email: '', phone: '', document: '', notes: '' },
+    defaultValues: personFormDefaults,
+  });
+
+  const linkForm = useForm<LinkFormValues>({
+    resolver: zodResolver(linkFormSchema),
+    defaultValues: linkFormDefaults,
   });
 
   const personType = form.watch('type');
+  const debtLinkKind = form.watch('debtLinkKind');
+  const linkKind = linkForm.watch('debtLinkKind');
 
   const openCreateDialog = () => {
     setEditingPerson(null);
-    form.reset({ type: 'INDIVIDUAL', email: '', phone: '', document: '', notes: '' });
+    form.reset(personFormDefaults);
     setDialogOpen(true);
   };
 
   const openEditDialog = (person: Person) => {
     setEditingPerson(person);
     form.reset({
+      ...personFormDefaults,
       name: person.name,
       email: person.email ?? '',
       type: person.type as PersonFormValues['type'],
@@ -121,17 +280,17 @@ export function PeoplePage() {
     setDialogOpen(true);
   };
 
+  const openLinkDialog = (person: Person) => {
+    setLinkTarget(person);
+    linkForm.reset(linkFormDefaults);
+  };
+
   const onSubmit = (values: PersonFormValues) => {
-    const payload = {
-      name: values.name,
-      email: values.email || undefined,
-      type: values.type,
-      phone: values.phone || undefined,
-      document: values.document || undefined,
-      notes: values.notes || undefined,
-    };
-    if (editingPerson) updateMutation.mutate({ id: editingPerson.id, data: payload });
-    else createMutation.mutate(payload as CreatePersonInput);
+    if (editingPerson) {
+      updateMutation.mutate({ id: editingPerson.id, data: personPayload(values) });
+    } else {
+      createMutation.mutate(values);
+    }
   };
 
   if (isLoading) {
@@ -219,6 +378,21 @@ export function PeoplePage() {
                 <Textarea id="notes" placeholder="Observações opcionais" {...form.register('notes')} />
               </FormField>
 
+              {!editingPerson && (
+                <div className="space-y-4 rounded-lg border p-3">
+                  <FormField id="debtLinkKind" label="Vincular a uma dívida?">
+                    <FormSelect control={form.control} name="debtLinkKind" placeholder="Selecione">
+                      <SelectItem value="">Não, apenas cadastrar</SelectItem>
+                      <SelectItem value="RESPONSIBLE_PAID">Responsável por dívida que eu pago</SelectItem>
+                      <SelectItem value="RESPONSIBLE_OWED">Responsável por dívida que ela me paga</SelectItem>
+                      <SelectItem value="SPLIT">Dividir valor de uma dívida</SelectItem>
+                    </FormSelect>
+                  </FormField>
+
+                  <DebtLinkFields form={form} kind={debtLinkKind} debtOptions={debtOptions} />
+                </div>
+              )}
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
                 <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
@@ -259,6 +433,9 @@ export function PeoplePage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => openLinkDialog(person)} aria-label="Vincular a dívida" title="Vincular a dívida">
+                      <Share2 className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEditDialog(person)} aria-label="Editar pessoa">
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -285,6 +462,34 @@ export function PeoplePage() {
         </Card>
       )}
 
+      <Dialog open={!!linkTarget} onOpenChange={(open) => !open && setLinkTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Vincular {linkTarget?.name} a uma dívida</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={linkForm.handleSubmit((data) => linkTarget && linkMutation.mutate({ person: linkTarget, values: data }))}
+            className="space-y-4"
+            noValidate
+          >
+            <FormField id="link-debtLinkKind" label="Tipo de vínculo">
+              <FormSelect control={linkForm.control} name="debtLinkKind" placeholder="Selecione">
+                <SelectItem value="RESPONSIBLE_PAID">Responsável por dívida que eu pago</SelectItem>
+                <SelectItem value="RESPONSIBLE_OWED">Responsável por dívida que ela me paga</SelectItem>
+                <SelectItem value="SPLIT">Dividir valor de uma dívida</SelectItem>
+              </FormSelect>
+            </FormField>
+
+            <DebtLinkFields form={linkForm} kind={linkKind} debtOptions={debtOptions} />
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setLinkTarget(null)}>Cancelar</Button>
+              <Button type="submit" loading={linkMutation.isPending}>Vincular</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDeleteDialog
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
@@ -295,4 +500,58 @@ export function PeoplePage() {
       />
     </div>
   );
+}
+
+function DebtLinkFields({ form, kind, debtOptions }: { form: any; kind: string; debtOptions: IdLabel[] }) {
+  const errors = form.formState.errors;
+
+  if (kind === 'RESPONSIBLE_PAID' || kind === 'RESPONSIBLE_OWED') {
+    return (
+      <>
+        <FormField id="debtDescription" label="Descrição da dívida" error={errors.debtDescription?.message}>
+          <TextInput id="debtDescription" placeholder="Ex: empréstimo pessoal" {...form.register('debtDescription')} />
+        </FormField>
+        <div className="grid gap-2 grid-cols-2">
+          <FormField id="debtTotalAmount" label="Valor total" error={errors.debtTotalAmount?.message}>
+            <Controller
+              name="debtTotalAmount"
+              control={form.control}
+              render={({ field }) => <CurrencyInput id="debtTotalAmount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+            />
+          </FormField>
+          <FormField id="debtDueDate" label="Vencimento" error={errors.debtDueDate?.message}>
+            <DateInput id="debtDueDate" {...form.register('debtDueDate')} />
+          </FormField>
+        </div>
+        <FormField id="debtType" label="Tipo" error={errors.debtType?.message}>
+          <FormSelect control={form.control} name="debtType" placeholder="Selecione">
+            {debtTypeItems}
+          </FormSelect>
+        </FormField>
+      </>
+    );
+  }
+
+  if (kind === 'SPLIT') {
+    return (
+      <>
+        <FormField id="splitDebtId" label="Dívida" error={errors.splitDebtId?.message}>
+          <FormSelect control={form.control} name="splitDebtId" placeholder="Selecione a dívida">
+            {debtOptions.map((d) => (
+              <SelectItem key={d.id} value={d.id}>{d.label}</SelectItem>
+            ))}
+          </FormSelect>
+        </FormField>
+        <FormField id="splitAmount" label="Valor da parte da pessoa" error={errors.splitAmount?.message}>
+          <Controller
+            name="splitAmount"
+            control={form.control}
+            render={({ field }) => <CurrencyInput id="splitAmount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+          />
+        </FormField>
+      </>
+    );
+  }
+
+  return null;
 }

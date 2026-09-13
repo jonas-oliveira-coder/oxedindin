@@ -3,11 +3,36 @@ import { z } from 'zod';
 import { eq, and, gte, lte, desc, asc, count, sql, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { createDebtSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
-import { debt, person, sharedDebt, user, bankAccount, transaction, notification } from '../../db/schema/index.js';
+import { debt, person, sharedDebt, debtSplit, user, bankAccount, transaction, notification } from '../../db/schema/index.js';
 import { emailSchema } from '@oxedindin/shared';
 
 const debtorUser = alias(user, 'debts_debtor_user');
 const creditorUser = alias(user, 'debts_creditor_user');
+
+async function loadSplitsForDebts(app: any, debtIds: string[]) {
+  if (debtIds.length === 0) return new Map<string, any[]>();
+  const rows = await app.db.select({
+    debtSplit,
+    person,
+  })
+    .from(debtSplit)
+    .leftJoin(person, eq(debtSplit.personId, person.id))
+    .where(inArray(debtSplit.debtId, debtIds));
+
+  const map = new Map<string, any[]>();
+  for (const r of rows) {
+    const split = {
+      id: r.debtSplit.id,
+      personId: r.debtSplit.personId,
+      amount: { cents: Number(r.debtSplit.amountCents), currency: 'BRL' as const },
+      person: r.person,
+    };
+    const list = map.get(r.debtSplit.debtId) ?? [];
+    list.push(split);
+    map.set(r.debtSplit.debtId, list);
+  }
+  return map;
+}
 
 const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -58,6 +83,8 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
           .where(inArray(sharedDebt.debtId, debtIds))
       : [];
 
+    const splitsByDebt = await loadSplitsForDebts(app, debtIds);
+
     // Group shared debts by debt
     const debtMap = new Map<string, any>();
     for (const d of debtsData) {
@@ -66,6 +93,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
           ...d.debt,
           relatedPerson: d.relatedPerson,
           sharedDebts: [],
+          splits: splitsByDebt.get(d.debt.id) ?? [],
         });
       }
     }
@@ -77,12 +105,16 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     return {
-      data: Array.from(debtMap.values()).map((d) => ({
-        ...d,
-        totalAmount: { cents: Number(d.totalAmountCents), currency: 'BRL' as const },
-        paidAmount: { cents: Number(d.paidAmountCents), currency: 'BRL' as const },
-        remainingAmount: { cents: Number(d.remainingAmountCents), currency: 'BRL' as const },
-      })),
+      data: Array.from(debtMap.values()).map((d) => {
+        const splitTotalCents = (d.splits ?? []).reduce((acc: number, s: any) => acc + s.amount.cents, 0);
+        return {
+          ...d,
+          totalAmount: { cents: Number(d.totalAmountCents), currency: 'BRL' as const },
+          paidAmount: { cents: Number(d.paidAmountCents), currency: 'BRL' as const },
+          remainingAmount: { cents: Number(d.remainingAmountCents), currency: 'BRL' as const },
+          splitTotal: { cents: splitTotalCents, currency: 'BRL' as const },
+        };
+      }),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   });
@@ -166,10 +198,16 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .leftJoin(user, eq(sharedDebt.debtorUserId, user.id))
       .where(eq(sharedDebt.debtId, debtWithPerson.debt.id));
 
+    const splitsByDebt = await loadSplitsForDebts(app, [debtWithPerson.debt.id]);
+    const splits = splitsByDebt.get(debtWithPerson.debt.id) ?? [];
+    const splitTotalCents = splits.reduce((acc: number, s: any) => acc + s.amount.cents, 0);
+
     return {
       ...debtWithPerson.debt,
       relatedPerson: debtWithPerson.relatedPerson,
       sharedDebts: sharedDebtsData,
+      splits,
+      splitTotal: { cents: splitTotalCents, currency: 'BRL' as const },
       totalAmount: { cents: Number(debtWithPerson.debt.totalAmountCents), currency: 'BRL' as const },
       paidAmount: { cents: Number(debtWithPerson.debt.paidAmountCents), currency: 'BRL' as const },
       remainingAmount: { cents: Number(debtWithPerson.debt.remainingAmountCents), currency: 'BRL' as const },
@@ -474,6 +512,8 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
           .where(inArray(sharedDebt.debtId, debtIds))
       : [];
 
+    const splitsByDebt = await loadSplitsForDebts(app, debtIds);
+
     const debtMap = new Map<string, any>();
     for (const d of debtsData) {
       if (!debtMap.has(d.debt.id)) {
@@ -481,6 +521,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
           ...d.debt,
           relatedPerson: d.relatedPerson,
           sharedDebts: [],
+          splits: splitsByDebt.get(d.debt.id) ?? [],
         });
       }
     }
@@ -492,12 +533,16 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     return {
-      data: Array.from(debtMap.values()).map((d) => ({
-        ...d,
-        totalAmount: { cents: Number(d.totalAmountCents), currency: 'BRL' as const },
-        paidAmount: { cents: Number(d.paidAmountCents), currency: 'BRL' as const },
-        remainingAmount: { cents: Number(d.remainingAmountCents), currency: 'BRL' as const },
-      })),
+      data: Array.from(debtMap.values()).map((d) => {
+        const splitTotalCents = (d.splits ?? []).reduce((acc: number, s: any) => acc + s.amount.cents, 0);
+        return {
+          ...d,
+          totalAmount: { cents: Number(d.totalAmountCents), currency: 'BRL' as const },
+          paidAmount: { cents: Number(d.paidAmountCents), currency: 'BRL' as const },
+          remainingAmount: { cents: Number(d.remainingAmountCents), currency: 'BRL' as const },
+          splitTotal: { cents: splitTotalCents, currency: 'BRL' as const },
+        };
+      }),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   });
@@ -590,6 +635,10 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .leftJoin(creditorUser, eq(sharedDebt.creditorUserId, creditorUser.id))
       .where(eq(sharedDebt.debtId, debtWithPerson.debt.id));
 
+    const splitsByDebt = await loadSplitsForDebts(app, [debtWithPerson.debt.id]);
+    const splits = splitsByDebt.get(debtWithPerson.debt.id) ?? [];
+    const splitTotalCents = splits.reduce((acc: number, s: any) => acc + s.amount.cents, 0);
+
     return {
       ...debtWithPerson.debt,
       relatedPerson: debtWithPerson.relatedPerson,
@@ -597,6 +646,8 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
         ...s.sharedDebt,
         debtor: s.debtor,
       })),
+      splits,
+      splitTotal: { cents: splitTotalCents, currency: 'BRL' as const },
       totalAmount: { cents: Number(debtWithPerson.debt.totalAmountCents), currency: 'BRL' as const },
       paidAmount: { cents: Number(debtWithPerson.debt.paidAmountCents), currency: 'BRL' as const },
       remainingAmount: { cents: Number(debtWithPerson.debt.remainingAmountCents), currency: 'BRL' as const },
@@ -804,6 +855,144 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     });
 
     return { success: true, shared: !!debtorUser };
+  });
+
+  app.post('/:id/splits', {
+    schema: {
+      params: z.object({ id: z.string().uuid() }),
+      body: z.object({
+        personId: z.string().uuid(),
+        amountCents: z.number().int().positive(),
+      }),
+    },
+    preHandler: [app.authenticate],
+  }, async (request: any, reply: any) => {
+    const { personId, amountCents } = request.body;
+    const userId = request.authUser!.id;
+
+    const [existingDebt] = await app.db.select()
+      .from(debt)
+      .where(and(eq(debt.id, request.params.id), eq(debt.userId, userId)))
+      .limit(1);
+    if (!existingDebt) throw app.httpErrors.notFound('Dívida não encontrada.');
+
+    const [personRecord] = await app.db.select()
+      .from(person)
+      .where(and(eq(person.id, personId), eq(person.userId, userId)))
+      .limit(1);
+    if (!personRecord) throw app.httpErrors.badRequest('Pessoa não encontrada.');
+
+    const [existingSplit] = await app.db.select()
+      .from(debtSplit)
+      .where(and(eq(debtSplit.debtId, request.params.id), eq(debtSplit.personId, personId)))
+      .limit(1);
+    if (existingSplit) throw app.httpErrors.conflict('Esta pessoa já está dividindo esta dívida.');
+
+    const splitsByDebt = await loadSplitsForDebts(app, [request.params.id]);
+    const currentSplitTotal = (splitsByDebt.get(request.params.id) ?? []).reduce((acc: number, s: any) => acc + s.amount.cents, 0);
+    const maxSplit = Number(existingDebt.remainingAmountCents) - currentSplitTotal;
+    if (amountCents > maxSplit) {
+      throw app.httpErrors.badRequest('O valor da divisão excede o valor restante da dívida.');
+    }
+
+    const [newSplit] = await app.db.insert(debtSplit).values({
+      userId,
+      debtId: request.params.id,
+      personId,
+      amountCents: BigInt(amountCents),
+    }).returning();
+
+    await app.auditLog({
+      userId,
+      action: 'DEBT_SPLIT_CREATED',
+      entityType: 'DebtSplit',
+      entityId: newSplit.id,
+      newData: { debtId: request.params.id, personId, amountCents },
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
+
+    return reply.status(201).send({
+      ...newSplit,
+      amount: { cents: Number(newSplit.amountCents), currency: 'BRL' as const },
+    });
+  });
+
+  app.patch('/splits/:id', {
+    schema: {
+      params: z.object({ id: z.string().uuid() }),
+      body: z.object({ amountCents: z.number().int().positive() }),
+    },
+    preHandler: [app.authenticate],
+  }, async (request: any, reply: any) => {
+    const userId = request.authUser!.id;
+
+    const [existingSplit] = await app.db.select()
+      .from(debtSplit)
+      .where(and(eq(debtSplit.id, request.params.id), eq(debtSplit.userId, userId)))
+      .limit(1);
+    if (!existingSplit) throw app.httpErrors.notFound('Divisão não encontrada.');
+
+    const [existingDebt] = await app.db.select()
+      .from(debt)
+      .where(eq(debt.id, existingSplit.debtId))
+      .limit(1);
+    if (!existingDebt) throw app.httpErrors.notFound('Dívida não encontrada.');
+
+    const splitsByDebt = await loadSplitsForDebts(app, [existingSplit.debtId]);
+    const othersTotal = (splitsByDebt.get(existingSplit.debtId) ?? [])
+      .filter((s: any) => s.id !== existingSplit.id)
+      .reduce((acc: number, s: any) => acc + s.amount.cents, 0);
+
+    if (request.body.amountCents + othersTotal > Number(existingDebt.remainingAmountCents)) {
+      throw app.httpErrors.badRequest('O valor da divisão excede o valor restante da dívida.');
+    }
+
+    const [updatedSplit] = await app.db.update(debtSplit)
+      .set({ amountCents: BigInt(request.body.amountCents) })
+      .where(eq(debtSplit.id, request.params.id))
+      .returning();
+
+    await app.auditLog({
+      userId,
+      action: 'DEBT_SPLIT_UPDATED',
+      entityType: 'DebtSplit',
+      entityId: request.params.id,
+      oldData: existingSplit,
+      newData: { amountCents: request.body.amountCents },
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
+
+    return {
+      ...updatedSplit,
+      amount: { cents: Number(updatedSplit.amountCents), currency: 'BRL' as const },
+    };
+  });
+
+  app.delete('/splits/:id', {
+    schema: { params: z.object({ id: z.string().uuid() }) },
+    preHandler: [app.authenticate],
+  }, async (request: any, reply: any) => {
+    const [existingSplit] = await app.db.select()
+      .from(debtSplit)
+      .where(and(eq(debtSplit.id, request.params.id), eq(debtSplit.userId, request.authUser!.id)))
+      .limit(1);
+    if (!existingSplit) throw app.httpErrors.notFound('Divisão não encontrada.');
+
+    await app.db.delete(debtSplit).where(eq(debtSplit.id, request.params.id));
+
+    await app.auditLog({
+      userId: request.authUser!.id,
+      action: 'DEBT_SPLIT_DELETED',
+      entityType: 'DebtSplit',
+      entityId: request.params.id,
+      oldData: existingSplit,
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
+
+    return { success: true };
   });
 };
 

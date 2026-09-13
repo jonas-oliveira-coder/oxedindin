@@ -3,37 +3,31 @@ import { cn } from '@/lib/utils';
 
 type LogoProps = {
   className?: string;
+  variant?: 'mark' | 'full';
 };
 
-function getInitialDarkMode() {
+function isDark() {
   if (typeof window === 'undefined') return false;
-
-  const savedMode = localStorage.getItem('drizzle-dark-mode');
-  return savedMode ? savedMode === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return document.documentElement.classList.contains('dark');
 }
 
-export function Logo({ className }: LogoProps) {
-  const [darkMode, setDarkMode] = useState(getInitialDarkMode);
+export function Logo({ className, variant = 'mark' }: LogoProps) {
+  const [darkMode, setDarkMode] = useState(isDark);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const updateTheme = () => {
-      const savedMode = localStorage.getItem('drizzle-dark-mode');
-      setDarkMode(savedMode ? savedMode === 'true' : document.documentElement.classList.contains('dark') || mediaQuery.matches);
-    };
+    const updateTheme = () => setDarkMode(isDark());
     const observer = new MutationObserver(updateTheme);
-
-    mediaQuery.addEventListener('change', updateTheme);
-    window.addEventListener('storage', updateTheme);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('storage', updateTheme);
     return () => {
-      mediaQuery.removeEventListener('change', updateTheme);
-      window.removeEventListener('storage', updateTheme);
       observer.disconnect();
+      window.removeEventListener('storage', updateTheme);
     };
   }, []);
 
-  const fileName = darkMode ? 'logo-tema-escuro.svg' : 'logo-tema-claro.svg';
+  const fileName = variant === 'full'
+    ? (darkMode ? 'oxedin-nome-branco.png' : 'oxedin-nome-preto.png')
+    : (darkMode ? 'logo-tema-escuro.svg' : 'logo-tema-claro.svg');
 
   return (
     <img
