@@ -18,6 +18,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = join(__filename, '..');
 
 const app = Fastify({
+  pluginTimeout: 30000,
   logger: {
     transport: env.NODE_ENV !== 'production' ? {
       target: 'pino-pretty',

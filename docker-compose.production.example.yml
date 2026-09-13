@@ -28,6 +28,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    sysctls:
+      vm.overcommit_memory: 1
     volumes:
       - redis_prod_data:/data
     healthcheck:
