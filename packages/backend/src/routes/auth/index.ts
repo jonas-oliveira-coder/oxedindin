@@ -3,9 +3,15 @@ import { z } from 'zod';
 import { registerSchema, loginSchema, changePasswordSchema, forgotPasswordSchema, resetPasswordSchema } from '../../types/schemas.js';
 import { user, session } from '../../db/schema/index.js';
 import { eq, and, isNull, gt } from 'drizzle-orm';
+import { webAuthnCredentialSchema } from '@oxedindin/shared';
 
 const authRoutes: FastifyPluginAsyncZod = async (app) => {
   const authService = app.authService;
+
+  app.get('/csrf', async (request: any, reply: any) => {
+    const csrfToken = reply.generateCsrf();
+    return { csrfToken };
+  });
 
   app.post('/register', {
     schema: registerSchema,
@@ -350,11 +356,21 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
   });
 
   app.post('/passkey/register/finish', {
+    schema: {
+      body: z.object({
+        challengeId: z.string().min(1, 'Identificador de desafio inválido.'),
+        credential: webAuthnCredentialSchema,
+      }),
+    },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const credential = request.body as any;
-    const result = await authService.registerPasskeyFinish(request.authUser!.id, credential);
-    return result;
+    const { challengeId, credential } = request.body;
+    const result = await authService.registerPasskeyFinish(
+      request.authUser!.id,
+      challengeId,
+      credential as any,
+    );
+    return { verified: result.verified, passkey: { id: result.passkey.id, name: result.passkey.name, createdAt: result.passkey.createdAt } };
   });
 
   app.post('/passkey/login/start', async (request: any, reply: any) => {
@@ -364,26 +380,33 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
     return options;
   });
 
-  app.post('/passkey/login/finish', async (request: any, reply: any) => {
-    const credential = request.body as any;
-    const { verified, user } = await authService.authenticatePasskeyFinish(credential);
+  app.post('/passkey/login/finish', {
+    schema: {
+      body: z.object({
+        challengeId: z.string().min(1, 'Identificador de desafio inválido.'),
+        credential: webAuthnCredentialSchema,
+      }),
+    },
+  }, async (request: any, reply: any) => {
+    const { challengeId, credential } = request.body;
+    const { verified, user: passkeyUser } = await authService.authenticatePasskeyFinish(challengeId, credential as any);
 
-    if (!verified || !user) {
-      throw app.httpErrors.unauthorized('Passkey verification failed');
+    if (!verified || !passkeyUser) {
+      throw app.httpErrors.unauthorized('Falha na verificação da passkey');
     }
 
     const { session: newSession, accessToken, refreshToken } = await authService.createSession(
-      user.id,
+      passkeyUser.id,
       request.ip,
       request.headers['user-agent'],
       'Passkey login'
     );
 
     await app.auditLog({
-      userId: user.id,
+      userId: passkeyUser.id,
       action: 'LOGIN_SUCCESS',
       entityType: 'User',
-      entityId: user.id,
+      entityId: passkeyUser.id,
       newData: { method: 'passkey' },
       ip: request.ip,
       userAgent: request.headers['user-agent'],
@@ -407,10 +430,10 @@ const authRoutes: FastifyPluginAsyncZod = async (app) => {
 
     return {
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        emailVerified: user.emailVerified,
+        id: passkeyUser.id,
+        email: passkeyUser.email,
+        name: passkeyUser.name,
+        emailVerified: passkeyUser.emailVerified,
       },
       accessToken,
       refreshToken,

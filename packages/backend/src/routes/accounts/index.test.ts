@@ -108,7 +108,7 @@ describe('accounts routes', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('deactivates an account on delete', async () => {
+  it('deletes an account on delete', async () => {
     db.seed(bankAccount, [{
       id: '55555555-5555-4555-8555-555555555555',
       userId: TEST_USER_ID,
@@ -124,6 +124,6 @@ describe('accounts routes', () => {
 
     const res = await app.inject({ method: 'DELETE', url: '/api/v1/accounts/55555555-5555-4555-8555-555555555555' });
     expect(res.statusCode).toBe(200);
-    expect(db.all(bankAccount)[0].status).toBe('INACTIVE');
+    expect(db.all(bankAccount)).toHaveLength(0);
   });
 });

@@ -86,6 +86,26 @@ await app.register((await import('@fastify/cookie')).default, {
   },
 });
 
+await app.register((await import('@fastify/csrf-protection')).default, {
+  cookieOpts: {
+    path: '/',
+    sameSite: 'strict',
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+  },
+});
+
+// Enforce CSRF on unsafe methods, skipping safe methods and public endpoints
+// that must not require a token (health/docs swagger).
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+app.addHook('preValidation', async (request: any, reply: any) => {
+  if (SAFE_METHODS.has(request.method)) return;
+  if (request.url === '/health' || request.url?.startsWith('/docs')) return;
+  await new Promise<void>((resolve, reject) => {
+    app.csrfProtection(request, reply, (err?: Error) => (err ? reject(err) : resolve()));
+  });
+});
+
 await app.register((await import('@fastify/rate-limit')).default, {
   max: 100,
   timeWindow: '1 minute',
@@ -188,54 +208,53 @@ app.get('/health', async () => {
   };
 });
 
-app.setErrorHandler(async (error, request, reply) => {
+const STATUS_CODE_MAP: Record<number, string> = {
+  400: 'VALIDATION_ERROR',
+  401: 'UNAUTHORIZED',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  409: 'CONFLICT',
+  429: 'RATE_LIMITED',
+  500: 'INTERNAL',
+};
+
+function mapValidationFields(error: any): Record<string, string> | undefined {
+  const issues = error?.issues;
+  if (!Array.isArray(issues)) return undefined;
+
+  const fields: Record<string, string> = {};
+  for (const issue of issues) {
+    const key = Array.isArray(issue?.path) && issue.path.length > 0 ? issue.path.join('.') : 'body';
+    if (!fields[key]) {
+      fields[key] = typeof issue?.message === 'string' ? issue.message : 'Valor inválido.';
+    }
+  }
+  return Object.keys(fields).length > 0 ? fields : undefined;
+}
+
+app.setErrorHandler(async (error: any, request, reply) => {
   request.log.error(error);
 
-  if (error.validation) {
+  const isValidation = error?.code === 'FST_ERR_VALIDATION' || error?.validationContext;
+  if (isValidation) {
     return reply.status(400).send({
-      statusCode: 400,
-      message: 'Validation error',
-      error: 'Bad Request',
-      details: error.validation,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Existem dados inválidos.',
+        ...(mapValidationFields(error) ? { fields: mapValidationFields(error) } : {}),
+      },
     });
   }
 
-  if (error.statusCode === 401) {
-    return reply.status(401).send({
-      statusCode: 401,
-      message: error.message || 'Unauthorized',
-      error: 'Unauthorized',
-    });
-  }
+  const statusCode = error?.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
+  const code = STATUS_CODE_MAP[statusCode] || 'INTERNAL';
 
-  if (error.statusCode === 403) {
-    return reply.status(403).send({
-      statusCode: 403,
-      message: error.message || 'Forbidden',
-      error: 'Forbidden',
-    });
-  }
+  let message = error?.message || 'Erro interno do servidor.';
+  if (statusCode === 429) message = 'Muitas requisições. Tente novamente mais tarde.';
+  if (statusCode === 500 && env.NODE_ENV === 'production') message = 'Erro interno do servidor.';
 
-  if (error.statusCode === 404) {
-    return reply.status(404).send({
-      statusCode: 404,
-      message: error.message || 'Not found',
-      error: 'Not Found',
-    });
-  }
-
-  if (error.statusCode === 429) {
-    return reply.status(429).send({
-      statusCode: 429,
-      message: 'Too many requests',
-      error: 'Too Many Requests',
-    });
-  }
-
-  return reply.status(500).send({
-    statusCode: 500,
-    message: env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
-    error: 'Internal Server Error',
+  return reply.status(statusCode).send({
+    error: { code, message },
   });
 });
 

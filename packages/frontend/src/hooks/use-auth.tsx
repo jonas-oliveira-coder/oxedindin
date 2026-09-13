@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api as apiClient } from '@/lib/api';
-import { getAuthTokens, setAuthTokens, clearAuthTokens } from '@/lib/auth';
 
 interface User {
   id: string;
@@ -17,6 +16,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
+  loginWithPasskey: (challengeId: string, credential: unknown) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -29,17 +29,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUser = async () => {
     try {
-      const tokens = getAuthTokens();
-      if (!tokens) {
-        setUser(null);
-        return;
-      }
-
       const response = await apiClient.get('/users/me');
       setUser(response.data);
     } catch {
       setUser(null);
-      clearAuthTokens();
     } finally {
       setLoading(false);
     }
@@ -51,25 +44,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const response = await apiClient.post('/auth/login', { email, password });
-    const { accessToken, refreshToken, user: userData } = response.data;
-    
-    setAuthTokens({ accessToken, refreshToken, expiresIn: 15 * 60 });
-    setUser(userData);
+    setUser(response.data.user);
   };
 
   const register = async (email: string, password: string, name: string) => {
     const response = await apiClient.post('/auth/register', { email, password, name });
-    const { accessToken, refreshToken, user: userData } = response.data;
-    
-    setAuthTokens({ accessToken, refreshToken, expiresIn: 15 * 60 });
-    setUser(userData);
+    setUser(response.data.user);
+  };
+
+  const loginWithPasskey = async (challengeId: string, credential: unknown) => {
+    const response = await apiClient.post('/auth/passkey/login/finish', { challengeId, credential });
+    setUser(response.data.user);
   };
 
   const logout = async () => {
     try {
       await apiClient.post('/auth/logout');
     } finally {
-      clearAuthTokens();
       setUser(null);
     }
   };
@@ -79,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, loading, login, register, loginWithPasskey, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { z } from 'zod';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SelectItem } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, getAccountTypeLabel, cn } from '@/lib/utils';
-import { Plus, Edit, Trash2, Loader2 } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { Plus, Edit, Trash2 } from 'lucide-react';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createAccountSchema, updateAccountSchema, type CreateAccountInput, type UpdateAccountInput } from '@/lib/validation';
+import { accountTypeSchema, accountStatusSchema, type CreateAccountInput, type UpdateAccountInput } from '@/lib/validation';
+import { nameSchema, moneyCentsSchema } from '@oxedindin/shared';
+import { FormField, TextInput, CurrencyInput, Textarea, FormSelect } from '@/components/forms';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 interface BankAccount {
   id: string;
@@ -28,6 +30,19 @@ interface BankAccount {
   updatedAt: string;
   notes?: string;
 }
+
+const accountFormSchema = z.object({
+  name: nameSchema,
+  institution: z.string().trim().min(1, 'Informe a instituição.').max(100),
+  type: accountTypeSchema,
+  number: z.string().trim().max(20).optional().default(''),
+  agency: z.string().trim().max(10).optional().default(''),
+  initialBalance: moneyCentsSchema.default(0),
+  status: accountStatusSchema.default('ACTIVE'),
+  notes: z.string().max(500).optional().default(''),
+});
+
+type AccountFormValues = z.infer<typeof accountFormSchema>;
 
 async function fetchAccounts(): Promise<BankAccount[]> {
   const response = await api.get('/accounts');
@@ -52,7 +67,7 @@ export function AccountsPage() {
   const queryClient = useQueryClient();
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setDeleteDialogOpen] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts'],
@@ -66,9 +81,7 @@ export function AccountsPage() {
       toast({ title: 'Conta criada', description: 'Conta bancária criada com sucesso.' });
       setDialogOpen(false);
     },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const updateMutation = useMutation({
@@ -77,73 +90,61 @@ export function AccountsPage() {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       toast({ title: 'Conta atualizada', description: 'Conta bancária atualizada com sucesso.' });
       setEditingAccount(null);
+      setDialogOpen(false);
     },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteAccount,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      toast({ title: 'Conta desativada', description: 'Conta bancária desativada com sucesso.' });
-      setDeleteDialogOpen(null);
+      toast({ title: 'Conta excluída', description: 'Conta bancária excluída com sucesso.' });
+      setDeleteId(null);
     },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
+    onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
-  const createForm = useForm<CreateAccountInput>({
-    resolver: zodResolver(createAccountSchema),
-    defaultValues: {
-      type: 'CHECKING',
-      initialBalance: 0,
-    },
+  const form = useForm<AccountFormValues>({
+    resolver: zodResolver(accountFormSchema),
+    defaultValues: { type: 'CHECKING', initialBalance: 0, status: 'ACTIVE', number: '', agency: '', notes: '' },
   });
-
-  const updateForm = useForm<UpdateAccountInput>({
-    resolver: zodResolver(updateAccountSchema),
-  });
-
-  const handleCreateSubmit = (data: CreateAccountInput) => {
-    createMutation.mutate(data);
-    createForm.reset({ type: 'CHECKING', initialBalance: 0 });
-  };
-
-  const handleUpdateSubmit = (data: UpdateAccountInput) => {
-    if (editingAccount) {
-      updateMutation.mutate({ id: editingAccount.id, data });
-    }
-  };
-
-  const handleDelete = (id: string) => {
-    setDeleteDialogOpen(id);
-  };
-
-  const handleConfirmDelete = (id: string) => {
-    deleteMutation.mutate(id);
-  };
 
   const openCreateDialog = () => {
     setEditingAccount(null);
-    createForm.reset({ type: 'CHECKING', initialBalance: 0 });
+    form.reset({ type: 'CHECKING', initialBalance: 0, status: 'ACTIVE', number: '', agency: '', notes: '' });
     setDialogOpen(true);
   };
 
   const openEditDialog = (account: BankAccount) => {
     setEditingAccount(account);
-    updateForm.reset({
+    form.reset({
       name: account.name,
       institution: account.institution,
-      type: account.type as UpdateAccountInput['type'],
-      number: account.number,
-      agency: account.agency,
-      status: account.status as UpdateAccountInput['status'],
-      notes: account.notes,
+      type: account.type as AccountFormValues['type'],
+      number: account.number ?? '',
+      agency: account.agency ?? '',
+      status: account.status as AccountFormValues['status'],
+      notes: account.notes ?? '',
+      initialBalance: account.initialBalance.cents,
     });
     setDialogOpen(true);
+  };
+
+  const onSubmit = (values: AccountFormValues) => {
+    const base = {
+      name: values.name,
+      institution: values.institution,
+      type: values.type,
+      number: values.number || undefined,
+      agency: values.agency || undefined,
+      notes: values.notes || undefined,
+    };
+    if (editingAccount) {
+      updateMutation.mutate({ id: editingAccount.id, data: { ...base, status: values.status } as UpdateAccountInput });
+    } else {
+      createMutation.mutate({ ...base, initialBalance: values.initialBalance } as CreateAccountInput);
+    }
   };
 
   if (isLoading) {
@@ -181,68 +182,62 @@ export function AccountsPage() {
             <DialogHeader>
               <DialogTitle>{editingAccount ? 'Editar Conta' : 'Nova Conta Bancária'}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={editingAccount ? updateForm.handleSubmit(handleUpdateSubmit) : createForm.handleSubmit(handleCreateSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome da conta</Label>
-                <Input id="name" {...(editingAccount ? updateForm.register('name') : createForm.register('name'))} placeholder="Minha Conta" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="institution">Instituição</Label>
-                <Input id="institution" {...(editingAccount ? updateForm.register('institution') : createForm.register('institution'))} placeholder="Banco do Brasil" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="type">Tipo</Label>
-                <Select {...(editingAccount ? updateForm.register('type') : createForm.register('type'))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CHECKING">Conta Corrente</SelectItem>
-                    <SelectItem value="SAVINGS">Poupança</SelectItem>
-                    <SelectItem value="DIGITAL">Digital</SelectItem>
-                    <SelectItem value="SALARY">Salário</SelectItem>
-                    <SelectItem value="OTHER">Outra</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField id="name" label="Nome da conta" error={form.formState.errors.name?.message}>
+                <TextInput id="name" placeholder="Minha Conta" {...form.register('name')} />
+              </FormField>
+
+              <FormField id="institution" label="Instituição" error={form.formState.errors.institution?.message}>
+                <TextInput id="institution" placeholder="Banco do Brasil" {...form.register('institution')} />
+              </FormField>
+
+              <FormField id="type" label="Tipo" error={form.formState.errors.type?.message}>
+                <FormSelect control={form.control} name="type" placeholder="Selecione o tipo">
+                  <SelectItem value="CHECKING">Conta Corrente</SelectItem>
+                  <SelectItem value="SAVINGS">Poupança</SelectItem>
+                  <SelectItem value="DIGITAL">Digital</SelectItem>
+                  <SelectItem value="SALARY">Salário</SelectItem>
+                  <SelectItem value="OTHER">Outra</SelectItem>
+                </FormSelect>
+              </FormField>
+
               <div className="grid gap-2 grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="number">Número</Label>
-                  <Input id="number" {...(editingAccount ? updateForm.register('number') : createForm.register('number'))} placeholder="12345-6" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="agency">Agência</Label>
-                  <Input id="agency" {...(editingAccount ? updateForm.register('agency') : createForm.register('agency'))} placeholder="1234" />
-                </div>
+                <FormField id="number" label="Número" error={form.formState.errors.number?.message}>
+                  <TextInput id="number" placeholder="12345-6" {...form.register('number')} />
+                </FormField>
+                <FormField id="agency" label="Agência" error={form.formState.errors.agency?.message}>
+                  <TextInput id="agency" placeholder="1234" {...form.register('agency')} />
+                </FormField>
               </div>
+
               {!editingAccount && (
-                <div className="space-y-2">
-                  <Label htmlFor="initialBalance">Saldo inicial</Label>
-                  <Input id="initialBalance" type="number" step="0.01" {...createForm.register('initialBalance', { valueAsNumber: true })} placeholder="0,00" />
-                </div>
+                <FormField id="initialBalance" label="Saldo inicial" error={form.formState.errors.initialBalance?.message}>
+                  <Controller
+                    name="initialBalance"
+                    control={form.control}
+                    render={({ field }) => (
+                      <CurrencyInput id="initialBalance" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+                    )}
+                  />
+                </FormField>
               )}
-              <div className="space-y-2">
-                <Label htmlFor="notes">Observações</Label>
-                <Input id="notes" {...(editingAccount ? updateForm.register('notes') : createForm.register('notes'))} placeholder="Observações opcionais" />
-              </div>
+
+              <FormField id="notes" label="Observações" error={form.formState.errors.notes?.message}>
+                <Textarea id="notes" placeholder="Observações opcionais" {...form.register('notes')} />
+              </FormField>
+
               {editingAccount && (
-                <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
-                  <Select {...updateForm.register('status')}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ACTIVE">Ativa</SelectItem>
-                      <SelectItem value="INACTIVE">Inativa</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <FormField id="status" label="Status" error={form.formState.errors.status?.message}>
+                  <FormSelect control={form.control} name="status" placeholder="Selecione o status">
+                    <SelectItem value="ACTIVE">Ativa</SelectItem>
+                    <SelectItem value="INACTIVE">Inativa</SelectItem>
+                  </FormSelect>
+                </FormField>
               )}
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                  {createMutation.isPending || updateMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
                   {editingAccount ? 'Salvar' : 'Criar'}
                 </Button>
               </DialogFooter>
@@ -282,10 +277,10 @@ export function AccountsPage() {
                       <p className="text-sm text-muted-foreground">Saldo inicial: {formatMoney(account.initialBalance.cents)}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(account)}>
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(account)} aria-label="Editar conta">
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(account.id)}>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(account.id)} aria-label="Excluir conta">
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
@@ -298,12 +293,7 @@ export function AccountsPage() {
       ) : (
         <Card>
           <CardContent className="pt-6 text-center py-12">
-            <svg className="mx-auto h-12 w-12 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="2" y="3" width="20" height="14" rx="2" />
-              <path d="M8 21h8" />
-              <path d="M12 17v4" />
-            </svg>
-            <h3 className="mt-4 text-lg font-medium">Nenhuma conta cadastrada</h3>
+            <h3 className="text-lg font-medium">Nenhuma conta cadastrada</h3>
             <p className="mt-2 text-muted-foreground">Adicione sua primeira conta bancária para começar</p>
             <Button onClick={openCreateDialog} className="mt-4">
               <Plus className="mr-2 h-4 w-4" />
@@ -313,22 +303,14 @@ export function AccountsPage() {
         </Card>
       )}
 
-      <Dialog open={!!isDeleteDialogOpen} onOpenChange={(open) => !open && setDeleteDialogOpen(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Desativar conta?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Esta ação desativará a conta. Você poderá reativá-la depois nas configurações.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => isDeleteDialogOpen && handleConfirmDelete(isDeleteDialogOpen)}>
-              Desativar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={!!deleteId}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        title="Excluir conta?"
+        description="Essa ação removerá permanentemente a conta. Contas com transações, contas recorrentes ou cartões vinculados não podem ser excluídas."
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
+      />
     </div>
   );
 }

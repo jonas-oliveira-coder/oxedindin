@@ -130,6 +130,6 @@ describe('debts routes', () => {
 
     const res = await app.inject({ method: 'DELETE', url: '/api/v1/debts/45678901-4567-4234-8234-456789012345' });
     expect(res.statusCode).toBe(200);
-    expect(db.all(debt)[0].status).toBe('CANCELLED');
+    expect(db.all(debt)).toHaveLength(0);
   });
 });

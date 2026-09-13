@@ -139,6 +139,6 @@ describe('bills routes', () => {
 
     const res = await app.inject({ method: 'DELETE', url: '/api/v1/bills/11112222-3333-4444-8555-666677778888' });
     expect(res.statusCode).toBe(200);
-    expect(db.all(bill)[0].status).toBe('CANCELLED');
+    expect(db.all(bill)).toHaveLength(0);
   });
 });

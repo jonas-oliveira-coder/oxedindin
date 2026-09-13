@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, desc, asc, count } from 'drizzle-orm';
 import { createCategorySchema, paginationSchema } from '../../types/schemas.js';
-import { category } from '../../db/schema/index.js';
+import { category, transaction, installmentPlan, recurringBill, bill } from '../../db/schema/index.js';
 
 const defaultCategories = [
   { name: 'Alimentação', icon: '🍔', color: '#EF4444' },
@@ -129,6 +129,17 @@ const categoriesRoutes: FastifyPluginAsyncZod = async (app) => {
 
     if (existing.isDefault) {
       throw app.httpErrors.forbidden('Cannot delete default category');
+    }
+
+    const [catTransactions, catPlans, catRecurring, catBills] = await Promise.all([
+      app.db.select().from(transaction).where(and(eq(transaction.categoryId, request.params.id), eq(transaction.userId, request.authUser!.id))).limit(1),
+      app.db.select().from(installmentPlan).where(and(eq(installmentPlan.categoryId, request.params.id), eq(installmentPlan.userId, request.authUser!.id))).limit(1),
+      app.db.select().from(recurringBill).where(and(eq(recurringBill.categoryId, request.params.id), eq(recurringBill.userId, request.authUser!.id))).limit(1),
+      app.db.select().from(bill).where(and(eq(bill.categoryId, request.params.id), eq(bill.userId, request.authUser!.id))).limit(1),
+    ]);
+
+    if (catTransactions.length > 0 || catPlans.length > 0 || catRecurring.length > 0 || catBills.length > 0) {
+      throw app.httpErrors.conflict('Não é possível excluir esta categoria porque existem transações, parcelas ou contas vinculadas a ela.');
     }
 
     await app.db.delete(category).where(eq(category.id, request.params.id));

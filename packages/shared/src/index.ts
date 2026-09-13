@@ -1,3 +1,12 @@
+import type { Money } from './money.js';
+
+export * from './money.js';
+export * from './brazil.js';
+export * from './email.js';
+export * from './date.js';
+export * from './installments.js';
+export * from './schemas.js';
+
 export type AccountType = 'CHECKING' | 'SAVINGS' | 'DIGITAL' | 'SALARY' | 'OTHER';
 export type AccountStatus = 'ACTIVE' | 'INACTIVE';
 
@@ -39,42 +48,6 @@ export type NotificationType =
 export type NotificationChannel = 'IN_APP' | 'EMAIL' | 'PUSH';
 
 export type DateType = 'FIXED' | 'ADJUSTABLE';
-
-export interface Money {
-  cents: number;
-  currency: 'BRL';
-}
-
-export function money(cents: number): Money {
-  return { cents, currency: 'BRL' };
-}
-
-export function moneyFromReais(reais: number): Money {
-  return { cents: Math.round(reais * 100), currency: 'BRL' };
-}
-
-export function moneyToReais(money: Money): number {
-  return money.cents / 100;
-}
-
-export function addMoney(a: Money, b: Money): Money {
-  return { cents: a.cents + b.cents, currency: a.currency };
-}
-
-export function subtractMoney(a: Money, b: Money): Money {
-  return { cents: a.cents - b.cents, currency: a.currency };
-}
-
-export function multiplyMoney(money: Money, factor: number): Money {
-  return { cents: Math.round(money.cents * factor), currency: money.currency };
-}
-
-export function formatMoney(money: Money, locale = 'pt-BR'): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: money.currency,
-  }).format(money.cents / 100);
-}
 
 export interface PaginationParams {
   page: number;

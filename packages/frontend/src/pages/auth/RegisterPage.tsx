@@ -3,19 +3,18 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { toast } from '@/components/ui/use-toast';
 import { registerSchema, type RegisterInput } from '@/lib/validation';
 import { useAuth } from '@/hooks/use-auth';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { FormField, TextInput, EmailInput, PasswordInput } from '@/components/forms';
+import { getErrorMessage } from '@/lib/api';
+import { Loader2 } from 'lucide-react';
 
 export function RegisterPage() {
   const navigate = useNavigate();
   const { register: registerUser } = useAuth();
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const {
@@ -33,11 +32,7 @@ export function RegisterPage() {
       toast({ title: 'Conta criada!', description: 'Bem-vindo ao OxeDinDin.' });
       navigate('/dashboard');
     } catch (error) {
-      toast({
-        title: 'Erro ao cadastrar',
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro ao cadastrar', description: getErrorMessage(error), variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -60,63 +55,20 @@ export function RegisterPage() {
 
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Nome completo</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="João Silva"
-                {...register('name')}
-                disabled={isLoading}
-                aria-invalid={!!errors.name}
-              />
-              {errors.name && (
-                <p className="text-sm text-destructive" role="alert">{errors.name.message}</p>
-              )}
-            </div>
+            <FormField id="name" label="Nome completo" error={errors.name?.message}>
+              <TextInput id="name" placeholder="João Silva" {...register('name')} disabled={isLoading} />
+            </FormField>
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="seu@email.com"
-                {...register('email')}
-                disabled={isLoading}
-                aria-invalid={!!errors.email}
-              />
-              {errors.email && (
-                <p className="text-sm text-destructive" role="alert">{errors.email.message}</p>
-              )}
-            </div>
+            <FormField id="email" label="Email" error={errors.email?.message}>
+              <EmailInput id="email" placeholder="seu@email.com" {...register('email')} disabled={isLoading} />
+            </FormField>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  {...register('password')}
-                  disabled={isLoading}
-                  aria-invalid={!!errors.password}
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="text-sm text-destructive" role="alert">{errors.password.message}</p>
-              )}
-            </div>
+            <FormField id="password" label="Senha" error={errors.password?.message} hint="A senha deve ter pelo menos 8 caracteres.">
+              <PasswordInput id="password" placeholder="••••••••" {...register('password')} disabled={isLoading} />
+            </FormField>
 
             <Button type="submit" className="w-full" disabled={isLoading} size="lg">
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Criar conta
             </Button>
           </form>
@@ -124,9 +76,9 @@ export function RegisterPage() {
           <Separator className="my-6" />
 
           <p className="text-center text-sm text-muted-foreground">
-            Ao criar uma conta, você concorda com nossos
-            <Link to="/terms" className="text-primary hover:underline">Termos de Uso</Link>
-            e
+            Ao criar uma conta, você concorda com nossos{' '}
+            <Link to="/terms" className="text-primary hover:underline">Termos de Uso</Link>{' '}
+            e{' '}
             <Link to="/privacy" className="text-primary hover:underline">Política de Privacidade</Link>
           </p>
         </CardContent>

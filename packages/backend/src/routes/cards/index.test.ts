@@ -134,6 +134,6 @@ describe('cards routes', () => {
 
     const res = await app.inject({ method: 'DELETE', url: '/api/v1/cards/88888888-8888-4888-8888-888888888888' });
     expect(res.statusCode).toBe(200);
-    expect(db.all(creditCard)[0].status).toBe('INACTIVE');
+    expect(db.all(creditCard)).toHaveLength(0);
   });
 });

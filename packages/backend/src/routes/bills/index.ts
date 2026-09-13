@@ -261,15 +261,23 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    await app.db.update(recurringBill)
-      .set({ status: 'INACTIVE' })
-      .where(eq(recurringBill.id, request.params.id));
+    const [existing] = await app.db.select()
+      .from(recurringBill)
+      .where(and(eq(recurringBill.id, request.params.id), eq(recurringBill.userId, request.authUser!.id)))
+      .limit(1);
+
+    if (!existing) {
+      throw app.httpErrors.notFound('Recurring bill not found');
+    }
+
+    await app.db.delete(recurringBill).where(eq(recurringBill.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,
-      action: 'RECURRING_BILL_DEACTIVATED',
+      action: 'RECURRING_BILL_DELETED',
       entityType: 'RecurringBill',
       entityId: request.params.id,
+      oldData: existing,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });
@@ -601,15 +609,27 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    await app.db.update(bill)
-      .set({ status: 'CANCELLED' })
-      .where(eq(bill.id, request.params.id));
+    const [existing] = await app.db.select()
+      .from(bill)
+      .where(and(eq(bill.id, request.params.id), eq(bill.userId, request.authUser!.id)))
+      .limit(1);
+
+    if (!existing) {
+      throw app.httpErrors.notFound('Bill not found');
+    }
+
+    if (existing.status === 'PAID') {
+      throw app.httpErrors.conflict('Não é possível excluir uma conta que já foi paga.');
+    }
+
+    await app.db.delete(bill).where(eq(bill.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,
-      action: 'BILL_CANCELLED',
+      action: 'BILL_DELETED',
       entityType: 'Bill',
       entityId: request.params.id,
+      oldData: existing,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });

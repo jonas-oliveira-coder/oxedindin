@@ -1,5 +1,5 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { getAuthTokens, setAuthTokens, clearAuthTokens } from './auth';
+import { getCsrfToken, setCsrfToken } from './auth';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -11,30 +11,47 @@ export const api = axios.create({
   },
 });
 
+const UNSAFE_METHODS = new Set(['post', 'put', 'patch', 'delete']);
+
+let csrfPromise: Promise<void> | null = null;
+
+async function ensureCsrfToken(): Promise<void> {
+  if (getCsrfToken()) return;
+  if (!csrfPromise) {
+    csrfPromise = (async () => {
+      const response = await api.get('/auth/csrf');
+      setCsrfToken(response.data.csrfToken);
+    })();
+  }
+  try {
+    await csrfPromise;
+  } finally {
+    csrfPromise = null;
+  }
+}
+
 api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const tokens = getAuthTokens();
-    if (tokens?.accessToken) {
-      config.headers.Authorization = `Bearer ${tokens.accessToken}`;
+  async (config: InternalAxiosRequestConfig) => {
+    if (UNSAFE_METHODS.has((config.method ?? '').toLowerCase())) {
+      await ensureCsrfToken();
+      const token = getCsrfToken();
+      if (token) config.headers['x-csrf-token'] = token;
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 let isRefreshing = false;
 let failedQueue: Array<{
-  resolve: (token: string) => void;
+  resolve: () => void;
   reject: (error: Error) => void;
 }> = [];
 
-const processQueue = (error: Error | null, token: string | null = null) => {
+const processQueue = (error: Error | null) => {
   failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token!);
-    }
+    if (error) prom.reject(error);
+    else prom.resolve();
   });
   failedQueue = [];
 };
@@ -47,10 +64,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
+          failedQueue.push({ resolve: () => resolve(undefined), reject });
         })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
+          .then(() => {
+            originalRequest._retry = true;
             return api(originalRequest);
           })
           .catch((err) => Promise.reject(err));
@@ -60,52 +77,47 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const tokens = getAuthTokens();
-        if (!tokens?.refreshToken) throw new Error('No refresh token');
-
-        const response = await axios.post(
-          `${API_URL}/api/v1/auth/refresh`,
-          {},
-          { withCredentials: true, headers: { Authorization: `Bearer ${tokens.refreshToken}` } }
-        );
-
-        const { accessToken, refreshToken } = response.data;
-        setAuthTokens({ accessToken, refreshToken });
-
-        processQueue(null, accessToken);
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        await api.post('/auth/refresh');
+        processQueue(null);
         return api(originalRequest);
-      } catch (err) {
-        processQueue(err as Error, null);
-        clearAuthTokens();
-        window.location.href = '/login';
-        return Promise.reject(err);
+      } catch {
+        processQueue(new Error('Sessão expirada'));
+        if (typeof window !== 'undefined') window.location.href = '/login';
+        return Promise.reject(error);
       } finally {
         isRefreshing = false;
       }
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
-export interface ApiError {
-  statusCode: number;
-  message: string;
-  error: string;
-  details?: Record<string, string[]>;
+export interface ApiErrorBody {
+  error: {
+    code: string;
+    message: string;
+    fields?: Record<string, string>;
+  };
 }
 
-export function isApiError(error: unknown): error is AxiosError<ApiError> {
+export function isApiError(error: unknown): error is AxiosError<ApiErrorBody> {
   return axios.isAxiosError(error);
 }
 
 export function getErrorMessage(error: unknown): string {
   if (isApiError(error)) {
-    return error.response?.data?.message || error.message;
+    return error.response?.data?.error?.message || 'Erro desconhecido.';
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return 'An unknown error occurred';
+  return 'Erro desconhecido.';
+}
+
+export function getFieldErrors(error: unknown): Record<string, string> {
+  if (isApiError(error)) {
+    return error.response?.data?.error?.fields || {};
+  }
+  return {};
 }

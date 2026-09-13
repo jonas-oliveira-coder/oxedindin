@@ -478,13 +478,59 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const [existing] = await app.db.select()
+const [existing] = await app.db.select()
       .from(transaction)
       .where(and(eq(transaction.id, request.params.id), eq(transaction.userId, request.authUser!.id)))
       .limit(1);
 
     if (!existing) {
       throw app.httpErrors.notFound('Transaction not found');
+    }
+
+    if (existing.installmentPlanId || (existing.description && existing.description.startsWith('Pagamento'))) {
+      throw app.httpErrors.conflict('Esta transação foi gerada por um pagamento e não pode ser excluída diretamente. Reverta o pagamento na origem.');
+    }
+
+    const amountCents = Number(existing.amountCents);
+
+    if (existing.accountId) {
+      if (existing.type === 'EXPENSE') {
+        await app.db.update(bankAccount)
+          .set({ balanceCents: sql`${bankAccount.balanceCents} + ${amountCents}` })
+          .where(eq(bankAccount.id, existing.accountId));
+      } else if (existing.type === 'INCOME') {
+        await app.db.update(bankAccount)
+          .set({ balanceCents: sql`${bankAccount.balanceCents} - ${amountCents}` })
+          .where(eq(bankAccount.id, existing.accountId));
+      }
+    }
+
+    if (existing.cardId) {
+      const [card] = await app.db.select()
+        .from(creditCard)
+        .where(eq(creditCard.id, existing.cardId))
+        .limit(1);
+
+      if (card) {
+        const { periodStart, periodEnd } = getInvoiceForDate(new Date(existing.date), card.closingDay, card.dueDay);
+        const [linkedInvoice] = await app.db.select()
+          .from(invoice)
+          .where(and(eq(invoice.cardId, existing.cardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
+          .limit(1);
+
+        if (linkedInvoice) {
+          await app.db.update(invoice)
+            .set({
+              totalCents: sql`${invoice.totalCents} - ${amountCents}`,
+              remainingCents: sql`${invoice.remainingCents} - ${amountCents}`,
+            })
+            .where(eq(invoice.id, linkedInvoice.id));
+        }
+
+        await app.db.update(creditCard)
+          .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${amountCents}` })
+          .where(eq(creditCard.id, existing.cardId));
+      }
     }
 
     await app.db.delete(transaction).where(eq(transaction.id, request.params.id));

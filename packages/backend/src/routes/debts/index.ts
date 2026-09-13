@@ -330,15 +330,27 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    await app.db.update(debt)
-      .set({ status: 'CANCELLED' })
-      .where(eq(debt.id, request.params.id));
+    const [existing] = await app.db.select()
+      .from(debt)
+      .where(and(eq(debt.id, request.params.id), eq(debt.userId, request.authUser!.id)))
+      .limit(1);
+
+    if (!existing) {
+      throw app.httpErrors.notFound('Debt not found');
+    }
+
+    if (Number(existing.paidAmountCents) > 0) {
+      throw app.httpErrors.conflict('Não é possível excluir esta dívida porque existem pagamentos vinculados a ela.');
+    }
+
+    await app.db.delete(debt).where(eq(debt.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,
-      action: 'DEBT_CANCELLED',
+      action: 'DEBT_DELETED',
       entityType: 'Debt',
       entityId: request.params.id,
+      oldData: existing,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });

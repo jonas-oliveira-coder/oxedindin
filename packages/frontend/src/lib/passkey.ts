@@ -67,7 +67,9 @@ export function prepareRegistrationCredential(
     },
     type: 'public-key',
     transports: (credential as any).transports as WebAuthnCredential['transports'],
-  };
+    clientExtensionResults: credential.getClientExtensionResults(),
+    authenticatorAttachment: (credential as any).authenticatorAttachment,
+  } as WebAuthnCredential;
 }
 
 export function prepareAuthenticationCredential(
@@ -85,7 +87,9 @@ export function prepareAuthenticationCredential(
     },
     type: 'public-key',
     transports: (credential as any).transports as WebAuthnCredential['transports'],
-  };
+    clientExtensionResults: credential.getClientExtensionResults(),
+    authenticatorAttachment: (credential as any).authenticatorAttachment,
+  } as WebAuthnCredential;
 }
 
 export function parseRegistrationOptions(options: PublicKeyCredentialCreationOptionsJSON): PublicKeyCredentialCreationOptions {

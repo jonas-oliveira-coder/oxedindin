@@ -1,39 +1,14 @@
-interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number;
+// Authentication tokens are now transported exclusively via httpOnly cookies
+// (set by the backend), so the frontend never stores access/refresh tokens.
+// Only the CSRF token is kept in memory: it is not sensitive and is required
+// as a custom header on mutating requests to satisfy @fastify/csrf-protection.
+
+let csrfToken: string | null = null;
+
+export function getCsrfToken(): string | null {
+  return csrfToken;
 }
 
-const TOKEN_KEY = 'oxedindin_tokens';
-
-export function getAuthTokens(): AuthTokens | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const stored = localStorage.getItem(TOKEN_KEY);
-    if (!stored) return null;
-    const tokens = JSON.parse(stored) as AuthTokens;
-    if (tokens.expiresAt < Date.now()) {
-      clearAuthTokens();
-      return null;
-    }
-    return tokens;
-  } catch {
-    return null;
-  }
-}
-
-export function setAuthTokens(tokens: { accessToken: string; refreshToken: string; expiresIn?: number }): void {
-  if (typeof window === 'undefined') return;
-  const expiresIn = tokens.expiresIn ?? 15 * 60;
-  const expiresAt = Date.now() + expiresIn * 1000;
-  localStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, expiresAt }));
-}
-
-export function clearAuthTokens(): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-export function isAuthenticated(): boolean {
-  return getAuthTokens() !== null;
+export function setCsrfToken(token: string): void {
+  csrfToken = token;
 }

@@ -1,6 +1,17 @@
 import { z } from 'zod';
+import {
+  emailSchema,
+  passwordSchema,
+  nameSchema,
+  uuidSchema,
+  moneyCentsSchema,
+  positiveMoneyCentsSchema,
+  civilDateSchema,
+  phoneSchema,
+  documentSchema,
+} from '@oxedindin/shared';
 
-export const moneySchema = z.number().int().min(0);
+export const moneySchema = moneyCentsSchema;
 
 export const paginationSchema = z.object({
   page: z.number().int().positive().default(1),
@@ -8,54 +19,54 @@ export const paginationSchema = z.object({
 });
 
 export const dateRangeSchema = z.object({
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
+  startDate: civilDateSchema.optional(),
+  endDate: civilDateSchema.optional(),
 });
 
 export const registerSchema = z.object({
-  email: z.string().email('Email inválido'),
-  password: z.string().min(8, 'Senha deve ter pelo menos 8 caracteres').max(128),
-  name: z.string().min(1, 'Nome é obrigatório').max(100),
+  email: emailSchema,
+  password: passwordSchema,
+  name: nameSchema,
 });
 
 export const loginSchema = z.object({
-  email: z.string().email('Email inválido'),
-  password: z.string().min(1, 'Senha é obrigatória'),
+  email: emailSchema,
+  password: z.string().min(1, 'Informe a senha.'),
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Senha atual é obrigatória'),
-  newPassword: z.string().min(8, 'Nova senha deve ter pelo menos 8 caracteres').max(128),
+  currentPassword: z.string().min(1, 'Informe a senha atual.'),
+  newPassword: passwordSchema,
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email('Email inválido'),
+  email: emailSchema,
 });
 
 export const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'Token é obrigatório'),
-  password: z.string().min(8, 'Senha deve ter pelo menos 8 caracteres').max(128),
+  token: z.string().min(1, 'Token inválido.'),
+  password: passwordSchema,
 });
 
 export const accountTypeSchema = z.enum(['CHECKING', 'SAVINGS', 'DIGITAL', 'SALARY', 'OTHER']);
 export const accountStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
 
 export const createAccountSchema = z.object({
-  name: z.string().min(1, 'Nome é obrigatório').max(100),
-  institution: z.string().min(1, 'Instituição é obrigatória').max(100),
+  name: nameSchema,
+  institution: z.string().trim().min(1, 'Informe a instituição.').max(100),
   type: accountTypeSchema,
-  number: z.string().max(20).optional(),
-  agency: z.string().max(10).optional(),
-  initialBalance: z.number().int().default(0),
+  number: z.string().trim().max(20).optional(),
+  agency: z.string().trim().max(10).optional(),
+  initialBalance: moneyCentsSchema.default(0),
   notes: z.string().max(500).optional(),
 });
 
 export const updateAccountSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  institution: z.string().min(1).max(100).optional(),
+  name: nameSchema.optional(),
+  institution: z.string().trim().min(1, 'Informe a instituição.').max(100).optional(),
   type: accountTypeSchema.optional(),
-  number: z.string().max(20).nullable().optional(),
-  agency: z.string().max(10).nullable().optional(),
+  number: z.string().trim().max(20).nullable().optional(),
+  agency: z.string().trim().max(10).nullable().optional(),
   status: accountStatusSchema.optional(),
   notes: z.string().max(500).nullable().optional(),
 });
@@ -63,27 +74,41 @@ export const updateAccountSchema = z.object({
 export const cardBrandSchema = z.enum(['VISA', 'MASTERCARD', 'AMEX', 'ELO', 'HIPERCARD', 'OTHER']);
 export const cardStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
 
+const last4Schema = z.string().regex(/^\d{4}$/, 'Informe os 4 últimos dígitos do cartão.');
+
+const closingDaySchema = z
+  .number({ invalid_type_error: 'Informe o dia de fechamento.' })
+  .int('Dia de fechamento inválido.')
+  .min(1, 'O dia de fechamento deve ser entre 1 e 31.')
+  .max(31, 'O dia de fechamento deve ser entre 1 e 31.');
+
+const dueDaySchema = z
+  .number({ invalid_type_error: 'Informe o dia de vencimento.' })
+  .int('Dia de vencimento inválido.')
+  .min(1, 'O dia de vencimento deve ser entre 1 e 31.')
+  .max(31, 'O dia de vencimento deve ser entre 1 e 31.');
+
 export const createCardSchema = z.object({
-  name: z.string().min(1, 'Nome é obrigatório').max(100),
-  institution: z.string().min(1, 'Instituição é obrigatória').max(100),
+  name: nameSchema,
+  institution: z.string().trim().min(1, 'Informe a instituição.').max(100),
   brand: cardBrandSchema,
-  last4: z.string().length(4, 'Últimos 4 dígitos devem ter 4 caracteres'),
-  limit: z.number().int().positive('Limite deve ser positivo'),
-  closingDay: z.number().int().min(1).max(31),
-  dueDay: z.number().int().min(1).max(31),
-  accountId: z.string().uuid().optional(),
+  last4: last4Schema,
+  limit: positiveMoneyCentsSchema,
+  closingDay: closingDaySchema,
+  dueDay: dueDaySchema,
+  accountId: uuidSchema.optional(),
   notes: z.string().max(500).optional(),
 });
 
 export const updateCardSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  institution: z.string().min(1).max(100).optional(),
+  name: nameSchema.optional(),
+  institution: z.string().trim().min(1).max(100).optional(),
   brand: cardBrandSchema.optional(),
-  last4: z.string().length(4).optional(),
-  limit: z.number().int().positive().optional(),
-  closingDay: z.number().int().min(1).max(31).optional(),
-  dueDay: z.number().int().min(1).max(31).optional(),
-  accountId: z.string().uuid().nullable().optional(),
+  last4: last4Schema.optional(),
+  limit: positiveMoneyCentsSchema.optional(),
+  closingDay: closingDaySchema.optional(),
+  dueDay: dueDaySchema.optional(),
+  accountId: uuidSchema.nullable().optional(),
   status: cardStatusSchema.optional(),
   notes: z.string().max(500).nullable().optional(),
 });
@@ -92,37 +117,41 @@ export const transactionTypeSchema = z.enum(['EXPENSE', 'INCOME', 'TRANSFER']);
 export const paymentMethodSchema = z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']);
 
 export const createTransactionSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  amount: z.number().int().positive('Valor deve ser positivo'),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  amount: positiveMoneyCentsSchema,
   type: transactionTypeSchema,
-  categoryId: z.string().uuid().optional(),
-  date: z.string().datetime(),
+  categoryId: uuidSchema.optional(),
+  date: civilDateSchema,
   paymentMethod: paymentMethodSchema,
-  accountId: z.string().uuid().optional(),
-  cardId: z.string().uuid().optional(),
+  accountId: uuidSchema.optional(),
+  cardId: uuidSchema.optional(),
   notes: z.string().max(500).optional(),
 });
 
 export const createCategorySchema = z.object({
-  name: z.string().min(1, 'Nome é obrigatório').max(50),
+  name: z.string().trim().min(1, 'Informe o nome.').max(50),
   icon: z.string().max(50).optional(),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Cor inválida.').optional(),
 });
 
 export const updateCategorySchema = z.object({
-  name: z.string().min(1).max(50).optional(),
+  name: z.string().trim().min(1).max(50).optional(),
   icon: z.string().max(50).nullable().optional(),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Cor inválida.').nullable().optional(),
 });
 
 export const createInstallmentPlanSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  totalAmount: z.number().int().positive('Valor total deve ser positivo'),
-  installmentsCount: z.number().int().positive('Quantidade de parcelas deve ser positiva').max(60),
-  startDate: z.string().datetime(),
-  firstInvoiceDate: z.string().datetime(),
-  cardId: z.string().uuid(),
-  categoryId: z.string().uuid().optional(),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  totalAmount: positiveMoneyCentsSchema,
+  installmentsCount: z
+    .number({ invalid_type_error: 'Informe o número de parcelas.' })
+    .int('Número de parcelas inválido.')
+    .positive('O número de parcelas deve ser positivo.')
+    .max(60, 'Máximo de 60 parcelas.'),
+  startDate: civilDateSchema,
+  firstInvoiceDate: civilDateSchema,
+  cardId: uuidSchema,
+  categoryId: uuidSchema.optional(),
 });
 
 export const recurringFrequencySchema = z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']);
@@ -130,27 +159,27 @@ export const recurringStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'ENDED']);
 export const dateTypeSchema = z.enum(['FIXED', 'ADJUSTABLE']);
 
 export const createRecurringBillSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  amount: z.number().int().positive('Valor deve ser positivo'),
-  categoryId: z.string().uuid().optional(),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  amount: positiveMoneyCentsSchema,
+  categoryId: uuidSchema.optional(),
   frequency: recurringFrequencySchema,
-  dueDay: z.number().int().min(1).max(31),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime().optional(),
-  accountId: z.string().uuid().optional(),
-  cardId: z.string().uuid().optional(),
+  dueDay: z.number({ invalid_type_error: 'Informe o dia de vencimento.' }).int().min(1).max(31),
+  startDate: civilDateSchema,
+  endDate: civilDateSchema.optional(),
+  accountId: uuidSchema.optional(),
+  cardId: uuidSchema.optional(),
   dateType: dateTypeSchema.default('FIXED'),
 });
 
 export const billStatusSchema = z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED']);
 
 export const createBillSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  amount: z.number().int().positive('Valor deve ser positivo'),
-  categoryId: z.string().uuid().optional(),
-  dueDate: z.string().datetime(),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  amount: positiveMoneyCentsSchema,
+  categoryId: uuidSchema.optional(),
+  dueDate: civilDateSchema,
   paymentMethod: paymentMethodSchema.optional(),
-  accountId: z.string().uuid().optional(),
+  accountId: uuidSchema.optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -158,27 +187,27 @@ export const debtTypeSchema = z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE'
 export const debtStatusSchema = z.enum(['ACTIVE', 'PAID', 'OVERDUE', 'CANCELLED', 'RENEGOTIATED']);
 
 export const createDebtSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória').max(200),
-  totalAmount: z.number().int().positive('Valor total deve ser positivo'),
-  dueDate: z.string().datetime(),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  totalAmount: positiveMoneyCentsSchema,
+  dueDate: civilDateSchema,
   type: debtTypeSchema,
-  relatedPersonId: z.string().uuid().optional(),
+  relatedPersonId: uuidSchema.optional(),
   notes: z.string().max(500).optional(),
 });
 
 export const personTypeSchema = z.enum(['INDIVIDUAL', 'COMPANY']);
 
 export const createPersonSchema = z.object({
-  name: z.string().min(1, 'Nome é obrigatório').max(100),
-  email: z.string().email('Email inválido').optional(),
+  name: nameSchema,
+  email: emailSchema.optional(),
   type: personTypeSchema.default('INDIVIDUAL'),
-  phone: z.string().max(20).optional(),
-  document: z.string().max(20).optional(),
+  phone: phoneSchema.optional(),
+  document: documentSchema.optional(),
   notes: z.string().max(500).optional(),
 });
 
 export const shareDebtSchema = z.object({
-  email: z.string().email('Email inválido'),
+  email: emailSchema,
 });
 
 export const notificationPreferencesSchema = z.object({
@@ -211,8 +240,8 @@ export const settingsSchema = z.object({
   currency: z.literal('BRL').optional(),
   dateFormat: z.string().optional(),
   firstDayOfWeek: z.union([z.literal(0), z.literal(1)]).optional(),
-  defaultAccountId: z.string().uuid().nullable().optional(),
-  defaultCardId: z.string().uuid().nullable().optional(),
+  defaultAccountId: uuidSchema.nullable().optional(),
+  defaultCardId: uuidSchema.nullable().optional(),
   dashboardLayout: z.array(z.string()).optional(),
 });
 

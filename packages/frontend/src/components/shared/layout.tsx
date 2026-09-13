@@ -73,7 +73,10 @@ export function Layout() {
         )}
       >
         <div className="flex h-16 items-center justify-between px-4 border-b">
-          <Logo className="h-10 w-10" />
+          <div className="flex items-center gap-2">
+            <Logo className="h-9 w-9" />
+            <span className="text-lg font-semibold tracking-tight">OxeDinDin</span>
+          </div>
           <button
             className="lg:hidden p-2 rounded-md hover:bg-accent"
             onClick={() => setSidebarOpen(false)}

@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, gte, lte, desc, count } from 'drizzle-orm';
 import { createAccountSchema, updateAccountSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
-import { bankAccount, transaction, category } from '../../db/schema/index.js';
+import { bankAccount, transaction, category, creditCard, bill, recurringBill } from '../../db/schema/index.js';
 
 const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -179,7 +179,7 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const [existing] = await app.db.select()
+const [existing] = await app.db.select()
       .from(bankAccount)
       .where(and(eq(bankAccount.id, request.params.id), eq(bankAccount.userId, request.authUser!.id)))
       .limit(1);
@@ -188,16 +188,25 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
       throw app.httpErrors.notFound('Account not found');
     }
 
-    const [account] = await app.db.update(bankAccount)
-      .set({ status: 'INACTIVE' })
-      .where(eq(bankAccount.id, request.params.id))
-      .returning();
+    const [accountsTransactions, accountsBills, accountsRecurring, accountsCards] = await Promise.all([
+      app.db.select().from(transaction).where(and(eq(transaction.accountId, request.params.id), eq(transaction.userId, request.authUser!.id))).limit(1),
+      app.db.select().from(bill).where(and(eq(bill.accountId, request.params.id), eq(bill.userId, request.authUser!.id))).limit(1),
+      app.db.select().from(recurringBill).where(and(eq(recurringBill.accountId, request.params.id), eq(recurringBill.userId, request.authUser!.id))).limit(1),
+      app.db.select().from(creditCard).where(and(eq(creditCard.accountId, request.params.id), eq(creditCard.userId, request.authUser!.id))).limit(1),
+    ]);
+
+    if (accountsTransactions.length > 0 || accountsBills.length > 0 || accountsRecurring.length > 0 || accountsCards.length > 0) {
+      throw app.httpErrors.conflict('Não é possível excluir esta conta porque existem transações, contas recorrentes ou cartões vinculados a ela.');
+    }
+
+    await app.db.delete(bankAccount).where(eq(bankAccount.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,
-      action: 'ACCOUNT_DEACTIVATED',
+      action: 'ACCOUNT_DELETED',
       entityType: 'BankAccount',
-      entityId: account.id,
+      entityId: request.params.id,
+      oldData: existing,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });

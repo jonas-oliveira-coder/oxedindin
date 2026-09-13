@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 type LogoProps = {
-  variant?: 'icon' | 'wordmark';
   className?: string;
 };
 
@@ -13,7 +12,7 @@ function getInitialDarkMode() {
   return savedMode ? savedMode === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
-export function Logo({ variant = 'icon', className }: LogoProps) {
+export function Logo({ className }: LogoProps) {
   const [darkMode, setDarkMode] = useState(getInitialDarkMode);
 
   useEffect(() => {
@@ -34,8 +33,7 @@ export function Logo({ variant = 'icon', className }: LogoProps) {
     };
   }, []);
 
-  const suffix = darkMode ? 'branco' : 'preto';
-  const fileName = variant === 'wordmark' ? `oxedin-nome-${suffix}.png` : `oxedin-${suffix}.png`;
+  const fileName = darkMode ? 'logo-tema-escuro.svg' : 'logo-tema-claro.svg';
 
   return (
     <img

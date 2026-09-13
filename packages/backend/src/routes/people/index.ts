@@ -146,6 +146,24 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: { params: z.object({ id: z.string().uuid() }) },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
+    const [existing] = await app.db.select()
+      .from(person)
+      .where(and(eq(person.id, request.params.id), eq(person.userId, request.authUser!.id)))
+      .limit(1);
+
+    if (!existing) {
+      throw app.httpErrors.notFound('Person not found');
+    }
+
+    const [linkedDebts] = await app.db.select()
+      .from(debt)
+      .where(and(eq(debt.relatedPersonId, request.params.id), eq(debt.userId, request.authUser!.id)))
+      .limit(1);
+
+    if (linkedDebts) {
+      throw app.httpErrors.conflict('Não é possível excluir esta pessoa porque existem dívidas vinculadas a ela.');
+    }
+
     await app.db.delete(person).where(eq(person.id, request.params.id));
 
     await app.auditLog({
@@ -153,6 +171,7 @@ const peopleRoutes: FastifyPluginAsyncZod = async (app) => {
       action: 'PERSON_DELETED',
       entityType: 'Person',
       entityId: request.params.id,
+      oldData: existing,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });

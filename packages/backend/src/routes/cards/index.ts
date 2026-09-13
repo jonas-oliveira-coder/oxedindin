@@ -373,7 +373,7 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const [existing] = await app.db.select()
+const [existing] = await app.db.select()
       .from(creditCard)
       .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
       .limit(1);
@@ -382,16 +382,24 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
       throw app.httpErrors.notFound('Card not found');
     }
 
-    const [card] = await app.db.update(creditCard)
-      .set({ status: 'INACTIVE' })
-      .where(eq(creditCard.id, request.params.id))
-      .returning();
+    const [cardInvoices, cardPlans, cardTransactions] = await Promise.all([
+      app.db.select().from(invoice).where(eq(invoice.cardId, request.params.id)).limit(1),
+      app.db.select().from(installmentPlan).where(eq(installmentPlan.cardId, request.params.id)).limit(1),
+      app.db.select().from(transaction).where(and(eq(transaction.cardId, request.params.id), eq(transaction.userId, request.authUser!.id))).limit(1),
+    ]);
+
+    if (cardInvoices.length > 0 || cardPlans.length > 0 || cardTransactions.length > 0) {
+      throw app.httpErrors.conflict('Não é possível excluir este cartão porque existem faturas, parcelas ou transações vinculadas a ele.');
+    }
+
+    await app.db.delete(creditCard).where(eq(creditCard.id, request.params.id));
 
     await app.auditLog({
       userId: request.authUser!.id,
-      action: 'CARD_DEACTIVATED',
+      action: 'CARD_DELETED',
       entityType: 'CreditCard',
-      entityId: card.id,
+      entityId: request.params.id,
+      oldData: existing,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });

@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { parseMoneyToCents } from '@oxedindin/shared';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -13,14 +14,23 @@ export function formatMoney(cents: number, currency = 'BRL', locale = 'pt-BR'): 
 }
 
 export function parseMoney(value: string): number {
-  const cleaned = value.replace(/[^\d,-]/g, '').replace(',', '.');
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : Math.round(num * 100);
+  const cents = parseMoneyToCents(value);
+  return cents == null ? 0 : cents;
 }
 
-export function formatDate(date: string | Date, locale = 'pt-BR'): string {
+/**
+ * Formats a calendar date. Calendar dates are stored in the API as UTC-midnight
+ * timestamps (or "YYYY-MM-DD" strings) and must never be shifted by the local
+ * timezone, so the UTC components are read directly.
+ */
+export function formatDate(date: string | Date, _locale = 'pt-BR'): string {
+  if (date == null) return '';
   const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString(locale);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 export function formatDateTime(date: string | Date, locale = 'pt-BR'): string {

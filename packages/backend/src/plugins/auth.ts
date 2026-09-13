@@ -54,6 +54,7 @@ export default fp(async (app) => {
       '/api/v1/auth/register',
       '/api/v1/auth/login',
       '/api/v1/auth/refresh',
+      '/api/v1/auth/csrf',
       '/api/v1/auth/passkey/register/start',
       '/api/v1/auth/passkey/register/finish',
       '/api/v1/auth/passkey/login/start',

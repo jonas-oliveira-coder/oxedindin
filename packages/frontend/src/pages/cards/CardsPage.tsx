@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { z } from 'zod';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SelectItem } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, getCardBrandLabel, cn } from '@/lib/utils';
-import { Plus, Edit, Trash2, Loader2, CreditCard as CreditCardIcon } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { Plus, Edit, Trash2, CreditCard as CreditCardIcon } from 'lucide-react';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createCardSchema, updateCardSchema, type CreateCardInput, type UpdateCardInput } from '@/lib/validation';
-import { Separator } from '@/components/ui/separator';
+import { cardBrandSchema, cardStatusSchema, type CreateCardInput, type UpdateCardInput } from '@/lib/validation';
+import { nameSchema, positiveMoneyCentsSchema, uuidSchema } from '@oxedindin/shared';
+import { FormField, TextInput, CurrencyInput, NumberInput, Textarea, FormSelect } from '@/components/forms';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 interface CreditCard {
   id: string;
@@ -31,6 +33,23 @@ interface CreditCard {
   notes?: string;
   account?: { id: string; name: string } | null;
 }
+
+const last4Schema = z.string().regex(/^\d{4}$/, 'Informe os 4 últimos dígitos do cartão.');
+
+const cardFormSchema = z.object({
+  name: nameSchema,
+  institution: z.string().trim().min(1, 'Informe a instituição.').max(100),
+  brand: cardBrandSchema,
+  last4: last4Schema,
+  limit: positiveMoneyCentsSchema,
+  closingDay: z.number({ invalid_type_error: 'Informe o dia de fechamento.' }).int('Dia de fechamento inválido.').min(1).max(31),
+  dueDay: z.number({ invalid_type_error: 'Informe o dia de vencimento.' }).int('Dia de vencimento inválido.').min(1).max(31),
+  accountId: uuidSchema.optional().or(z.literal('')),
+  status: cardStatusSchema.default('ACTIVE'),
+  notes: z.string().max(500).optional().default(''),
+});
+
+type CardFormValues = z.infer<typeof cardFormSchema>;
 
 async function fetchCards(): Promise<CreditCard[]> {
   const response = await api.get('/cards');
@@ -60,17 +79,10 @@ export function CardsPage() {
   const queryClient = useQueryClient();
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data: cards, isLoading } = useQuery({
-    queryKey: ['cards'],
-    queryFn: fetchCards,
-  });
-
-  const { data: fetchedAccounts } = useQuery({
-    queryKey: ['accounts', 'active'],
-    queryFn: fetchAccounts,
-  });
+  const { data: cards, isLoading } = useQuery({ queryKey: ['cards'], queryFn: fetchCards });
+  const { data: fetchedAccounts } = useQuery({ queryKey: ['accounts', 'active'], queryFn: fetchAccounts });
 
   const createMutation = useMutation({
     mutationFn: createCard,
@@ -79,9 +91,7 @@ export function CardsPage() {
       toast({ title: 'Cartão criado', description: 'Cartão de crédito criado com sucesso.' });
       setDialogOpen(false);
     },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const updateMutation = useMutation({
@@ -90,77 +100,66 @@ export function CardsPage() {
       queryClient.invalidateQueries({ queryKey: ['cards'] });
       toast({ title: 'Cartão atualizado', description: 'Cartão de crédito atualizado com sucesso.' });
       setEditingCard(null);
+      setDialogOpen(false);
     },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteCard,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cards'] });
-      toast({ title: 'Cartão desativado', description: 'Cartão de crédito desativado com sucesso.' });
-      setDeleteDialogOpen(null);
+      toast({ title: 'Cartão excluído', description: 'Cartão de crédito excluído com sucesso.' });
+      setDeleteId(null);
     },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
+    onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
-  const createForm = useForm<CreateCardInput>({
-    resolver: zodResolver(createCardSchema),
-    defaultValues: {
-      brand: 'VISA',
-      closingDay: 15,
-      dueDay: 25,
-    },
+  const form = useForm<CardFormValues>({
+    resolver: zodResolver(cardFormSchema),
+    defaultValues: { brand: 'VISA', closingDay: 15, dueDay: 25, status: 'ACTIVE', accountId: '', notes: '' },
   });
-
-  const updateForm = useForm<UpdateCardInput>({
-    resolver: zodResolver(updateCardSchema),
-  });
-
-  const handleCreateSubmit = (data: CreateCardInput) => {
-    createMutation.mutate(data);
-    createForm.reset({ brand: 'VISA', closingDay: 15, dueDay: 25 });
-  };
-
-  const handleUpdateSubmit = (data: UpdateCardInput) => {
-    if (editingCard) {
-      updateMutation.mutate({ id: editingCard.id, data });
-    }
-  };
-
-  const handleDelete = (id: string) => {
-    setDeleteDialogOpen(id);
-  };
-
-  const handleConfirmDelete = (id: string) => {
-    deleteMutation.mutate(id);
-  };
 
   const openCreateDialog = () => {
     setEditingCard(null);
-    createForm.reset({ brand: 'VISA', closingDay: 15, dueDay: 25 });
+    form.reset({ brand: 'VISA', closingDay: 15, dueDay: 25, status: 'ACTIVE', accountId: '', notes: '' });
     setDialogOpen(true);
   };
 
   const openEditDialog = (card: CreditCard) => {
     setEditingCard(card);
-    updateForm.reset({
+    form.reset({
       name: card.name,
       institution: card.institution,
-      brand: card.brand as UpdateCardInput['brand'],
+      brand: card.brand as CardFormValues['brand'],
       last4: card.last4,
-      limit: card.limit.cents / 100,
+      limit: card.limit.cents,
       closingDay: card.closingDay,
       dueDay: card.dueDay,
-      accountId: card.account?.id,
-      status: card.status as UpdateCardInput['status'],
-      notes: card.notes,
+      accountId: card.account?.id ?? '',
+      status: card.status as CardFormValues['status'],
+      notes: card.notes ?? '',
     });
     setDialogOpen(true);
+  };
+
+  const onSubmit = (values: CardFormValues) => {
+    const base = {
+      name: values.name,
+      institution: values.institution,
+      brand: values.brand,
+      last4: values.last4,
+      limit: values.limit,
+      closingDay: values.closingDay,
+      dueDay: values.dueDay,
+      accountId: values.accountId || undefined,
+      notes: values.notes || undefined,
+    };
+    if (editingCard) {
+      updateMutation.mutate({ id: editingCard.id, data: { ...base, status: values.status } as UpdateCardInput });
+    } else {
+      createMutation.mutate(base as CreateCardInput);
+    }
   };
 
   if (isLoading) {
@@ -198,87 +197,75 @@ export function CardsPage() {
             <DialogHeader>
               <DialogTitle>{editingCard ? 'Editar Cartão' : 'Novo Cartão de Crédito'}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={editingCard ? updateForm.handleSubmit(handleUpdateSubmit) : createForm.handleSubmit(handleCreateSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome/Apelido</Label>
-                <Input id="name" {...(editingCard ? updateForm.register('name') : createForm.register('name'))} placeholder="Meu Cartão" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="institution">Banco/Instituição</Label>
-                <Input id="institution" {...(editingCard ? updateForm.register('institution') : createForm.register('institution'))} placeholder="Nubank, Itaú, etc." />
-              </div>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField id="name" label="Nome/Apelido" error={form.formState.errors.name?.message}>
+                <TextInput id="name" placeholder="Meu Cartão" {...form.register('name')} />
+              </FormField>
+
+              <FormField id="institution" label="Banco/Instituição" error={form.formState.errors.institution?.message}>
+                <TextInput id="institution" placeholder="Nubank, Itaú, etc." {...form.register('institution')} />
+              </FormField>
+
               <div className="grid gap-2 grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="brand">Bandeira</Label>
-                  <Select {...(editingCard ? updateForm.register('brand') : createForm.register('brand'))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="VISA">Visa</SelectItem>
-                      <SelectItem value="MASTERCARD">Mastercard</SelectItem>
-                      <SelectItem value="AMEX">American Express</SelectItem>
-                      <SelectItem value="ELO">Elo</SelectItem>
-                      <SelectItem value="HIPERCARD">Hipercard</SelectItem>
-                      <SelectItem value="OTHER">Outra</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="last4">Últimos 4 dígitos</Label>
-                  <Input id="last4" {...(editingCard ? updateForm.register('last4') : createForm.register('last4'))} placeholder="1234" maxLength={4} />
-                </div>
+                <FormField id="brand" label="Bandeira" error={form.formState.errors.brand?.message}>
+                  <FormSelect control={form.control} name="brand" placeholder="Selecione">
+                    <SelectItem value="VISA">Visa</SelectItem>
+                    <SelectItem value="MASTERCARD">Mastercard</SelectItem>
+                    <SelectItem value="AMEX">American Express</SelectItem>
+                    <SelectItem value="ELO">Elo</SelectItem>
+                    <SelectItem value="HIPERCARD">Hipercard</SelectItem>
+                    <SelectItem value="OTHER">Outra</SelectItem>
+                  </FormSelect>
+                </FormField>
+                <FormField id="last4" label="Últimos 4 dígitos" error={form.formState.errors.last4?.message}>
+                  <TextInput id="last4" placeholder="1234" maxLength={4} inputMode="numeric" {...form.register('last4')} />
+                </FormField>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="limit">Limite total</Label>
-                <Input id="limit" type="number" step="0.01" {...(editingCard ? updateForm.register('limit', { valueAsNumber: true }) : createForm.register('limit', { valueAsNumber: true }))} placeholder="5000,00" />
-              </div>
+
+              <FormField id="limit" label="Limite total" error={form.formState.errors.limit?.message}>
+                <Controller
+                  name="limit"
+                  control={form.control}
+                  render={({ field }) => (
+                    <CurrencyInput id="limit" value={field.value} onChange={field.onChange} onBlur={field.onBlur} placeholder="R$ 5.000,00" />
+                  )}
+                />
+              </FormField>
+
               <div className="grid gap-2 grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="closingDay">Dia do fechamento</Label>
-                  <Input id="closingDay" type="number" min={1} max={31} {...(editingCard ? updateForm.register('closingDay', { valueAsNumber: true }) : createForm.register('closingDay', { valueAsNumber: true }))} placeholder="15" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dueDay">Dia do vencimento</Label>
-                  <Input id="dueDay" type="number" min={1} max={31} {...(editingCard ? updateForm.register('dueDay', { valueAsNumber: true }) : createForm.register('dueDay', { valueAsNumber: true }))} placeholder="25" />
-                </div>
+                <FormField id="closingDay" label="Dia do fechamento" error={form.formState.errors.closingDay?.message}>
+                  <NumberInput id="closingDay" min={1} max={31} placeholder="15" {...form.register('closingDay', { valueAsNumber: true })} />
+                </FormField>
+                <FormField id="dueDay" label="Dia do vencimento" error={form.formState.errors.dueDay?.message}>
+                  <NumberInput id="dueDay" min={1} max={31} placeholder="25" {...form.register('dueDay', { valueAsNumber: true })} />
+                </FormField>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="accountId">Conta vinculada (opcional)</Label>
-                <Select {...(editingCard ? updateForm.register('accountId') : createForm.register('accountId'))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione uma conta (opcional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Nenhuma</SelectItem>
-                    {(fetchedAccounts ?? []).map((acc) => (
-                      <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Observações</Label>
-                <Input id="notes" {...(editingCard ? updateForm.register('notes') : createForm.register('notes'))} placeholder="Observações opcionais" />
-              </div>
+
+              <FormField id="accountId" label="Conta vinculada (opcional)" error={form.formState.errors.accountId?.message}>
+                <FormSelect control={form.control} name="accountId" placeholder="Selecione uma conta (opcional)">
+                  <SelectItem value="">Nenhuma</SelectItem>
+                  {(fetchedAccounts ?? []).map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                  ))}
+                </FormSelect>
+              </FormField>
+
+              <FormField id="notes" label="Observações" error={form.formState.errors.notes?.message}>
+                <Textarea id="notes" placeholder="Observações opcionais" {...form.register('notes')} />
+              </FormField>
+
               {editingCard && (
-                <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
-                  <Select {...updateForm.register('status')}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ACTIVE">Ativo</SelectItem>
-                      <SelectItem value="INACTIVE">Inativo</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <FormField id="status" label="Status" error={form.formState.errors.status?.message}>
+                  <FormSelect control={form.control} name="status" placeholder="Selecione o status">
+                    <SelectItem value="ACTIVE">Ativo</SelectItem>
+                    <SelectItem value="INACTIVE">Inativo</SelectItem>
+                  </FormSelect>
+                </FormField>
               )}
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                  {createMutation.isPending || updateMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
                   {editingCard ? 'Salvar' : 'Criar'}
                 </Button>
               </DialogFooter>
@@ -318,10 +305,10 @@ export function CardsPage() {
                       <p className="text-sm text-muted-foreground">Disponível de {formatMoney(card.limit.cents)}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(card)}>
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(card)} aria-label="Editar cartão">
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(card.id)}>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(card.id)} aria-label="Excluir cartão">
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
@@ -329,17 +316,15 @@ export function CardsPage() {
                 </div>
                 <Separator className="my-4" />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm text-muted-foreground">Limite usado</div>
-                    <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary transition-all"
-                        style={{ width: `${((Number(card.limit.cents) - Number(card.availableLimit.cents)) / Number(card.limit.cents)) * 100}%` }}
-                      />
-                    </div>
-                    <div className="text-sm font-medium w-24 text-right">
-                      {(((Number(card.limit.cents) - Number(card.availableLimit.cents)) / Number(card.limit.cents)) * 100).toFixed(1)}%
-                    </div>
+                  <div className="text-sm text-muted-foreground">Limite usado</div>
+                  <div className="flex-1 mx-4 h-2 bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all"
+                      style={{ width: `${(Number(card.limit.cents) === 0 ? 0 : ((Number(card.limit.cents) - Number(card.availableLimit.cents)) / Number(card.limit.cents)) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="text-sm font-medium w-24 text-right">
+                    {(Number(card.limit.cents) === 0 ? 0 : ((Number(card.limit.cents) - Number(card.availableLimit.cents)) / Number(card.limit.cents)) * 100).toFixed(1)}%
                   </div>
                 </div>
               </CardContent>
@@ -360,22 +345,14 @@ export function CardsPage() {
         </Card>
       )}
 
-      <Dialog open={!!deleteDialogOpen} onOpenChange={(open) => !open && setDeleteDialogOpen(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Desativar cartão?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Esta ação desativará o cartão. Você poderá reativá-lo depois nas configurações.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => deleteDialogOpen && handleConfirmDelete(deleteDialogOpen)}>
-              Desativar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={!!deleteId}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        title="Excluir cartão?"
+        description="Essa ação removerá permanentemente o cartão. Cartões com faturas, parcelas ou transações vinculadas não podem ser excluídos."
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
+      />
     </div>
   );
 }

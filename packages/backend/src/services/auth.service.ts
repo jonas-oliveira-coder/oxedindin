@@ -1,5 +1,6 @@
 import { hash, verify } from '@node-rs/argon2';
 import { generateRegistrationOptions, generateAuthenticationOptions, verifyRegistrationResponse, verifyAuthenticationResponse } from '@simplewebauthn/server';
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/index.js';
 import { user, session, passkey } from '../db/schema/index.js';
@@ -9,6 +10,13 @@ import { env } from '../utils/env.js';
 export type User = typeof user.$inferSelect;
 export type Session = typeof session.$inferSelect;
 export type Passkey = typeof passkey.$inferSelect;
+
+interface ChallengeRecord {
+  challenge: string;
+  type: 'registration' | 'authentication';
+  userId?: string;
+  expiresAt?: number;
+}
 
 export class AuthService {
   constructor(private app: FastifyInstance) {}
@@ -88,6 +96,39 @@ export class AuthService {
     return verify(hash, token);
   }
 
+  private readonly challenges = new Map<string, ChallengeRecord>();
+  private readonly CHALLENGE_TTL_SECONDS = 300;
+
+  private async setChallenge(challenge: string, type: 'registration' | 'authentication', userId?: string): Promise<string> {
+    const id = crypto.randomUUID();
+    const record: ChallengeRecord = { challenge, type, userId };
+    if (this.app.redis) {
+      await this.app.redis.set(`passkey:challenge:${id}`, JSON.stringify(record), 'EX', this.CHALLENGE_TTL_SECONDS);
+      return id;
+    }
+    this.challenges.set(id, { ...record, expiresAt: Date.now() + this.CHALLENGE_TTL_SECONDS * 1000 });
+    return id;
+  }
+
+  private async takeChallenge(id: string): Promise<ChallengeRecord | null> {
+    if (this.app.redis) {
+      const raw = await this.app.redis.get(`passkey:challenge:${id}`);
+      if (!raw) return null;
+      await this.app.redis.del(`passkey:challenge:${id}`);
+      try {
+        return JSON.parse(raw) as ChallengeRecord;
+      } catch {
+        return null;
+      }
+    }
+
+    const record = this.challenges.get(id);
+    if (!record) return null;
+    this.challenges.delete(id);
+    if (record.expiresAt !== undefined && record.expiresAt < Date.now()) return null;
+    return record;
+  }
+
   async registerPasskeyStart(userId: string) {
     const userRecord = await db.select().from(user).where(eq(user.id, userId)).limit(1);
     if (!userRecord[0]) throw new Error('User not found');
@@ -116,35 +157,29 @@ export class AuthService {
       timeout: 60000,
     });
 
-    const currentSettings = (userData.settings as Record<string, unknown>) || {};
-    await db.update(user)
-      .set({ settings: { ...currentSettings, passkeyChallenge: options.challenge } })
-      .where(eq(user.id, userId));
-
-    return options;
+    const challengeId = await this.setChallenge(options.challenge, 'registration', userId);
+    return { ...options, timeout: 60000, challengeId };
   }
 
-  async registerPasskeyFinish(userId: string, credential: any) {
-    const userRecord = await db.select().from(user).where(eq(user.id, userId)).limit(1);
-    if (!userRecord[0]) throw new Error('User not found');
-    const userData = userRecord[0];
-
-    const storedChallenge = (userData.settings as Record<string, unknown>)?.passkeyChallenge;
-    if (!storedChallenge || typeof storedChallenge !== 'string') throw new Error('No challenge found');
-
-    const expectedOrigin = env.WEB_AUTHN_ORIGIN;
-    const expectedRPID = env.WEB_AUTHN_RP_ID;
+  async registerPasskeyFinish(userId: string, challengeId: string, credential: RegistrationResponseJSON) {
+    const challengeRecord = await this.takeChallenge(challengeId);
+    if (!challengeRecord || challengeRecord.type !== 'registration') {
+      throw new Error('Challenge expirado ou inválido');
+    }
+    if (challengeRecord.userId && challengeRecord.userId !== userId) {
+      throw new Error('Challenge inválido');
+    }
 
     const verification = await verifyRegistrationResponse({
       response: credential,
-      expectedChallenge: storedChallenge,
-      expectedOrigin,
-      expectedRPID,
+      expectedChallenge: challengeRecord.challenge,
+      expectedOrigin: env.WEB_AUTHN_ORIGIN,
+      expectedRPID: env.WEB_AUTHN_RP_ID,
       requireUserVerification: true,
     });
 
     if (!verification.verified || !verification.registrationInfo) {
-      throw new Error('Passkey verification failed');
+      throw new Error('Falha na verificação da passkey');
     }
 
     const registrationInfo = verification.registrationInfo;
@@ -169,11 +204,11 @@ export class AuthService {
   }
 
   async authenticatePasskeyStart(userId?: string) {
-    let allowCredentials: any[] = [];
+    let allowCredentials: Array<{ id: string; type: 'public-key'; transports: Array<'internal' | 'hybrid'> }> = [];
 
     if (userId) {
-      const passkeys = await db.select().from(passkey).where(eq(passkey.userId, userId));
-      allowCredentials = passkeys.map((pk) => ({
+      const userPasskeys = await db.select().from(passkey).where(eq(passkey.userId, userId));
+      allowCredentials = userPasskeys.map((pk) => ({
         id: pk.credentialId,
         type: 'public-key' as const,
         transports: ['internal', 'hybrid'] as const,
@@ -187,43 +222,27 @@ export class AuthService {
       timeout: 60000,
     });
 
-    if (userId) {
-      const userRecord = await db.select().from(user).where(eq(user.id, userId)).limit(1);
-      if (userRecord[0]) {
-        const currentSettings = (userRecord[0].settings as Record<string, unknown>) || {};
-        await db.update(user)
-          .set({ settings: { ...currentSettings, passkeyChallenge: options.challenge } })
-          .where(eq(user.id, userId));
-      }
-    } else {
-      // For discoverable credentials, update all users' challenge
-      const users = await db.select().from(user);
-      for (const u of users) {
-        const currentSettings = (u.settings as Record<string, unknown>) || {};
-        await db.update(user)
-          .set({ settings: { ...currentSettings, passkeyChallenge: options.challenge } })
-          .where(eq(user.id, u.id));
-      }
-    }
-
-    return options;
+    const challengeId = await this.setChallenge(options.challenge, 'authentication', userId);
+    return { ...options, timeout: 60000, challengeId };
   }
 
-  async authenticatePasskeyFinish(credential: any) {
+  async authenticatePasskeyFinish(challengeId: string, credential: AuthenticationResponseJSON) {
+    const challengeRecord = await this.takeChallenge(challengeId);
+    if (!challengeRecord || challengeRecord.type !== 'authentication') {
+      throw new Error('Challenge expirado ou inválido');
+    }
+
     const passkeys = await db.select().from(passkey).where(eq(passkey.credentialId, credential.id));
-    if (!passkeys[0]) throw new Error('Passkey not found');
+    if (!passkeys[0]) throw new Error('Passkey não encontrada');
     const passkeyData = passkeys[0];
 
-    const userRecord = await db.select().from(user).where(eq(user.id, passkeyData.userId)).limit(1);
-    if (!userRecord[0]) throw new Error('User not found');
-    const userData = userRecord[0];
-
-    const storedChallenge = (userData.settings as Record<string, unknown>)?.passkeyChallenge;
-    if (!storedChallenge || typeof storedChallenge !== 'string') throw new Error('No challenge found');
+    if (challengeRecord.userId && challengeRecord.userId !== passkeyData.userId) {
+      throw new Error('Challenge inválido');
+    }
 
     const verification = await verifyAuthenticationResponse({
       response: credential,
-      expectedChallenge: storedChallenge,
+      expectedChallenge: challengeRecord.challenge,
       expectedOrigin: env.WEB_AUTHN_ORIGIN,
       expectedRPID: env.WEB_AUTHN_RP_ID,
       credential: {
@@ -235,17 +254,20 @@ export class AuthService {
     });
 
     if (!verification.verified) {
-      throw new Error('Passkey verification failed');
+      throw new Error('Falha na verificação da passkey');
     }
 
     await db.update(passkey)
-      .set({ 
-        counter: BigInt(verification.authenticationInfo?.newCounter || 0), 
-        lastUsedAt: new Date() 
+      .set({
+        counter: BigInt(verification.authenticationInfo?.newCounter || 0),
+        lastUsedAt: new Date(),
       })
       .where(eq(passkey.id, passkeyData.id));
 
-    return { verified: true, user: userData };
+    const userRecord = await db.select().from(user).where(eq(user.id, passkeyData.userId)).limit(1);
+    if (!userRecord[0]) throw new Error('Usuário não encontrado');
+
+    return { verified: true, user: userRecord[0] };
   }
 
   async listPasskeys(userId: string): Promise<Passkey[]> {

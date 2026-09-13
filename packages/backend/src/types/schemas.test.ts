@@ -16,7 +16,7 @@ const UUID_A = 'a1b2c3d4-1234-5678-9abc-def012345678';
 const UUID_B = 'b5e6f7a8-9876-5432-1fed-cba987654321';
 
 const validEmail = 'test@example.com';
-const validDate = new Date().toISOString();
+const validDate = '2024-01-15';
 
 describe('idParamSchema', () => {
   it('accepts a UUID', () => {

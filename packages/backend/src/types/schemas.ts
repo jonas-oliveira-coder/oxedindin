@@ -1,28 +1,52 @@
 import { z } from 'zod';
+import {
+  emailSchema,
+  passwordSchema,
+  nameSchema,
+  cpfSchema,
+  documentSchema,
+  phoneSchema,
+  uuidSchema,
+  moneyCentsSchema,
+  positiveMoneyCentsSchema,
+  civilDateSchema,
+  paginationSchema,
+} from '@oxedindin/shared';
 
-export const paginationSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-});
+export const accountTypeEnum = z.enum(['CHECKING', 'SAVINGS', 'DIGITAL', 'SALARY', 'OTHER']);
+export const accountStatusEnum = z.enum(['ACTIVE', 'INACTIVE']);
+export const cardBrandEnum = z.enum(['VISA', 'MASTERCARD', 'AMEX', 'ELO', 'HIPERCARD', 'OTHER']);
+export const cardStatusEnum = z.enum(['ACTIVE', 'INACTIVE']);
+export const invoiceStatusEnum = z.enum(['OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID', 'OVERDUE']);
+export const transactionTypeEnum = z.enum(['EXPENSE', 'INCOME', 'TRANSFER']);
+export const paymentMethodEnum = z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']);
+export const installmentStatusEnum = z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED']);
+export const recurringFrequencyEnum = z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']);
+export const recurringStatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'ENDED']);
+export const billStatusEnum = z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED']);
+export const debtTypeEnum = z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']);
+export const debtStatusEnum = z.enum(['ACTIVE', 'PAID', 'OVERDUE', 'CANCELLED', 'RENEGOTIATED']);
+export const personTypeEnum = z.enum(['INDIVIDUAL', 'COMPANY']);
+export const dateTypeEnum = z.enum(['FIXED', 'ADJUSTABLE']);
 
 export const dateRangeSchema = z.object({
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
+  startDate: civilDateSchema.optional(),
+  endDate: civilDateSchema.optional(),
 });
 
 export const moneySchema = z.object({
-  cents: z.number().int(),
+  cents: z.number().finite().int(),
   currency: z.literal('BRL'),
 });
 
 export const idParamSchema = z.object({
-  id: z.string().uuid(),
+  id: uuidSchema,
 });
 
 export const userSchema = z.object({
-  id: z.string().uuid(),
-  email: z.string().email(),
-  name: z.string().min(1).max(100),
+  id: uuidSchema,
+  email: emailSchema,
+  name: nameSchema,
   avatarUrl: z.string().url().nullable().optional(),
   emailVerified: z.boolean(),
   twoFactorEnabled: z.boolean(),
@@ -32,63 +56,63 @@ export const userSchema = z.object({
 
 export const registerSchema = z.object({
   body: z.object({
-    email: z.string().email(),
-    password: z.string().min(8).max(128),
-    name: z.string().min(1).max(100),
+    email: emailSchema,
+    password: passwordSchema,
+    name: nameSchema,
   }),
 });
 
 export const loginSchema = z.object({
   body: z.object({
-    email: z.string().email(),
-    password: z.string().min(1),
+    email: emailSchema,
+    password: z.string().min(1, 'Informe a senha.'),
   }),
 });
 
 export const changePasswordSchema = z.object({
   body: z.object({
-    currentPassword: z.string().min(1),
-    newPassword: z.string().min(8).max(128),
+    currentPassword: z.string().min(1, 'Informe a senha atual.'),
+    newPassword: passwordSchema,
   }),
 });
 
 export const forgotPasswordSchema = z.object({
   body: z.object({
-    email: z.string().email(),
+    email: emailSchema,
   }),
 });
 
 export const resetPasswordSchema = z.object({
   body: z.object({
-    token: z.string().min(1),
-    password: z.string().min(8).max(128),
+    token: z.string().min(1, 'Token inválido.'),
+    password: passwordSchema,
   }),
 });
 
 export const bankAccountSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  name: z.string().min(1).max(100),
-  institution: z.string().min(1).max(100),
-  type: z.enum(['CHECKING', 'SAVINGS', 'DIGITAL', 'SALARY', 'OTHER']),
+  id: uuidSchema,
+  userId: uuidSchema,
+  name: nameSchema,
+  institution: z.string().min(1, 'Informe a instituição.').max(100),
+  type: accountTypeEnum,
   number: z.string().max(20).nullable().optional(),
   agency: z.string().max(10).nullable().optional(),
-  balanceCents: z.number().int(),
-  initialBalanceCents: z.number().int(),
-  status: z.enum(['ACTIVE', 'INACTIVE']),
+  balanceCents: moneyCentsSchema,
+  initialBalanceCents: moneyCentsSchema,
+  status: accountStatusEnum,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-  notes: z.string().nullable().optional(),
+  notes: z.string().max(500).nullable().optional(),
 });
 
 export const createAccountSchema = z.object({
   body: z.object({
-    name: z.string().min(1).max(100),
-    institution: z.string().min(1).max(100),
-    type: z.enum(['CHECKING', 'SAVINGS', 'DIGITAL', 'SALARY', 'OTHER']),
-    number: z.string().max(20).optional(),
-    agency: z.string().max(10).optional(),
-    initialBalance: z.number().int().default(0),
+    name: nameSchema,
+    institution: z.string().trim().min(1, 'Informe a instituição.').max(100),
+    type: accountTypeEnum.default('CHECKING'),
+    number: z.string().trim().max(20).optional(),
+    agency: z.string().trim().max(10).optional(),
+    initialBalance: moneyCentsSchema.default(0),
     notes: z.string().max(500).optional(),
   }),
 });
@@ -96,44 +120,46 @@ export const createAccountSchema = z.object({
 export const updateAccountSchema = z.object({
   params: idParamSchema,
   body: z.object({
-    name: z.string().min(1).max(100).optional(),
-    institution: z.string().min(1).max(100).optional(),
-    type: z.enum(['CHECKING', 'SAVINGS', 'DIGITAL', 'SALARY', 'OTHER']).optional(),
-    number: z.string().max(20).nullable().optional(),
-    agency: z.string().max(10).nullable().optional(),
-    status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+    name: nameSchema.optional(),
+    institution: z.string().trim().min(1, 'Informe a instituição.').max(100).optional(),
+    type: accountTypeEnum.optional(),
+    number: z.string().trim().max(20).nullable().optional(),
+    agency: z.string().trim().max(10).nullable().optional(),
+    status: accountStatusEnum.optional(),
     notes: z.string().max(500).nullable().optional(),
   }),
 });
 
+const last4Schema = z.string().regex(/^\d{4}$/, 'Informe os 4 últimos dígitos do cartão.');
+
 export const creditCardSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  accountId: z.string().uuid().nullable().optional(),
-  name: z.string().min(1).max(100),
+  id: uuidSchema,
+  userId: uuidSchema,
+  accountId: uuidSchema.nullable().optional(),
+  name: nameSchema,
   institution: z.string().min(1).max(100),
-  brand: z.enum(['VISA', 'MASTERCARD', 'AMEX', 'ELO', 'HIPERCARD', 'OTHER']),
-  last4: z.string().length(4),
-  limitCents: z.number().int(),
-  availableLimitCents: z.number().int(),
+  brand: cardBrandEnum,
+  last4: last4Schema,
+  limitCents: moneyCentsSchema,
+  availableLimitCents: moneyCentsSchema,
   closingDay: z.number().int().min(1).max(31),
   dueDay: z.number().int().min(1).max(31),
-  status: z.enum(['ACTIVE', 'INACTIVE']),
+  status: cardStatusEnum,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-  notes: z.string().nullable().optional(),
+  notes: z.string().max(500).nullable().optional(),
 });
 
 export const createCardSchema = z.object({
   body: z.object({
-    name: z.string().min(1).max(100),
-    institution: z.string().min(1).max(100),
-    brand: z.enum(['VISA', 'MASTERCARD', 'AMEX', 'ELO', 'HIPERCARD', 'OTHER']),
-    last4: z.string().length(4),
-    limit: z.number().int().positive(),
-    closingDay: z.number().int().min(1).max(31),
-    dueDay: z.number().int().min(1).max(31),
-    accountId: z.string().uuid().optional(),
+    name: nameSchema,
+    institution: z.string().trim().min(1, 'Informe a instituição.').max(100),
+    brand: cardBrandEnum,
+    last4: last4Schema,
+    limit: positiveMoneyCentsSchema,
+    closingDay: z.number().int('Dia de fechamento inválido.').min(1, 'O dia de fechamento deve ser entre 1 e 31.').max(31, 'O dia de fechamento deve ser entre 1 e 31.'),
+    dueDay: z.number().int('Dia de vencimento inválido.').min(1, 'O dia de vencimento deve ser entre 1 e 31.').max(31, 'O dia de vencimento deve ser entre 1 e 31.'),
+    accountId: uuidSchema.optional(),
     notes: z.string().max(500).optional(),
   }),
 });
@@ -141,40 +167,40 @@ export const createCardSchema = z.object({
 export const updateCardSchema = z.object({
   params: idParamSchema,
   body: z.object({
-    name: z.string().min(1).max(100).optional(),
-    institution: z.string().min(1).max(100).optional(),
-    brand: z.enum(['VISA', 'MASTERCARD', 'AMEX', 'ELO', 'HIPERCARD', 'OTHER']).optional(),
-    last4: z.string().length(4).optional(),
-    limit: z.number().int().positive().optional(),
+    name: nameSchema.optional(),
+    institution: z.string().trim().min(1).max(100).optional(),
+    brand: cardBrandEnum.optional(),
+    last4: last4Schema.optional(),
+    limit: positiveMoneyCentsSchema.optional(),
     closingDay: z.number().int().min(1).max(31).optional(),
     dueDay: z.number().int().min(1).max(31).optional(),
-    accountId: z.string().uuid().nullable().optional(),
-    status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+    accountId: uuidSchema.nullable().optional(),
+    status: cardStatusEnum.optional(),
     notes: z.string().max(500).nullable().optional(),
   }),
 });
 
 export const invoiceSchema = z.object({
-  id: z.string().uuid(),
-  cardId: z.string().uuid(),
-  periodStart: z.string().datetime(),
-  periodEnd: z.string().datetime(),
-  closingDate: z.string().datetime(),
-  dueDate: z.string().datetime(),
-  totalCents: z.number().int(),
-  paidCents: z.number().int(),
-  remainingCents: z.number().int(),
-  status: z.enum(['OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID', 'OVERDUE']),
+  id: uuidSchema,
+  cardId: uuidSchema,
+  periodStart: civilDateSchema,
+  periodEnd: civilDateSchema,
+  closingDate: civilDateSchema,
+  dueDate: civilDateSchema,
+  totalCents: moneyCentsSchema,
+  paidCents: moneyCentsSchema,
+  remainingCents: moneyCentsSchema,
+  status: invoiceStatusEnum,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
 export const categorySchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  name: z.string().min(1).max(50),
-  icon: z.string().nullable().optional(),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
+  id: uuidSchema,
+  userId: uuidSchema,
+  name: z.string().min(1, 'Informe o nome.').max(50),
+  icon: z.string().max(50).nullable().optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Cor inválida.').nullable().optional(),
   isDefault: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -182,24 +208,33 @@ export const categorySchema = z.object({
 
 export const createCategorySchema = z.object({
   body: z.object({
-    name: z.string().min(1).max(50),
+    name: z.string().trim().min(1, 'Informe o nome.').max(50),
     icon: z.string().max(50).optional(),
-    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Cor inválida.').optional(),
+  }),
+});
+
+export const updateCategorySchema = z.object({
+  params: idParamSchema,
+  body: z.object({
+    name: z.string().trim().min(1).max(50).optional(),
+    icon: z.string().max(50).nullable().optional(),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Cor inválida.').nullable().optional(),
   }),
 });
 
 export const transactionSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  accountId: z.string().uuid().nullable().optional(),
-  cardId: z.string().uuid().nullable().optional(),
-  installmentPlanId: z.string().uuid().nullable().optional(),
-  description: z.string().min(1).max(200),
-  amountCents: z.number().int(),
-  type: z.enum(['EXPENSE', 'INCOME', 'TRANSFER']),
-  categoryId: z.string().uuid().nullable().optional(),
-  date: z.string().datetime(),
-  paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']),
+  id: uuidSchema,
+  userId: uuidSchema,
+  accountId: uuidSchema.nullable().optional(),
+  cardId: uuidSchema.nullable().optional(),
+  installmentPlanId: uuidSchema.nullable().optional(),
+  description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+  amountCents: positiveMoneyCentsSchema,
+  type: transactionTypeEnum,
+  categoryId: uuidSchema.nullable().optional(),
+  date: civilDateSchema,
+  paymentMethod: paymentMethodEnum,
   notes: z.string().max(500).nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -207,103 +242,103 @@ export const transactionSchema = z.object({
 
 export const createTransactionSchema = z.object({
   body: z.object({
-    description: z.string().min(1).max(200),
-    amount: z.number().int(),
-    type: z.enum(['EXPENSE', 'INCOME', 'TRANSFER']),
-    categoryId: z.string().uuid().optional(),
-    date: z.string().datetime(),
-    paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']),
-    accountId: z.string().uuid().optional(),
-    cardId: z.string().uuid().optional(),
+    description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+    amount: positiveMoneyCentsSchema,
+    type: transactionTypeEnum,
+    categoryId: uuidSchema.optional(),
+    date: civilDateSchema,
+    paymentMethod: paymentMethodEnum,
+    accountId: uuidSchema.optional(),
+    cardId: uuidSchema.optional(),
     notes: z.string().max(500).optional(),
   }),
 });
 
 export const installmentPlanSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  cardId: z.string().uuid(),
-  description: z.string().min(1).max(200),
-  totalAmountCents: z.number().int(),
-  installmentsCount: z.number().int().positive(),
-  installmentValueCents: z.number().int(),
-  startDate: z.string().datetime(),
-  firstInvoiceDate: z.string().datetime(),
-  categoryId: z.string().uuid().nullable().optional(),
+  id: uuidSchema,
+  userId: uuidSchema,
+  cardId: uuidSchema,
+  description: z.string().trim().min(1).max(200),
+  totalAmountCents: positiveMoneyCentsSchema,
+  installmentsCount: z.number().int().positive().max(60),
+  installmentValueCents: positiveMoneyCentsSchema,
+  startDate: civilDateSchema,
+  firstInvoiceDate: civilDateSchema,
+  categoryId: uuidSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
 export const createInstallmentPlanSchema = z.object({
   body: z.object({
-    description: z.string().min(1).max(200),
-    totalAmount: z.number().int().positive(),
-    installmentsCount: z.number().int().positive().max(60),
-    startDate: z.string().datetime(),
-    firstInvoiceDate: z.string().datetime(),
-    cardId: z.string().uuid(),
-    categoryId: z.string().uuid().optional(),
+    description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+    totalAmount: positiveMoneyCentsSchema,
+    installmentsCount: z.number().int('Número de parcelas inválido.').positive('O número de parcelas deve ser positivo.').max(60, 'Máximo de 60 parcelas.'),
+    startDate: civilDateSchema,
+    firstInvoiceDate: civilDateSchema,
+    cardId: uuidSchema,
+    categoryId: uuidSchema.optional(),
   }),
 });
 
 export const installmentSchema = z.object({
-  id: z.string().uuid(),
-  planId: z.string().uuid(),
-  invoiceId: z.string().uuid().nullable().optional(),
+  id: uuidSchema,
+  planId: uuidSchema,
+  invoiceId: uuidSchema.nullable().optional(),
   number: z.number().int().positive(),
-  amountCents: z.number().int(),
-  dueDate: z.string().datetime(),
-  status: z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED']),
+  amountCents: positiveMoneyCentsSchema,
+  dueDate: civilDateSchema,
+  status: installmentStatusEnum,
   paidAt: z.string().datetime().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
 export const recurringBillSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  accountId: z.string().uuid().nullable().optional(),
-  cardId: z.string().uuid().nullable().optional(),
-  description: z.string().min(1).max(200),
-  amountCents: z.number().int(),
-  categoryId: z.string().uuid().nullable().optional(),
-  frequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']),
+  id: uuidSchema,
+  userId: uuidSchema,
+  accountId: uuidSchema.nullable().optional(),
+  cardId: uuidSchema.nullable().optional(),
+  description: z.string().trim().min(1).max(200),
+  amountCents: positiveMoneyCentsSchema,
+  categoryId: uuidSchema.nullable().optional(),
+  frequency: recurringFrequencyEnum,
   dueDay: z.number().int().min(1).max(31),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime().nullable().optional(),
-  status: z.enum(['ACTIVE', 'INACTIVE', 'ENDED']),
-  nextDueDate: z.string().datetime(),
-  dateType: z.enum(['FIXED', 'ADJUSTABLE']),
+  startDate: civilDateSchema,
+  endDate: civilDateSchema.nullable().optional(),
+  status: recurringStatusEnum,
+  nextDueDate: civilDateSchema,
+  dateType: dateTypeEnum,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
 export const createRecurringBillSchema = z.object({
   body: z.object({
-    description: z.string().min(1).max(200),
-    amount: z.number().int().positive(),
-    categoryId: z.string().uuid().optional(),
-    frequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']),
+    description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+    amount: positiveMoneyCentsSchema,
+    categoryId: uuidSchema.optional(),
+    frequency: recurringFrequencyEnum,
     dueDay: z.number().int().min(1).max(31),
-    startDate: z.string().datetime(),
-    endDate: z.string().datetime().optional(),
-    accountId: z.string().uuid().optional(),
-    cardId: z.string().uuid().optional(),
-    dateType: z.enum(['FIXED', 'ADJUSTABLE']).default('FIXED'),
+    startDate: civilDateSchema,
+    endDate: civilDateSchema.optional(),
+    accountId: uuidSchema.optional(),
+    cardId: uuidSchema.optional(),
+    dateType: dateTypeEnum.default('FIXED'),
   }),
 });
 
 export const billSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  accountId: z.string().uuid().nullable().optional(),
-  recurringBillId: z.string().uuid().nullable().optional(),
-  description: z.string().min(1).max(200),
-  amountCents: z.number().int(),
-  categoryId: z.string().uuid().nullable().optional(),
-  dueDate: z.string().datetime(),
-  paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).nullable().optional(),
-  status: z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED']),
+  id: uuidSchema,
+  userId: uuidSchema,
+  accountId: uuidSchema.nullable().optional(),
+  recurringBillId: uuidSchema.nullable().optional(),
+  description: z.string().trim().min(1).max(200),
+  amountCents: positiveMoneyCentsSchema,
+  categoryId: uuidSchema.nullable().optional(),
+  dueDate: civilDateSchema,
+  paymentMethod: paymentMethodEnum.nullable().optional(),
+  status: billStatusEnum,
   paidAt: z.string().datetime().nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
   createdAt: z.string().datetime(),
@@ -312,51 +347,51 @@ export const billSchema = z.object({
 
 export const createBillSchema = z.object({
   body: z.object({
-    description: z.string().min(1).max(200),
-    amount: z.number().int().positive(),
-    categoryId: z.string().uuid().optional(),
-    dueDate: z.string().datetime(),
-    paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).optional(),
-    accountId: z.string().uuid().optional(),
+    description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+    amount: positiveMoneyCentsSchema,
+    categoryId: uuidSchema.optional(),
+    dueDate: civilDateSchema,
+    paymentMethod: paymentMethodEnum.optional(),
+    accountId: uuidSchema.optional(),
     notes: z.string().max(500).optional(),
   }),
 });
 
 export const debtSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  description: z.string().min(1).max(200),
-  totalAmountCents: z.number().int(),
-  paidAmountCents: z.number().int(),
-  remainingAmountCents: z.number().int(),
-  dueDate: z.string().datetime(),
-  type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']),
-  relatedPersonId: z.string().uuid().nullable().optional(),
+  id: uuidSchema,
+  userId: uuidSchema,
+  description: z.string().trim().min(1).max(200),
+  totalAmountCents: positiveMoneyCentsSchema,
+  paidAmountCents: moneyCentsSchema,
+  remainingAmountCents: moneyCentsSchema,
+  dueDate: civilDateSchema,
+  type: debtTypeEnum,
+  relatedPersonId: uuidSchema.nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
-  status: z.enum(['ACTIVE', 'PAID', 'OVERDUE', 'CANCELLED', 'RENEGOTIATED']),
+  status: debtStatusEnum,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
 export const createDebtSchema = z.object({
   body: z.object({
-    description: z.string().min(1).max(200),
-    totalAmount: z.number().int().positive(),
-    dueDate: z.string().datetime(),
-    type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']),
-    relatedPersonId: z.string().uuid().optional(),
+    description: z.string().trim().min(1, 'Informe a descrição.').max(200),
+    totalAmount: positiveMoneyCentsSchema,
+    dueDate: civilDateSchema,
+    type: debtTypeEnum,
+    relatedPersonId: uuidSchema.optional(),
     notes: z.string().max(500).optional(),
   }),
 });
 
 export const personSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  name: z.string().min(1).max(100),
-  email: z.string().email().nullable().optional(),
-  type: z.enum(['INDIVIDUAL', 'COMPANY']),
-  phone: z.string().max(20).nullable().optional(),
-  document: z.string().max(20).nullable().optional(),
+  id: uuidSchema,
+  userId: uuidSchema,
+  name: nameSchema,
+  email: emailSchema.nullable().optional(),
+  type: personTypeEnum,
+  phone: phoneSchema.nullable().optional(),
+  document: documentSchema.nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -364,20 +399,20 @@ export const personSchema = z.object({
 
 export const createPersonSchema = z.object({
   body: z.object({
-    name: z.string().min(1).max(100),
-    email: z.string().email().optional(),
-    type: z.enum(['INDIVIDUAL', 'COMPANY']).default('INDIVIDUAL'),
-    phone: z.string().max(20).optional(),
-    document: z.string().max(20).optional(),
+    name: nameSchema,
+    email: emailSchema.optional(),
+    type: personTypeEnum.default('INDIVIDUAL'),
+    phone: phoneSchema.optional(),
+    document: documentSchema.optional(),
     notes: z.string().max(500).optional(),
   }),
 });
 
 export const sharedDebtSchema = z.object({
-  id: z.string().uuid(),
-  debtId: z.string().uuid(),
-  debtorUserId: z.string().uuid(),
-  creditorUserId: z.string().uuid(),
+  id: uuidSchema,
+  debtId: uuidSchema,
+  debtorUserId: uuidSchema,
+  creditorUserId: uuidSchema,
   status: z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'PAID', 'CANCELLED', 'DISPUTED']),
   notifiedAt: z.string().datetime().nullable().optional(),
   acceptedAt: z.string().datetime().nullable().optional(),
@@ -387,13 +422,13 @@ export const sharedDebtSchema = z.object({
 
 export const shareDebtSchema = z.object({
   body: z.object({
-    email: z.string().email(),
+    email: emailSchema,
   }),
 });
 
 export const notificationSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: uuidSchema,
+  userId: uuidSchema,
   type: z.enum([
     'INVOICE_DUE_SOON',
     'INVOICE_OVERDUE',
@@ -417,7 +452,7 @@ export const notificationSchema = z.object({
 });
 
 export const notificationPreferencesSchema = z.object({
-  userId: z.string().uuid(),
+  userId: uuidSchema,
   invoiceDueSoon: z.boolean(),
   invoiceOverdue: z.boolean(),
   billDueSoon: z.boolean(),
@@ -453,8 +488,8 @@ export const updateNotificationPreferencesSchema = z.object({
 });
 
 export const passkeySchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: uuidSchema,
+  userId: uuidSchema,
   credentialId: z.string(),
   publicKey: z.string(),
   counter: z.number().int(),
@@ -464,8 +499,8 @@ export const passkeySchema = z.object({
 });
 
 export const sessionSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: uuidSchema,
+  userId: uuidSchema,
   tokenHash: z.string(),
   ip: z.string().nullable().optional(),
   userAgent: z.string().nullable().optional(),
@@ -476,8 +511,8 @@ export const sessionSchema = z.object({
 });
 
 export const auditLogSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: uuidSchema,
+  userId: uuidSchema,
   action: z.string(),
   entityType: z.string(),
   entityId: z.string(),
@@ -491,7 +526,7 @@ export const auditLogSchema = z.object({
 export const dashboardSummarySchema = z.object({
   totalBalance: moneySchema,
   accountsBalance: z.array(z.object({
-    accountId: z.string().uuid(),
+    accountId: uuidSchema,
     name: z.string(),
     balance: moneySchema,
   })),
@@ -501,25 +536,25 @@ export const dashboardSummarySchema = z.object({
   debtsTotal: moneySchema,
   owedTotal: moneySchema,
   currentInvoices: z.array(z.object({
-    cardId: z.string().uuid(),
+    cardId: uuidSchema,
     name: z.string(),
     total: moneySchema,
     dueDate: z.string().datetime(),
   })),
   upcomingInvoices: z.array(z.object({
-    cardId: z.string().uuid(),
+    cardId: uuidSchema,
     name: z.string(),
     estimatedTotal: moneySchema,
     dueDate: z.string().datetime(),
   })),
   upcomingBills: z.array(z.object({
-    id: z.string().uuid(),
+    id: uuidSchema,
     description: z.string(),
     amount: moneySchema,
     dueDate: z.string().datetime(),
   })),
   upcomingInstallments: z.array(z.object({
-    planId: z.string().uuid(),
+    planId: uuidSchema,
     description: z.string(),
     amount: moneySchema,
     dueDate: z.string().datetime(),
@@ -536,11 +571,13 @@ export const dashboardSummarySchema = z.object({
 
 export const reportFiltersSchema = z.object({
   query: z.object({
-    startDate: z.string().datetime().optional(),
-    endDate: z.string().datetime().optional(),
-    categoryIds: z.string().optional().transform((v) => v?.split(',')),
-    accountIds: z.string().optional().transform((v) => v?.split(',')),
-    cardIds: z.string().optional().transform((v) => v?.split(',')),
-    transactionTypes: z.string().optional().transform((v) => v?.split(',') as any),
+    startDate: civilDateSchema.optional(),
+    endDate: civilDateSchema.optional(),
+    categoryIds: z.string().optional().transform((v) => v?.split(',').filter(Boolean)),
+    accountIds: z.string().optional().transform((v) => v?.split(',').filter(Boolean)),
+    cardIds: z.string().optional().transform((v) => v?.split(',').filter(Boolean)),
+    transactionTypes: z.string().optional().transform((v) => v?.split(',').filter(Boolean)),
   }),
 });
+
+export { paginationSchema };
