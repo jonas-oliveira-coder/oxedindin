@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import transactionsRoutes from './index.js';
 import { buildApp, TEST_USER_ID, OTHER_USER_ID } from '../../test/helpers.js';
-import { transaction, creditCard, installmentPlan, installment } from '../../db/schema/index.js';
+import { transaction, creditCard, installmentPlan, installment, person, transactionSplit } from '../../db/schema/index.js';
 
 describe('transactions routes', () => {
   let app: any;
@@ -202,5 +202,61 @@ describe('transactions routes', () => {
     expect(db.all(transaction)).toHaveLength(0);
     expect(db.all(installmentPlan)).toHaveLength(1);
     expect(db.all(installment)).toHaveLength(3);
+  });
+
+  it('creates a transaction with people splits', async () => {
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab',
+      userId: TEST_USER_ID,
+      name: 'Maria',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Jantar',
+        amount: 10000,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'PIX',
+        splits: [{ personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab', amountCents: 5000 }],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(db.all(transactionSplit)).toHaveLength(1);
+    expect(db.all(transactionSplit)[0].personId).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab');
+    expect(Number(db.all(transactionSplit)[0].amountCents)).toBe(5000);
+  });
+
+  it('rejects a transaction whose splits exceed the amount', async () => {
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac',
+      userId: TEST_USER_ID,
+      name: 'João',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Jantar',
+        amount: 10000,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'PIX',
+        splits: [{ personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac', amountCents: 15000 }],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.all(transactionSplit)).toHaveLength(0);
   });
 });

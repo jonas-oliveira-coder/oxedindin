@@ -124,6 +124,21 @@ export const transaction = pgTable('Transaction', {
   categoryIdIdx: index('transaction_category_id_idx').on(table.categoryId),
 }));
 
+export const transactionSplit = pgTable('TransactionSplit', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  transactionId: text('transaction_id').notNull().references(() => transaction.id, { onDelete: 'cascade' }),
+  personId: text('person_id').notNull().references(() => person.id, { onDelete: 'cascade' }),
+  amountCents: bigint('amount_cents', { mode: 'bigint' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  transactionIdIdx: index('transaction_split_transaction_id_idx').on(table.transactionId),
+  personIdIdx: index('transaction_split_person_id_idx').on(table.personId),
+  userIdIdx: index('transaction_split_user_id_idx').on(table.userId),
+  uniqueTransactionPerson: uniqueIndex('transaction_split_transaction_id_person_id_key').on(table.transactionId, table.personId),
+}));
+
 export const installmentPlan = pgTable('InstallmentPlan', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
@@ -418,13 +433,20 @@ export const categoryRelations = relations(category, ({ one, many }) => ({
   bills: many(bill),
 }));
 
-export const transactionRelations = relations(transaction, ({ one }) => ({
+export const transactionRelations = relations(transaction, ({ one, many }) => ({
   user: one(user, { fields: [transaction.userId], references: [user.id] }),
   account: one(bankAccount, { fields: [transaction.accountId], references: [bankAccount.id] }),
   card: one(creditCard, { fields: [transaction.cardId], references: [creditCard.id] }),
   installmentPlan: one(installmentPlan, { fields: [transaction.installmentPlanId], references: [installmentPlan.id] }),
   invoice: one(invoice, { fields: [transaction.invoiceId], references: [invoice.id] }),
   category: one(category, { fields: [transaction.categoryId], references: [category.id] }),
+  splits: many(transactionSplit),
+}));
+
+export const transactionSplitRelations = relations(transactionSplit, ({ one }) => ({
+  user: one(user, { fields: [transactionSplit.userId], references: [user.id] }),
+  transaction: one(transaction, { fields: [transactionSplit.transactionId], references: [transaction.id] }),
+  person: one(person, { fields: [transactionSplit.personId], references: [person.id] }),
 }));
 
 export const installmentPlanRelations = relations(installmentPlan, ({ one, many }) => ({
@@ -469,6 +491,7 @@ export const personRelations = relations(person, ({ one, many }) => ({
   debts: many(debt, { relationName: 'owedDebts' }),
   sharedDebts: many(sharedDebt),
   debtSplits: many(debtSplit),
+  transactionSplits: many(transactionSplit),
 }));
 
 export const debtSplitRelations = relations(debtSplit, ({ one }) => ({
@@ -512,6 +535,7 @@ export const schema = {
   invoice,
   category,
   transaction,
+  transactionSplit,
   installmentPlan,
   installment,
   recurringBill,

@@ -1,8 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { eq, and, desc, gte, lte, count, sum, sql } from 'drizzle-orm';
+import { eq, and, desc, gte, lte, count, sum, sql, inArray } from 'drizzle-orm';
 import { createTransactionSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
-import { transaction, bankAccount, creditCard, category, invoice, installmentPlan, installment } from '../../db/schema/index.js';
+import { transaction, bankAccount, creditCard, category, invoice, installmentPlan, installment, person, transactionSplit } from '../../db/schema/index.js';
 
 function calculateInstallmentValue(totalCents: number, count: number): number[] {
   const baseValue = Math.floor(totalCents / count);
@@ -147,6 +147,71 @@ async function createInstallmentPlan(app: any, input: {
   return { plan, installments: createdInstallments };
 }
 
+async function loadSplitsForTransactions(app: any, transactionIds: string[]) {
+  if (transactionIds.length === 0) return new Map<string, any[]>();
+  const rows = await app.db.select({
+    transactionSplit,
+    person,
+  })
+    .from(transactionSplit)
+    .leftJoin(person, eq(transactionSplit.personId, person.id))
+    .where(inArray(transactionSplit.transactionId, transactionIds));
+
+  const map = new Map<string, any[]>();
+  for (const r of rows) {
+    const split = {
+      id: r.transactionSplit.id,
+      personId: r.transactionSplit.personId,
+      amount: { cents: Number(r.transactionSplit.amountCents), currency: 'BRL' as const },
+      person: r.person,
+    };
+    const list = map.get(r.transactionSplit.transactionId) ?? [];
+    list.push(split);
+    map.set(r.transactionSplit.transactionId, list);
+  }
+  return map;
+}
+
+async function validateSplits(app: any, userId: string, amountCents: number, splits?: Array<{ personId: string; amountCents: number }>) {
+  if (!splits || splits.length === 0) return;
+
+  const total = splits.reduce((acc, s) => acc + s.amountCents, 0);
+  if (total > amountCents) {
+    throw app.httpErrors.badRequest('A soma das partes excede o valor da transação.');
+  }
+
+  const uniquePersonIds = new Set(splits.map((s) => s.personId));
+  if (uniquePersonIds.size !== splits.length) {
+    throw app.httpErrors.badRequest('Uma pessoa não pode aparecer mais de uma vez na divisão.');
+  }
+
+  for (const s of splits) {
+    const [p] = await app.db.select()
+      .from(person)
+      .where(and(eq(person.id, s.personId), eq(person.userId, userId)))
+      .limit(1);
+    if (!p) throw app.httpErrors.badRequest('Pessoa não encontrada.');
+  }
+}
+
+async function replaceSplits(app: any, userId: string, transactionId: string, splits?: Array<{ personId: string; amountCents: number }>) {
+  await app.db.delete(transactionSplit).where(eq(transactionSplit.transactionId, transactionId));
+
+  if (!splits || splits.length === 0) return [];
+
+  const created = [];
+  for (const s of splits) {
+    const [row] = await app.db.insert(transactionSplit).values({
+      userId,
+      transactionId,
+      personId: s.personId,
+      amountCents: BigInt(s.amountCents),
+    }).returning();
+    created.push(row);
+  }
+  return created;
+}
+
 const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     schema: {
@@ -190,14 +255,23 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const total = totalResult[0]?.count || 0;
 
+    const transactionIds = transactionsData.map((t) => t.transaction.id);
+    const splitsByTransaction = await loadSplitsForTransactions(app, transactionIds);
+
     return {
-      data: transactionsData.map((t) => ({
-        ...t.transaction,
-        amount: { cents: Number(t.transaction.amountCents), currency: 'BRL' as const },
-        category: t.category,
-        account: t.account,
-        card: t.card,
-      })),
+      data: transactionsData.map((t) => {
+        const splits = splitsByTransaction.get(t.transaction.id) ?? [];
+        const splitTotalCents = splits.reduce((acc: number, s: any) => acc + s.amount.cents, 0);
+        return {
+          ...t.transaction,
+          amount: { cents: Number(t.transaction.amountCents), currency: 'BRL' as const },
+          category: t.category,
+          account: t.account,
+          card: t.card,
+          splits,
+          splitTotal: { cents: splitTotalCents, currency: 'BRL' as const },
+        };
+      }),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   });
@@ -251,7 +325,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
     schema: createTransactionSchema,
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const { description, amount, type, categoryId, date, paymentMethod, accountId, cardId, notes, installmentsCount } = request.body;
+    const { description, amount, type, categoryId, date, paymentMethod, accountId, cardId, notes, installmentsCount, splits } = request.body;
     const userId = request.authUser!.id;
 
     if (accountId) {
@@ -320,6 +394,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       });
     }
 
+    await validateSplits(app, userId, amount, splits);
+
     const [newTransaction] = await app.db.insert(transaction).values({
       userId,
       description,
@@ -332,6 +408,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       cardId,
       notes,
     }).returning();
+
+    await replaceSplits(app, userId, newTransaction.id, splits);
 
     if (accountId && type === 'EXPENSE') {
       await app.db.update(bankAccount)
@@ -481,12 +559,18 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       throw app.httpErrors.notFound('Transação não encontrada.');
     }
 
+    const splitsByTransaction = await loadSplitsForTransactions(app, [tx.transaction.id]);
+    const splits = splitsByTransaction.get(tx.transaction.id) ?? [];
+    const splitTotalCents = splits.reduce((acc: number, s: any) => acc + s.amount.cents, 0);
+
     return {
       ...tx.transaction,
       amount: { cents: Number(tx.transaction.amountCents), currency: 'BRL' as const },
       category: tx.category,
       account: tx.account,
       card: tx.card,
+      splits,
+      splitTotal: { cents: splitTotalCents, currency: 'BRL' as const },
     };
   });
 
@@ -503,6 +587,10 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         accountId: z.string().uuid().nullable().optional(),
         cardId: z.string().uuid().nullable().optional(),
         notes: z.string().max(500).nullable().optional(),
+        splits: z.array(z.object({
+          personId: z.string().uuid(),
+          amountCents: z.number().int().positive(),
+        })).max(50).optional(),
       }),
     },
     preHandler: [app.authenticate],
@@ -660,6 +748,11 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
           .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${nextAmount}` })
           .where(eq(creditCard.id, nextCardId));
       }
+    }
+
+    if (body.splits !== undefined) {
+      await validateSplits(app, userId, nextAmount, body.splits);
+      await replaceSplits(app, userId, updatedTransaction.id, body.splits);
     }
 
     await app.auditLog({

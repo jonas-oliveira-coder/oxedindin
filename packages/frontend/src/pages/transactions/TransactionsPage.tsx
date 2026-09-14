@@ -9,11 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getTransactionTypeColor, cleanParams } from '@/lib/utils';
-import { Plus, Trash2, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
+import { Plus, Trash2, ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createTransactionSchema, type CreateTransactionInput } from '@/lib/validation';
 import { FormField, TextInput, CurrencyInput, DateInput, Textarea, FormSelect, NumberInput } from '@/components/forms';
+import { Badge } from '@/components/ui/badge';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { todayCivilDate } from '@oxedindin/shared';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,8 @@ interface Transaction {
   card?: { id: string; name: string } | null;
   notes?: string;
   installmentPlanId?: string | null;
+  splits?: Array<{ id: string; personId: string; person?: { id: string; name: string } | null; amount: { cents: number; currency: string } }>;
+  splitTotal?: { cents: number; currency: string };
   createdAt: string;
 }
 
@@ -37,6 +40,21 @@ interface Category {
   id: string;
   name: string;
   color?: string;
+}
+
+interface IdName {
+  id: string;
+  name: string;
+}
+
+interface TransactionSplitInput {
+  personId: string;
+  amountCents: number;
+}
+
+interface SplitRow {
+  personId: string;
+  amountCents?: number;
 }
 
 async function fetchTransactions(params?: Record<string, unknown>): Promise<{ data: Transaction[]; meta: any }> {
@@ -60,7 +78,12 @@ async function fetchCards(): Promise<Array<{ id: string; name: string }>> {
   return response.data.data.filter((c: any) => c.status === 'ACTIVE');
 }
 
-async function createTransaction(data: CreateTransactionInput): Promise<Transaction> {
+async function fetchPeopleNames(): Promise<IdName[]> {
+  const response = await api.get('/people');
+  return response.data.data;
+}
+
+async function createTransaction(data: CreateTransactionInput & { splits?: TransactionSplitInput[] }): Promise<Transaction> {
   const response = await api.post('/transactions', data);
   return response.data;
 }
@@ -82,6 +105,7 @@ type TransactionPatchInput = Omit<Partial<CreateTransactionInput>, 'accountId' |
   accountId?: string | null;
   cardId?: string | null;
   categoryId?: string | null;
+  splits?: TransactionSplitInput[];
 };
 
 const transactionTypeLabels: Record<string, string> = {
@@ -124,6 +148,10 @@ export function TransactionsPage() {
   const { data: fetchedCategories } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
   const { data: fetchedAccounts } = useQuery({ queryKey: ['accounts', 'active'], queryFn: fetchAccounts });
   const { data: fetchedCards } = useQuery({ queryKey: ['cards', 'active'], queryFn: fetchCards });
+  const { data: fetchedPeople = [] } = useQuery({ queryKey: ['people', 'names'], queryFn: fetchPeopleNames });
+
+  const [splitMode, setSplitMode] = useState<'none' | 'equal' | 'custom'>('none');
+  const [splitRows, setSplitRows] = useState<SplitRow[]>([]);
 
   const createMutation = useMutation({
     mutationFn: createTransaction,
@@ -176,6 +204,23 @@ export function TransactionsPage() {
   const watchedPaymentMethod = form.watch('paymentMethod');
   const watchedCardId = form.watch('cardId');
 
+  const resetSplits = () => {
+    setSplitMode('none');
+    setSplitRows([]);
+  };
+
+  const buildSplits = (): TransactionSplitInput[] => {
+    if (splitMode === 'none' || splitRows.length === 0) return [];
+    if (splitMode === 'equal') {
+      const amount = editing ? (editForm.getValues('amount') ?? 0) : (form.getValues('amount') ?? 0);
+      const n = splitRows.length;
+      const base = Math.floor(amount / n);
+      const remainder = amount % n;
+      return splitRows.map((row, i) => ({ personId: row.personId, amountCents: base + (i < remainder ? 1 : 0) }));
+    }
+    return splitRows.map((row) => ({ personId: row.personId, amountCents: row.amountCents ?? 0 }));
+  };
+
   const onSubmit = (data: CreateTransactionInput) => {
     createMutation.mutate({
       ...data,
@@ -184,8 +229,10 @@ export function TransactionsPage() {
       categoryId: data.categoryId || undefined,
       notes: data.notes || undefined,
       installmentsCount: data.installmentsCount && data.installmentsCount > 1 ? data.installmentsCount : undefined,
+      splits: buildSplits(),
     });
     form.reset({ type: 'EXPENSE', paymentMethod: 'CREDIT_CARD', date: todayCivilDate() });
+    resetSplits();
   };
 
   const openEdit = (transaction: Transaction) => {
@@ -200,6 +247,13 @@ export function TransactionsPage() {
       cardId: transaction.card?.id || undefined,
       notes: transaction.notes || '',
     });
+    const existingSplits = transaction.splits ?? [];
+    if (existingSplits.length > 0) {
+      setSplitMode('custom');
+      setSplitRows(existingSplits.map((s) => ({ personId: s.personId, amountCents: s.amount.cents })));
+    } else {
+      resetSplits();
+    }
     setEditing(transaction);
   };
 
@@ -213,6 +267,7 @@ export function TransactionsPage() {
         cardId: data.cardId || null,
         categoryId: data.categoryId || null,
         notes: data.notes || undefined,
+        splits: buildSplits(),
       },
     });
   };
@@ -342,6 +397,15 @@ export function TransactionsPage() {
                 <Textarea id="notes" placeholder="Observações opcionais" {...form.register('notes')} />
               </FormField>
 
+              <SplitsEditor
+                people={fetchedPeople}
+                totalCents={form.watch('amount') ?? 0}
+                mode={splitMode}
+                onModeChange={setSplitMode}
+                rows={splitRows}
+                onRowsChange={setSplitRows}
+              />
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
                 <Button type="submit" loading={createMutation.isPending}>Salvar</Button>
@@ -430,6 +494,15 @@ export function TransactionsPage() {
               <FormField id="edit-notes" label="Observações" error={editForm.formState.errors.notes?.message}>
                 <Textarea id="edit-notes" placeholder="Observações opcionais" {...editForm.register('notes')} />
               </FormField>
+
+              <SplitsEditor
+                people={fetchedPeople}
+                totalCents={editForm.watch('amount') ?? 0}
+                mode={splitMode}
+                onModeChange={setSplitMode}
+                rows={splitRows}
+                onRowsChange={setSplitRows}
+              />
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
@@ -539,6 +612,13 @@ export function TransactionsPage() {
                         <span>{paymentMethodLabels[transaction.paymentMethod] || transaction.paymentMethod}</span>
                         {transaction.account?.name && <span>{transaction.account.name}</span>}
                       </div>
+                      {transaction.splits && transaction.splits.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {transaction.splits.map((s) => (
+                            <Badge key={s.id} variant="outline">{s.person?.name ?? 'Pessoa'} · {formatMoney(s.amount.cents)}</Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <p className={cn('font-semibold', getTransactionTypeColor(transaction.type))}>{formatMoney(transaction.amount.cents)}</p>
@@ -558,6 +638,13 @@ export function TransactionsPage() {
 
                   <div className="hidden md:grid grid-cols-[1.7fr_1.1fr_0.9fr_1fr_1.1fr_1fr_1fr_96px] gap-3 px-4 py-3 border-b hover:bg-accent/50 items-center">
                     <div className="font-medium truncate">{transaction.description}</div>
+                    {transaction.splits && transaction.splits.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {transaction.splits.map((s) => (
+                          <Badge key={s.id} variant="outline" className="text-xs">{s.person?.name ?? 'Pessoa'} · {formatMoney(s.amount.cents)}</Badge>
+                        ))}
+                      </div>
+                    )}
                     <div className="truncate">
                       {transaction.category && (
                         <span className="flex items-center gap-1.5">
@@ -629,6 +716,89 @@ export function TransactionsPage() {
         loading={deleteMutation.isPending}
         onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
       />
+    </div>
+  );
+}
+
+function SplitsEditor({
+  people,
+  totalCents,
+  mode,
+  onModeChange,
+  rows,
+  onRowsChange,
+}: {
+  people: IdName[];
+  totalCents: number;
+  mode: 'none' | 'equal' | 'custom';
+  onModeChange: (mode: 'none' | 'equal' | 'custom') => void;
+  rows: SplitRow[];
+  onRowsChange: (rows: SplitRow[]) => void;
+}) {
+  const [selected, setSelected] = useState('');
+
+  const personName = (id: string) => people.find((p) => p.id === id)?.name ?? 'Pessoa';
+
+  const addRow = () => {
+    if (!selected) return;
+    if (rows.some((r) => r.personId === selected)) return;
+    onRowsChange([...rows, { personId: selected }]);
+    setSelected('');
+  };
+
+  const removeRow = (index: number) => onRowsChange(rows.filter((_, i) => i !== index));
+  const updateRow = (index: number, amountCents?: number) =>
+    onRowsChange(rows.map((r, i) => (i === index ? { ...r, amountCents } : r)));
+
+  const equalBase = rows.length > 0 ? Math.floor(totalCents / rows.length) : 0;
+
+  return (
+    <div className="space-y-3 rounded-lg border p-3">
+      <div className="space-y-1.5">
+        <Label>Dividir com pessoas</Label>
+        <Select value={mode} onValueChange={(v) => onModeChange(v as 'none' | 'equal' | 'custom')}>
+          <SelectTrigger><SelectValue placeholder="Como dividir?" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Não dividir</SelectItem>
+            <SelectItem value="equal">Partes iguais</SelectItem>
+            <SelectItem value="custom">Valores diferentes</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {mode !== 'none' && (
+        <>
+          <div className="flex gap-2">
+            <Select value={selected} onValueChange={setSelected}>
+              <SelectTrigger className="flex-1"><SelectValue placeholder="Selecione a pessoa" /></SelectTrigger>
+              <SelectContent>
+                {people.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="button" variant="outline" onClick={addRow}>Adicionar</Button>
+          </div>
+
+          {mode === 'equal' && rows.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Cada pessoa: {formatMoney(equalBase)} (o restante é distribuído nas primeiras).
+            </p>
+          )}
+
+          {rows.map((row, i) => (
+            <div key={row.personId} className="flex items-center gap-2">
+              <span className="flex-1 truncate text-sm">{personName(row.personId)}</span>
+              {mode === 'custom' && (
+                <CurrencyInput className="w-32" value={row.amountCents} onChange={(v) => updateRow(i, v)} />
+              )}
+              <Button type="button" variant="ghost" size="icon" onClick={() => removeRow(i)} aria-label="Remover pessoa">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
