@@ -26,7 +26,7 @@ export function Logo({ className, variant = 'mark' }: LogoProps) {
   }, []);
 
   const fileName = variant === 'full'
-    ? (darkMode ? 'oxedin-nome-branco.png' : 'oxedin-nome-preto.png')
+    ? (darkMode ? 'logo-tema-claro.svg' : 'logo-tema-escuro.svg')
     : (darkMode ? 'logo-tema-escuro.svg' : 'logo-tema-claro.svg');
 
   return (
