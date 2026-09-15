@@ -1,7 +1,7 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, desc, gte, lte, count, sum, sql, inArray } from 'drizzle-orm';
-import { createTransactionSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
+import { createTransactionSchema, paginationSchema, dateRangeSchema, dateInputSchema } from '../../types/schemas.js';
 import { transaction, bankAccount, creditCard, category, invoice, installmentPlan, installment, person, transactionSplit } from '../../db/schema/index.js';
 
 function calculateInstallmentValue(totalCents: number, count: number): number[] {
@@ -499,8 +499,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         description: z.string().min(1).max(200),
         totalAmount: z.number().int().positive(),
         installmentsCount: z.number().int().positive().max(60),
-        startDate: z.string().datetime(),
-        firstInvoiceDate: z.string().datetime(),
+        startDate: dateInputSchema,
+        firstInvoiceDate: dateInputSchema,
         cardId: z.string().uuid(),
         categoryId: z.string().uuid().optional(),
       }),
@@ -588,7 +588,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         amount: z.number().int().positive().optional(),
         type: z.enum(['EXPENSE', 'INCOME', 'TRANSFER']).optional(),
         categoryId: z.string().uuid().nullable().optional(),
-        date: z.string().datetime().optional(),
+        date: dateInputSchema.optional(),
         paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).optional(),
         accountId: z.string().uuid().nullable().optional(),
         cardId: z.string().uuid().nullable().optional(),

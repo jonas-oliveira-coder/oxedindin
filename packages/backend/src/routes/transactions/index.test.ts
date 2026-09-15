@@ -86,6 +86,32 @@ describe('transactions routes', () => {
     expect(rows[0]).not.toHaveProperty('amount');
   });
 
+  it('updates a transaction with a civil date from the UI', async () => {
+    db.seed(transaction, [{
+      id: '88888888-8888-4888-8888-888888888888',
+      userId: TEST_USER_ID,
+      description: 'Antiga',
+      amountCents: 1000,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'CASH',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/transactions/88888888-8888-4888-8888-888888888888',
+      payload: { description: 'Nova', amount: 2500, date: '2026-09-13' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().amount).toEqual({ cents: 2500, currency: 'BRL' });
+
+    const rows = db.all(transaction);
+    expect(rows[0].date).toEqual(new Date('2026-09-13T00:00:00.000Z'));
+  });
+
   it('returns 404 when getting a transaction owned by another user', async () => {
     db.seed(transaction, [{
       id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

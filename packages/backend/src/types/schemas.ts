@@ -9,6 +9,7 @@ import {
   moneyCentsSchema,
   positiveMoneyCentsSchema,
   civilDateSchema,
+  dateInputSchema,
   paginationSchema,
 } from '@oxedindin/shared';
 
@@ -584,4 +585,4 @@ export const reportFiltersSchema = z.object({
   }),
 });
 
-export { paginationSchema };
+export { paginationSchema, dateInputSchema };

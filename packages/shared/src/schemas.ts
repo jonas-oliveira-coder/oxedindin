@@ -71,6 +71,10 @@ export const civilDateSchema = z
   .string()
   .refine(isValidCivilDate, 'Informe uma data válida.');
 
+// Accepts either a civil date ("YYYY-MM-DD") or a full ISO-8601 datetime, so
+// date inputs from the UI and serialized timestamps both pass validation.
+export const dateInputSchema = z.string().datetime().or(civilDateSchema);
+
 export const paginationSchema = z.object({
   page: z.coerce.number().int('A página deve ser um número inteiro.').positive('A página deve ser maior que zero.').default(1),
   limit: z.coerce.number().int('O limite deve ser um número inteiro.').positive('O limite deve ser positivo.').max(100, 'O limite máximo é 100.').default(20),

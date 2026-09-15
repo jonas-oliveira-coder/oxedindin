@@ -56,6 +56,16 @@ describe('installments routes', () => {
     expect(res.statusCode).toBe(404);
   });
 
+  it('lists installments with count metadata', async () => {
+    seedPlan();
+    const res = await app.inject({ method: 'GET', url: '/api/v1/installments' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].plan.description).toBe('Notebook');
+    expect(body.meta.total).toBe(1);
+  });
+
   it('updates an installment plan', async () => {
     seedPlan();
     const res = await app.inject({

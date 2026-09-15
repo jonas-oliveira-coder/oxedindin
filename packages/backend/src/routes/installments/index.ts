@@ -41,7 +41,10 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
         .orderBy(asc(installment.dueDate))
         .limit(limit)
         .offset((page - 1) * limit),
-      app.db.select({ count: count() }).from(installment).where(and(...conditions)),
+      app.db.select({ count: count() })
+        .from(installment)
+        .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
+        .where(and(...conditions)),
     ]);
 
     const total = totalResult[0]?.count || 0;
