@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { todayCivilDate } from '@oxedindin/shared';
 import { cn } from '@/lib/utils';
+import { equalSplitShares } from '@/lib/splits';
 
 interface Transaction {
   id: string;
@@ -213,10 +214,8 @@ export function TransactionsPage() {
     if (splitMode === 'none' || splitRows.length === 0) return [];
     if (splitMode === 'equal') {
       const amount = editing ? (editForm.getValues('amount') ?? 0) : (form.getValues('amount') ?? 0);
-      const n = splitRows.length;
-      const base = Math.floor(amount / n);
-      const remainder = amount % n;
-      return splitRows.map((row, i) => ({ personId: row.personId, amountCents: base + (i < remainder ? 1 : 0) }));
+      const shares = equalSplitShares(amount, splitRows.length);
+      return splitRows.map((row, i) => ({ personId: row.personId, amountCents: shares[i] }));
     }
     return splitRows.map((row) => ({ personId: row.personId, amountCents: row.amountCents ?? 0 }));
   };
@@ -750,7 +749,7 @@ function SplitsEditor({
   const updateRow = (index: number, amountCents?: number) =>
     onRowsChange(rows.map((r, i) => (i === index ? { ...r, amountCents } : r)));
 
-  const equalBase = rows.length > 0 ? Math.floor(totalCents / rows.length) : 0;
+  const equalBase = rows.length > 0 ? Math.floor(totalCents / (rows.length + 1)) : 0;
 
   return (
     <div className="space-y-3 rounded-lg border p-3">
@@ -782,7 +781,7 @@ function SplitsEditor({
 
           {mode === 'equal' && rows.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              Cada pessoa: {formatMoney(equalBase)} (o restante é distribuído nas primeiras).
+              Cada pessoa: {formatMoney(equalBase)} · você fica com {formatMoney(totalCents - equalBase * rows.length)} (o restante é distribuído nas primeiras).
             </p>
           )}
 

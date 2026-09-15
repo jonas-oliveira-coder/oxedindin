@@ -175,6 +175,12 @@ async function loadSplitsForTransactions(app: any, transactionIds: string[]) {
 async function validateSplits(app: any, userId: string, amountCents: number, splits?: Array<{ personId: string; amountCents: number }>) {
   if (!splits || splits.length === 0) return;
 
+  for (const s of splits) {
+    if (!Number.isFinite(s.amountCents) || s.amountCents <= 0) {
+      throw app.httpErrors.badRequest('O valor da parte de cada pessoa deve ser maior que zero.');
+    }
+  }
+
   const total = splits.reduce((acc, s) => acc + s.amountCents, 0);
   if (total > amountCents) {
     throw app.httpErrors.badRequest('A soma das partes excede o valor da transação.');

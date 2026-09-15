@@ -259,4 +259,347 @@ describe('transactions routes', () => {
     expect(res.statusCode).toBe(400);
     expect(db.all(transactionSplit)).toHaveLength(0);
   });
+
+  it('accepts splits whose sum equals the full amount', async () => {
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaad',
+      userId: TEST_USER_ID,
+      name: 'Ana',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Jantar',
+        amount: 10000,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'PIX',
+        splits: [{ personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaad', amountCents: 10000 }],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(db.all(transactionSplit)).toHaveLength(1);
+  });
+
+  it('creates splits for multiple people', async () => {
+    db.seed(person, [
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaae', userId: TEST_USER_ID, name: 'Ana', type: 'INDIVIDUAL', createdAt: new Date(), updatedAt: new Date() },
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaf', userId: TEST_USER_ID, name: 'Bia', type: 'INDIVIDUAL', createdAt: new Date(), updatedAt: new Date() },
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Churrasco',
+        amount: 10000,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'PIX',
+        splits: [
+          { personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaae', amountCents: 5000 },
+          { personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaf', amountCents: 2500 },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(db.all(transactionSplit)).toHaveLength(2);
+    const ids = db.all(transactionSplit).map((s: any) => s.personId).sort();
+    expect(ids).toEqual([
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaae',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaf',
+    ]);
+  });
+
+  it('rejects a transaction with a duplicated person in splits', async () => {
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab0',
+      userId: TEST_USER_ID,
+      name: 'Carla',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Jantar',
+        amount: 10000,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'PIX',
+        splits: [
+          { personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab0', amountCents: 3000 },
+          { personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab0', amountCents: 3000 },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.all(transactionSplit)).toHaveLength(0);
+  });
+
+  it('rejects a split for a person owned by another user', async () => {
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab1',
+      userId: OTHER_USER_ID,
+      name: 'Forasteiro',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Jantar',
+        amount: 10000,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'PIX',
+        splits: [{ personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab1', amountCents: 5000 }],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.all(transactionSplit)).toHaveLength(0);
+  });
+
+  it('rejects a split with a non-positive amount', async () => {
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab2',
+      userId: TEST_USER_ID,
+      name: 'Dani',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Jantar',
+        amount: 10000,
+        type: 'EXPENSE',
+        date: new Date().toISOString(),
+        paymentMethod: 'PIX',
+        splits: [{ personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab2', amountCents: 0 }],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns splits and splitTotal on the list', async () => {
+    const txId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab3';
+    db.seed(transaction, [{
+      id: txId,
+      userId: TEST_USER_ID,
+      description: 'Com splits',
+      amountCents: 10000,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'PIX',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab4',
+      userId: TEST_USER_ID,
+      name: 'Eva',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(transactionSplit, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab5',
+      userId: TEST_USER_ID,
+      transactionId: txId,
+      personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab4',
+      amountCents: BigInt(4000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/transactions' });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].splits).toHaveLength(1);
+    expect(body.data[0].splits[0].personId).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab4');
+    expect(body.data[0].splits[0].amount).toEqual({ cents: 4000, currency: 'BRL' });
+    expect(body.data[0].splits[0].person.name).toBe('Eva');
+    expect(body.data[0].splitTotal).toEqual({ cents: 4000, currency: 'BRL' });
+  });
+
+  it('returns splits on a single transaction', async () => {
+    const txId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab6';
+    db.seed(transaction, [{
+      id: txId,
+      userId: TEST_USER_ID,
+      description: 'Com splits',
+      amountCents: 10000,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'PIX',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab7',
+      userId: TEST_USER_ID,
+      name: 'Fabi',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(transactionSplit, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab8',
+      userId: TEST_USER_ID,
+      transactionId: txId,
+      personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab7',
+      amountCents: BigInt(6000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({ method: 'GET', url: `/api/v1/transactions/${txId}` });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json();
+    expect(body.splits).toHaveLength(1);
+    expect(body.splits[0].amount).toEqual({ cents: 6000, currency: 'BRL' });
+    expect(body.splits[0].person.name).toBe('Fabi');
+    expect(body.splitTotal).toEqual({ cents: 6000, currency: 'BRL' });
+  });
+
+  it('replaces splits when patching a transaction', async () => {
+    const txId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaab9';
+    db.seed(transaction, [{
+      id: txId,
+      userId: TEST_USER_ID,
+      description: 'Antiga',
+      amountCents: 10000,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'PIX',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(person, [
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac0', userId: TEST_USER_ID, name: 'Gabi', type: 'INDIVIDUAL', createdAt: new Date(), updatedAt: new Date() },
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac1', userId: TEST_USER_ID, name: 'Hugo', type: 'INDIVIDUAL', createdAt: new Date(), updatedAt: new Date() },
+    ]);
+    db.seed(transactionSplit, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac2',
+      userId: TEST_USER_ID,
+      transactionId: txId,
+      personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac0',
+      amountCents: BigInt(10000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/transactions/${txId}`,
+      payload: {
+        splits: [{ personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac1', amountCents: 5000 }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const rows = db.all(transactionSplit);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].personId).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac1');
+    expect(Number(rows[0].amountCents)).toBe(5000);
+  });
+
+  it('clears splits when patching with an empty list', async () => {
+    const txId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac3';
+    db.seed(transaction, [{
+      id: txId,
+      userId: TEST_USER_ID,
+      description: 'Antiga',
+      amountCents: 10000,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'PIX',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac4',
+      userId: TEST_USER_ID,
+      name: 'Igor',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(transactionSplit, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac5',
+      userId: TEST_USER_ID,
+      transactionId: txId,
+      personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac4',
+      amountCents: BigInt(5000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/transactions/${txId}`,
+      payload: { splits: [] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.all(transactionSplit)).toHaveLength(0);
+  });
+
+  it('rejects splits that exceed the patched amount', async () => {
+    const txId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac6';
+    db.seed(transaction, [{
+      id: txId,
+      userId: TEST_USER_ID,
+      description: 'Antiga',
+      amountCents: 10000,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'PIX',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(person, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac7',
+      userId: TEST_USER_ID,
+      name: 'Jana',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/transactions/${txId}`,
+      payload: {
+        amount: 5000,
+        splits: [{ personId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaac7', amountCents: 6000 }],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.all(transactionSplit)).toHaveLength(0);
+  });
 });
