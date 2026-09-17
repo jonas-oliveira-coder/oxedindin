@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { eq, and, gte, lte, desc, asc, count, sql, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { createDebtSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
-import { debt, person, sharedDebt, debtSplit, user, bankAccount, transaction, notification } from '../../db/schema/index.js';
+import { debt, person, sharedDebt, debtSplit, sharedDebtEvent, user, bankAccount, transaction, notification } from '../../db/schema/index.js';
 import { emailSchema } from '@oxedindin/shared';
 
 const debtorUser = alias(user, 'debts_debtor_user');
@@ -556,11 +556,13 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
         type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']),
         personId: z.string().uuid(),
         notes: z.string().max(500).optional(),
+        debtorEmail: z.string().email().optional(),
+        shareAmountCents: z.number().int().positive().optional(),
       }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const { description, totalAmount, dueDate, type, personId, notes } = request.body;
+    const { description, totalAmount, dueDate, type, personId, notes, debtorEmail, shareAmountCents } = request.body;
     const userId = request.authUser!.id;
 
     const [personRecord] = await app.db.select()
@@ -601,9 +603,61 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       userAgent: request.headers['user-agent'],
     });
 
+    let shared: { id: string } | undefined;
+    if (debtorEmail) {
+      const [debtorUser] = await app.db.select()
+        .from(user)
+        .where(eq(user.email, debtorEmail))
+        .limit(1);
+
+      if (debtorUser) {
+        const [existingShare] = await app.db.select()
+          .from(sharedDebt)
+          .where(and(eq(sharedDebt.debtId, newDebt.id), eq(sharedDebt.debtorUserId, debtorUser.id)))
+          .limit(1);
+
+        if (!existingShare) {
+          const [sharedDebtRecord] = await app.db.insert(sharedDebt).values({
+            debtId: newDebt.id,
+            debtorUserId: debtorUser.id,
+            creditorUserId: userId,
+            status: 'PENDING',
+            amountCents: shareAmountCents ? BigInt(shareAmountCents) : null,
+            notifiedAt: new Date(),
+          }).returning();
+          shared = sharedDebtRecord;
+
+          await app.db.insert(sharedDebtEvent).values({
+            sharedDebtId: sharedDebtRecord.id,
+            type: 'INVITE_SENT',
+            actorUserId: userId,
+            actorName: request.authUser!.name,
+            message: `${request.authUser!.name} enviou uma solicitação de divisão de dívida para ${debtorUser.name}.`,
+            amountCents: shareAmountCents ? BigInt(shareAmountCents) : null,
+          });
+
+          await app.db.insert(notification).values({
+            userId: debtorUser.id,
+            type: 'SHARED_DEBT_ADDED',
+            title: 'Nova solicitação de divisão',
+            message: `${request.authUser!.name} quer dividir uma conta com você${shareAmountCents ? ` no valor de ${(Number(shareAmountCents) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}: ${description}`,
+            channels: ['IN_APP'],
+            relatedEntityType: 'SharedDebt',
+            relatedEntityId: sharedDebtRecord.id,
+          });
+
+          app.broadcast(debtorUser.id, {
+            type: 'notification',
+            data: { type: 'SHARED_DEBT_ADDED', debtId: newDebt.id, sharedDebtId: sharedDebtRecord.id },
+          });
+        }
+      }
+    }
+
     return reply.status(201).send({
       ...debtWithPerson!.debt,
       relatedPerson: debtWithPerson!.relatedPerson,
+      sharedDebtId: shared?.id,
       totalAmount: { cents: Number(debtWithPerson!.debt.totalAmountCents), currency: 'BRL' as const },
       paidAmount: { cents: Number(debtWithPerson!.debt.paidAmountCents), currency: 'BRL' as const },
       remainingAmount: { cents: Number(debtWithPerson!.debt.remainingAmountCents), currency: 'BRL' as const },
@@ -785,11 +839,12 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().uuid() }),
       body: z.object({
         email: emailSchema,
+        amountCents: z.number().int().positive().optional(),
       }),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-    const { email } = request.body;
+    const { email, amountCents } = request.body;
     const userId = request.authUser!.id;
 
     const [debtWithPerson] = await app.db.select({
@@ -801,6 +856,10 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(eq(debt.id, request.params.id), eq(person.userId, userId)))
       .limit(1);
     if (!debtWithPerson) throw app.httpErrors.notFound('Dívida não encontrada.');
+
+    if (amountCents !== undefined && amountCents > Number(debtWithPerson.debt.remainingAmountCents)) {
+      throw app.httpErrors.badRequest('O valor atribuído excede o valor restante da dívida.');
+    }
 
     const [debtorUser] = await app.db.select()
       .from(user)
@@ -819,14 +878,24 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
         debtorUserId: debtorUser.id,
         creditorUserId: userId,
         status: 'PENDING',
+        amountCents: amountCents ? BigInt(amountCents) : null,
         notifiedAt: new Date(),
       }).returning();
+
+      await app.db.insert(sharedDebtEvent).values({
+        sharedDebtId: sharedDebtRecord.id,
+        type: 'INVITE_SENT',
+        actorUserId: userId,
+        actorName: request.authUser!.name,
+        message: `${request.authUser!.name} enviou uma solicitação de divisão de dívida para ${debtorUser.name}.`,
+        amountCents: amountCents ? BigInt(amountCents) : null,
+      });
 
       await app.db.insert(notification).values({
         userId: debtorUser.id,
         type: 'SHARED_DEBT_ADDED',
-        title: 'Nova dívida compartilhada',
-        message: `${request.authUser!.name} registrou uma dívida de ${(Number(debtWithPerson.debt.remainingAmountCents) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em seu nome: ${debtWithPerson.debt.description}`,
+        title: 'Nova solicitação de divisão',
+        message: `${request.authUser!.name} quer dividir uma conta com você${amountCents ? ` no valor de ${(Number(amountCents) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}: ${debtWithPerson.debt.description}`,
         channels: ['IN_APP'],
         relatedEntityType: 'SharedDebt',
         relatedEntityId: sharedDebtRecord.id,
@@ -901,6 +970,55 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       personId,
       amountCents: BigInt(amountCents),
     }).returning();
+
+    if (personRecord.email) {
+      const [debtorUser] = await app.db.select()
+        .from(user)
+        .where(eq(user.email, personRecord.email))
+        .limit(1);
+
+      if (debtorUser) {
+        const [existingShare] = await app.db.select()
+          .from(sharedDebt)
+          .where(and(eq(sharedDebt.debtId, request.params.id), eq(sharedDebt.debtorUserId, debtorUser.id)))
+          .limit(1);
+
+        if (!existingShare) {
+          const [sharedDebtRecord] = await app.db.insert(sharedDebt).values({
+            debtId: request.params.id,
+            debtorUserId: debtorUser.id,
+            creditorUserId: userId,
+            status: 'PENDING',
+            amountCents: BigInt(amountCents),
+            notifiedAt: new Date(),
+          }).returning();
+
+          await app.db.insert(sharedDebtEvent).values({
+            sharedDebtId: sharedDebtRecord.id,
+            type: 'INVITE_SENT',
+            actorUserId: userId,
+            actorName: request.authUser!.name,
+            message: `${request.authUser!.name} enviou uma solicitação de divisão de dívida para ${debtorUser.name}.`,
+            amountCents: BigInt(amountCents),
+          });
+
+          await app.db.insert(notification).values({
+            userId: debtorUser.id,
+            type: 'SHARED_DEBT_ADDED',
+            title: 'Nova solicitação de divisão',
+            message: `${request.authUser!.name} quer dividir uma conta com você no valor de ${(Number(amountCents) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}: ${existingDebt.description}`,
+            channels: ['IN_APP'],
+            relatedEntityType: 'SharedDebt',
+            relatedEntityId: sharedDebtRecord.id,
+          });
+
+          app.broadcast(debtorUser.id, {
+            type: 'notification',
+            data: { type: 'SHARED_DEBT_ADDED', debtId: request.params.id, sharedDebtId: sharedDebtRecord.id },
+          });
+        }
+      }
+    }
 
     await app.auditLog({
       userId,

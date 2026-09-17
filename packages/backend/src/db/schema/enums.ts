@@ -53,7 +53,17 @@ export const debtStatusEnum = pgEnum('debt_status', [
 ]);
 
 export const sharedDebtStatusEnum = pgEnum('shared_debt_status', [
-  'PENDING', 'ACCEPTED', 'REJECTED', 'PAID', 'CANCELLED', 'DISPUTED'
+  'PENDING', 'ACCEPTED', 'REJECTED', 'PAYMENT_REPORTED', 'PAYMENT_CONFIRMED',
+  'PAYMENT_VERIFYING', 'PAID', 'CANCELLED', 'DISPUTED'
+]);
+
+export const paymentStatusEnum = pgEnum('payment_status', [
+  'REPORTED', 'CONFIRMED', 'DISPUTED'
+]);
+
+export const sharedDebtEventTypeEnum = pgEnum('shared_debt_event_type', [
+  'DEBT_SHARED', 'INVITE_SENT', 'ACCEPTED', 'REJECTED', 'PAYMENT_REPORTED',
+  'PAYMENT_CONFIRMED', 'PAYMENT_DISPUTED', 'CANCELLED'
 ]);
 
 export const personTypeEnum = pgEnum('person_type', [

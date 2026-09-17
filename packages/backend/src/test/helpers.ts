@@ -365,6 +365,7 @@ class FakeDb {
   update(table: any) { return new UpdateBuilder(this, table); }
   delete(table: any) { return new DeleteBuilder(this, table); }
   async execute() { return [] as any[]; }
+  async transaction(fn: (tx: any) => any) { return fn(this); }
 
   all(table: any): any[] { return this.store.get(nameOf(table)) ?? []; }
   seed(table: any, rows: Record<string, any>[]) {

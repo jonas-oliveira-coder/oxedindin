@@ -29,6 +29,13 @@
       "when": 1789345230090,
       "tag": "0003_panoramic_umar",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789644022528,
+      "tag": "0004_military_warbound",
+      "breakpoints": true
     }
   ]
 }

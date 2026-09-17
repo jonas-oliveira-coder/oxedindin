@@ -51,6 +51,11 @@ services:
       NODE_ENV: development
       PORT: 3000
       LOG_LEVEL: debug
+      UPLOAD_DIR: /data/uploads
+      UPLOAD_MAX_SIZE: 2097152
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:noreply@oxedindin.com}
     ports:
       - "3000:3000"
     depends_on:
@@ -61,6 +66,7 @@ services:
     volumes:
       - ./packages/backend:/app/packages/backend
       - ./packages/shared:/app/packages/shared
+      - uploads_data:/data/uploads
     command: sh -c "npm run db:push && npm run dev"
 
   frontend:
@@ -82,3 +88,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

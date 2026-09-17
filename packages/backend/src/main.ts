@@ -167,6 +167,17 @@ await app.register((await import('@fastify/swagger-ui')).default, {
 
 await app.register((await import('@fastify/websocket')).default);
 
+// Multipart for avatar uploads (validated server-side in users route)
+await app.register((await import('@fastify/multipart')).default, {
+  limits: { fileSize: env.UPLOAD_MAX_SIZE, files: 1 },
+});
+
+// Serve uploaded avatars from the configured directory
+await app.register((await import('@fastify/static')).default, {
+  root: env.UPLOAD_DIR,
+  prefix: '/uploads/',
+});
+
 // Register plugins first (prisma, redis, auth, audit, websocket)
 await app.register(autoload, {
   dir: join(__dirname, 'plugins'),

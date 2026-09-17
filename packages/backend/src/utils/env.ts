@@ -20,6 +20,13 @@ const envSchema = z.object({
   WEB_AUTHN_RP_NAME: z.string().default('OxeDinDin'),
   WEB_AUTHN_ORIGIN: z.string().url().default('http://localhost:5173'),
 
+  UPLOAD_DIR: z.string().default('/tmp/oxedindin-uploads'),
+  UPLOAD_MAX_SIZE: z.coerce.number().default(2 * 1024 * 1024),
+
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().email().optional(),
+
   EMAIL_HOST: z.string().optional(),
   EMAIL_PORT: z.coerce.number().optional(),
   EMAIL_USER: z.string().optional(),

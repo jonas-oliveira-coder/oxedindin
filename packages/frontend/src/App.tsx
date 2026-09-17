@@ -4,6 +4,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
+import { PwaProvider } from '@/components/pwa/pwa-provider';
 import { Layout } from '@/components/shared/layout';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { RegisterPage } from '@/pages/auth/RegisterPage';
@@ -15,6 +16,7 @@ import { TransactionsPage } from '@/pages/transactions/TransactionsPage';
 import { InstallmentsPage } from '@/pages/installments/InstallmentsPage';
 import { BillsPage } from '@/pages/bills/BillsPage';
 import { DebtsPage } from '@/pages/debts/DebtsPage';
+import { SharedDebtsPage } from '@/pages/debts/SharedDebtsPage';
 import { PeoplePage } from '@/pages/people/PeoplePage';
 import { ReportsPage } from '@/pages/reports/ReportsPage';
 import { CategoriesPage } from '@/pages/categories/CategoriesPage';
@@ -83,6 +85,7 @@ function AppRoutes() {
         <Route path="/installments" element={<InstallmentsPage />} />
         <Route path="/bills" element={<BillsPage />} />
         <Route path="/debts" element={<DebtsPage />} />
+        <Route path="/shared-debts" element={<SharedDebtsPage />} />
         <Route path="/people" element={<PeoplePage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
@@ -103,6 +106,7 @@ export default function App() {
       <TooltipProvider>
         <AuthProvider>
           <AppRoutes />
+          <PwaProvider />
           <Toaster />
         </AuthProvider>
       </TooltipProvider>

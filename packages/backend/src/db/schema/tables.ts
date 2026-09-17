@@ -7,6 +7,7 @@ import {
   invoiceStatusEnum, transactionTypeEnum, paymentMethodEnum,
   installmentStatusEnum, recurringFrequencyEnum, recurringStatusEnum,
   billStatusEnum, debtTypeEnum, debtStatusEnum, sharedDebtStatusEnum,
+  paymentStatusEnum, sharedDebtEventTypeEnum,
   personTypeEnum, notificationTypeEnum, notificationChannelEnum, dateTypeEnum
 } from './enums.js';
 
@@ -271,8 +272,10 @@ export const sharedDebt = pgTable('SharedDebt', {
   creditorUserId: text('creditor_user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   personId: text('person_id').references(() => person.id, { onDelete: 'set null' }),
   status: sharedDebtStatusEnum('status').default('PENDING').notNull(),
+  amountCents: bigint('amount_cents', { mode: 'bigint' }),
   notifiedAt: timestamp('notified_at', { withTimezone: true }),
   acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  rejectedAt: timestamp('rejected_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
@@ -282,6 +285,50 @@ export const sharedDebt = pgTable('SharedDebt', {
   personIdIdx: index('shared_debt_person_id_idx').on(table.personId),
   statusIdx: index('shared_debt_status_idx').on(table.status),
   uniqueDebtDebtor: uniqueIndex('shared_debt_debt_id_debtor_user_id_key').on(table.debtId, table.debtorUserId),
+}));
+
+export const sharedDebtPayment = pgTable('SharedDebtPayment', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  sharedDebtId: text('shared_debt_id').notNull().references(() => sharedDebt.id, { onDelete: 'cascade' }),
+  amountCents: bigint('amount_cents', { mode: 'bigint' }).notNull(),
+  paymentDate: timestamp('payment_date', { withTimezone: true }).notNull(),
+  method: paymentMethodEnum('method'),
+  notes: text('notes'),
+  reportedByUserId: text('reported_by_user_id').notNull().references(() => user.id, { onDelete: 'set null' }),
+  confirmedByUserId: text('confirmed_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+  status: paymentStatusEnum('status').default('REPORTED').notNull(),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  sharedDebtIdIdx: index('shared_debt_payment_shared_debt_id_idx').on(table.sharedDebtId),
+  statusIdx: index('shared_debt_payment_status_idx').on(table.status),
+  reportedByUserIdIdx: index('shared_debt_payment_reported_by_user_id_idx').on(table.reportedByUserId),
+}));
+
+export const sharedDebtEvent = pgTable('SharedDebtEvent', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  sharedDebtId: text('shared_debt_id').notNull().references(() => sharedDebt.id, { onDelete: 'cascade' }),
+  type: sharedDebtEventTypeEnum('type').notNull(),
+  actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
+  actorName: text('actor_name'),
+  message: text('message').notNull(),
+  amountCents: bigint('amount_cents', { mode: 'bigint' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  sharedDebtIdIdx: index('shared_debt_event_shared_debt_id_idx').on(table.sharedDebtId),
+  sharedDebtIdCreatedAtIdx: index('shared_debt_event_shared_debt_id_created_at_idx').on(table.sharedDebtId, table.createdAt),
+  actorUserIdIdx: index('shared_debt_event_actor_user_id_idx').on(table.actorUserId),
+}));
+
+export const pushSubscription = pgTable('PushSubscription', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull().unique(),
+  keys: jsonb('keys').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('push_subscription_user_id_idx').on(table.userId),
 }));
 
 export const debtSplit = pgTable('DebtSplit', {
@@ -394,6 +441,7 @@ export const userRelations = relations(user, ({ many, one }) => ({
   people: many(person),
   sharedDebtsAsDebtor: many(sharedDebt, { relationName: 'debtorSharedDebts' }),
   sharedDebtsAsCreditor: many(sharedDebt, { relationName: 'creditorSharedDebts' }),
+  pushSubscriptions: many(pushSubscription),
   notifications: many(notification),
   notificationPrefs: one(notificationPreferences),
   passkeys: many(passkey),
@@ -500,11 +548,28 @@ export const debtSplitRelations = relations(debtSplit, ({ one }) => ({
   person: one(person, { fields: [debtSplit.personId], references: [person.id] }),
 }));
 
-export const sharedDebtRelations = relations(sharedDebt, ({ one }) => ({
+export const sharedDebtRelations = relations(sharedDebt, ({ one, many }) => ({
   debt: one(debt, { fields: [sharedDebt.debtId], references: [debt.id] }),
   debtor: one(user, { fields: [sharedDebt.debtorUserId], references: [user.id], relationName: 'debtorSharedDebts' }),
   creditor: one(user, { fields: [sharedDebt.creditorUserId], references: [user.id], relationName: 'creditorSharedDebts' }),
   person: one(person, { fields: [sharedDebt.personId], references: [person.id] }),
+  payments: many(sharedDebtPayment),
+  events: many(sharedDebtEvent),
+}));
+
+export const sharedDebtPaymentRelations = relations(sharedDebtPayment, ({ one }) => ({
+  sharedDebt: one(sharedDebt, { fields: [sharedDebtPayment.sharedDebtId], references: [sharedDebt.id] }),
+  reportedBy: one(user, { fields: [sharedDebtPayment.reportedByUserId], references: [user.id] }),
+  confirmedBy: one(user, { fields: [sharedDebtPayment.confirmedByUserId], references: [user.id] }),
+}));
+
+export const sharedDebtEventRelations = relations(sharedDebtEvent, ({ one }) => ({
+  sharedDebt: one(sharedDebt, { fields: [sharedDebtEvent.sharedDebtId], references: [sharedDebt.id] }),
+  actor: one(user, { fields: [sharedDebtEvent.actorUserId], references: [user.id] }),
+}));
+
+export const pushSubscriptionRelations = relations(pushSubscription, ({ one }) => ({
+  user: one(user, { fields: [pushSubscription.userId], references: [user.id] }),
 }));
 
 export const notificationRelations = relations(notification, ({ one }) => ({
@@ -543,9 +608,12 @@ export const schema = {
   debt,
   person,
   sharedDebt,
+  sharedDebtPayment,
+  sharedDebtEvent,
   debtSplit,
   notification,
   notificationPreferences,
+  pushSubscription,
   passkey,
   session,
   auditLog,
