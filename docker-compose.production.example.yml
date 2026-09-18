@@ -2,6 +2,10 @@
 # Backend e frontend são puxados do GHCR (imagens públicas).
 # PostgreSQL e Redis usam as imagens oficiais.
 #
+# Migrações: a imagem do backend executa `node dist/migrate.js` (migrations)
+# antes de iniciar o servidor, de forma explícita e fail-fast. Garanta que a
+# imagem `:latest` foi reconstruída após as mudanças (veja o pipeline GH Actions).
+#
 # Passos no Coolify:
 # 1. Crie um recurso "Docker Compose" (Empty ou via Git) e use este arquivo.
 # 2. No serviço `frontend`, defina um domínio no campo "Domains"
@@ -59,11 +63,20 @@ services:
       WEB_AUTHN_ORIGIN: ${SERVICE_URL_FRONTEND}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Avatar uploads (must be a writable path; volume below persists them)
+      UPLOAD_DIR: /data/uploads
+      UPLOAD_MAX_SIZE: 2097152
+      # Web Push (generate with: npx web-push generate-vapid-keys)
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:noreply@oxedindin.com}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - uploads_prod_data:/data/uploads
 
   frontend:
     image: ghcr.io/jonas-oliveira-coder/oxedindin-frontend:latest
@@ -77,3 +90,4 @@ services:
 volumes:
   postgres_prod_data:
   redis_prod_data:
+  uploads_prod_data:

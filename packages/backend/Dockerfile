@@ -32,4 +32,7 @@ COPY --from=builder /repo/packages/shared ./packages/shared
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+# Run migrations explicitly before starting the server. If migrations fail,
+# the server does not start (fail-fast). The app also migrates on startup as
+# an idempotent fallback (drizzle tracks already-applied migrations).
+CMD ["sh", "-c", "node dist/migrate.js && node dist/main.js"]
