@@ -16,6 +16,22 @@ import { env } from './utils/env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = join(__filename, '..');
+const MAX_MIGRATION_ATTEMPTS = 5;
+
+async function migrateWithRetry() {
+  for (let attempt = 1; attempt <= MAX_MIGRATION_ATTEMPTS; attempt += 1) {
+    try {
+      await migrate(db, { migrationsFolder: join(__dirname, '../drizzle') });
+      return;
+    } catch (error) {
+      if (attempt === MAX_MIGRATION_ATTEMPTS) throw error;
+
+      const delay = attempt * 2000;
+      console.warn(`Database migration attempt ${attempt} failed; retrying in ${delay}ms.`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
 
 const app = Fastify({
   pluginTimeout: 30000,
@@ -271,7 +287,7 @@ app.setErrorHandler(async (error: any, request, reply) => {
 });
 
 try {
-  await migrate(db, { migrationsFolder: join(__dirname, '../drizzle') });
+  await migrateWithRetry();
   app.log.info('Database migrations completed');
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   app.log.info(`Server listening on ${env.API_URL || `http://localhost:${env.PORT}`}`);
