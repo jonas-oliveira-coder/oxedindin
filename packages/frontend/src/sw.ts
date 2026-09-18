@@ -1,7 +1,5 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from 'workbox-precaching';
-import { registerRoute, NavigationRoute } from 'workbox-routing';
-import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
+import { precacheAndRoute } from 'workbox-precaching';
 import { clientsClaim } from 'workbox-core';
 
 declare let self: ServiceWorkerGlobalScope;
@@ -9,21 +7,16 @@ declare let self: ServiceWorkerGlobalScope;
 self.skipWaiting();
 clientsClaim();
 
-cleanupOutdatedCaches();
+// O globPatterns do plugin está vazio, então NADA é pré-carregado/armazenado
+// em cache. O precacheAndRoute([...]) apenas garante o ponto de injeção do
+// workbox e, sem entradas, não oferece funcionalidade offline.
 precacheAndRoute(self.__WB_MANIFEST);
 
-// SPA navigation fallback (offline support).
-registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
-
-// Runtime caching for Google Fonts and avatar images.
-registerRoute(
-  ({ url }) => url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
-  new StaleWhileRevalidate({ cacheName: 'google-fonts' })
-);
-registerRoute(
-  ({ request }) => request.destination === 'image',
-  new CacheFirst({ cacheName: 'images' })
-);
+// Rede pura (sem cache/offline). O handler de fetch mantém o app instalável
+// como atalho no Chrome, mas sempre acessa a rede (nada de cache offline).
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
+});
 
 self.addEventListener('push', (event) => {
   const fallback = {
