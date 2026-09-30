@@ -17,15 +17,8 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, cardId, status } = request.query;
     const userId = request.authUser!.id;
 
-    const cardConditions = [eq(creditCard.userId, userId)];
-    if (cardId) cardConditions.push(eq(creditCard.id, cardId));
-    const cardIds = await app.db.select({ id: creditCard.id })
-      .from(creditCard)
-      .where(and(...cardConditions));
-
-    const cardIdArray = cardIds.map(c => c.id);
-
-    const conditions = [inArray(installmentPlan.cardId, cardIdArray)];
+    const conditions = [eq(installmentPlan.userId, userId)];
+    if (cardId) conditions.push(eq(installmentPlan.cardId, cardId));
     if (status) conditions.push(eq(installment.status, status));
 
     const [installmentsData, totalResult] = await Promise.all([
@@ -79,10 +72,18 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(eq(creditCard.userId, userId));
     const cardIdArray = cardIds.map(c => c.id);
 
+    if (cardIdArray.length === 0) {
+      return [];
+    }
+
     const planIds = await app.db.select({ id: installmentPlan.id })
       .from(installmentPlan)
       .where(inArray(installmentPlan.cardId, cardIdArray));
     const planIdArray = planIds.map(p => p.id);
+
+    if (planIdArray.length === 0) {
+      return [];
+    }
 
     const installmentsData = await app.db.select({
       installment,

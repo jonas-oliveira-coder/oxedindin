@@ -24,6 +24,13 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(...cardConditions));
     const cardIds = cardIdsData.map(c => c.id);
 
+    if (cardIds.length === 0) {
+      return {
+        data: [],
+        meta: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+
     const conditions = [inArray(invoice.cardId, cardIds)];
     if (status) conditions.push(eq(invoice.status, status));
 

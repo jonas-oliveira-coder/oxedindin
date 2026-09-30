@@ -273,10 +273,20 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(eq(creditCard.userId, userId));
     const cardIdArray = cardIds.map(c => c.id);
 
+    if (cardIdArray.length === 0) {
+      return [];
+    }
+
     const planIds = await app.db.select({ id: installmentPlan.id })
       .from(installmentPlan)
       .where(inArray(installmentPlan.cardId, cardIdArray));
     const planIdArray = planIds.map(p => p.id);
+
+    if (planIdArray.length === 0) {
+      return [];
+    }
+
+    const start = startDate ? new Date(startDate) : now;
 
     const installmentsData = await app.db.select({
       installment,
@@ -290,7 +300,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
       .where(and(
         inArray(installment.planId, planIdArray),
         inArray(installment.status, ['PENDING', 'OVERDUE']),
-        gte(installment.dueDate, now),
+        gte(installment.dueDate, start),
         lte(installment.dueDate, end)
       ))
       .orderBy(asc(installment.dueDate));

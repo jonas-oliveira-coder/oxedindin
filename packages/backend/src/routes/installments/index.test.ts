@@ -86,4 +86,16 @@ describe('installments routes', () => {
     });
     expect(res.statusCode).toBe(404);
   });
+
+  it('returns empty list when user has no credit cards or plans without SQL crash', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/installments' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual([]);
+  });
+
+  it('returns empty array on upcoming installments when user has no cards or plans', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/installments/upcoming' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([]);
+  });
 });
