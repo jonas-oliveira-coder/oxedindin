@@ -628,4 +628,41 @@ describe('transactions routes', () => {
     expect(res.statusCode).toBe(400);
     expect(db.all(transactionSplit)).toHaveLength(0);
   });
+
+  it('links transaction to invoice when creating a credit card expense', async () => {
+    const cardId = '44444444-4444-4444-8444-444444444444';
+    db.seed(creditCard, [{
+      id: cardId,
+      userId: TEST_USER_ID,
+      name: 'Cartão Crédito',
+      institution: 'Banco',
+      brand: 'MASTERCARD',
+      last4: '4321',
+      limitCents: 100000,
+      availableLimitCents: 100000,
+      closingDay: 10,
+      dueDay: 20,
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/transactions',
+      payload: {
+        description: 'Compra no Crédito',
+        amount: 15000,
+        type: 'EXPENSE',
+        paymentMethod: 'CREDIT_CARD',
+        cardId,
+        date: '2026-09-15',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const rows = db.all(transaction);
+    expect(rows[0].invoiceId).toBeDefined();
+    expect(rows[0].invoiceId).not.toBeNull();
+  });
 });

@@ -472,7 +472,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
           .where(eq(creditCard.id, cardId));
 
         await app.db.update(transaction)
-          .set({ installmentPlanId: null })
+          .set({ invoiceId: invoiceRecord.id })
           .where(eq(transaction.id, newTransaction.id));
       }
     }
