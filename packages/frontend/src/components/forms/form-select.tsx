@@ -5,6 +5,7 @@ import {
   SelectContent,
   SelectTrigger,
   SelectValue,
+  EMPTY_SELECT_VALUE,
 } from '@/components/ui/select';
 
 interface FormSelectProps<T extends FieldValues, TName extends Path<T>> {
@@ -32,7 +33,7 @@ export function FormSelect<T extends FieldValues, TName extends Path<T>>({
   return (
     <Select
       value={value}
-      onValueChange={(next) => field.onChange(next === '' ? undefined : (next as never))}
+      onValueChange={(next) => field.onChange(next === '' || next === EMPTY_SELECT_VALUE ? undefined : (next as never))}
       disabled={disabled}
     >
       <SelectTrigger error={error} className={className}>
