@@ -2,6 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, or, desc, asc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { dateInputSchema } from '../../types/schemas.js';
 import {
   sharedDebt, debt, user, person, sharedDebtPayment, sharedDebtEvent, notification,
 } from '../../db/schema/index.js';
@@ -344,7 +345,7 @@ const sharedDebtsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().uuid() }),
       body: z.object({
         amount: z.number().int().positive(),
-        paymentDate: z.string().datetime().optional(),
+        paymentDate: dateInputSchema.optional(),
         method: z.enum(PAYMENT_METHODS).optional(),
         notes: z.string().max(500).optional(),
       }),

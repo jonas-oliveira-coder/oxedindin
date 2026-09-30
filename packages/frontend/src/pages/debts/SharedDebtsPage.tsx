@@ -127,8 +127,12 @@ export function SharedDebtsPage() {
   const payMutation = useMutation({
     mutationFn: async () => {
       if (!payId) return;
+      const amountCents = Math.round(Number(form.amount) * 100);
+      if (!Number.isFinite(amountCents) || amountCents <= 0) {
+        throw new Error('Informe um valor válido maior que zero.');
+      }
       const res = await api.post(`/shared-debts/${payId}/pay`, {
-        amount: Number(form.amount),
+        amount: amountCents,
         paymentDate: form.paymentDate || undefined,
         method: form.method,
         notes: form.notes || undefined,

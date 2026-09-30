@@ -1,7 +1,7 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, gte, lte, asc, count, sql, desc } from 'drizzle-orm';
-import { createRecurringBillSchema, createBillSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
+import { createRecurringBillSchema, createBillSchema, paginationSchema, dateRangeSchema, dateInputSchema } from '../../types/schemas.js';
 import { recurringBill, bill, bankAccount, creditCard, category, transaction, user } from '../../db/schema/index.js';
 
 function getNextDueDate(frequency: string, dueDay: number, fromDate: Date): Date {
@@ -199,7 +199,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
         categoryId: z.string().uuid().nullable().optional(),
         frequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']).optional(),
         dueDay: z.number().int().min(1).max(31).optional(),
-        endDate: z.string().datetime().nullable().optional(),
+        endDate: dateInputSchema.nullable().optional(),
         accountId: z.string().uuid().nullable().optional(),
         cardId: z.string().uuid().nullable().optional(),
         status: z.enum(['ACTIVE', 'INACTIVE', 'ENDED']).optional(),
@@ -465,7 +465,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
         description: z.string().min(1).max(200).optional(),
         amount: z.number().int().positive().optional(),
         categoryId: z.string().uuid().nullable().optional(),
-        dueDate: z.string().datetime().optional(),
+        dueDate: dateInputSchema.optional(),
         paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).nullable().optional(),
         status: z.enum(['PENDING', 'PAID', 'OVERDUE', 'CANCELLED']).optional(),
         accountId: z.string().uuid().nullable().optional(),
@@ -528,7 +528,7 @@ const billsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().uuid() }),
       body: z.object({
         accountId: z.string().uuid().optional(),
-        date: z.string().datetime().optional(),
+        date: dateInputSchema.optional(),
         paymentMethod: z.enum(['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'PIX', 'BANK_TRANSFER', 'BOLETO', 'OTHER']).optional(),
       }),
     },

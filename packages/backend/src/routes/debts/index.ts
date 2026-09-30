@@ -2,7 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, gte, lte, desc, asc, count, sql, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { createDebtSchema, paginationSchema, dateRangeSchema } from '../../types/schemas.js';
+import { createDebtSchema, paginationSchema, dateRangeSchema, dateInputSchema } from '../../types/schemas.js';
 import { debt, person, sharedDebt, debtSplit, sharedDebtEvent, user, bankAccount, transaction, notification } from '../../db/schema/index.js';
 import { emailSchema } from '@oxedindin/shared';
 
@@ -220,7 +220,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       body: z.object({
         description: z.string().min(1).max(200).optional(),
         totalAmount: z.number().int().positive().optional(),
-        dueDate: z.string().datetime().optional(),
+        dueDate: dateInputSchema.optional(),
         type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']).optional(),
         relatedPersonId: z.string().uuid().nullable().optional(),
         notes: z.string().max(500).nullable().optional(),
@@ -283,7 +283,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       body: z.object({
         amount: z.number().int().positive(),
         accountId: z.string().uuid().optional(),
-        date: z.string().datetime().optional(),
+        date: dateInputSchema.optional(),
         notes: z.string().max(500).optional(),
       }),
     },
@@ -552,7 +552,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       body: z.object({
         description: z.string().min(1).max(200),
         totalAmount: z.number().int().positive(),
-        dueDate: z.string().datetime(),
+        dueDate: dateInputSchema,
         type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']),
         personId: z.string().uuid(),
         notes: z.string().max(500).optional(),
@@ -714,7 +714,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       body: z.object({
         description: z.string().min(1).max(200).optional(),
         totalAmount: z.number().int().positive().optional(),
-        dueDate: z.string().datetime().optional(),
+        dueDate: dateInputSchema.optional(),
         type: z.enum(['PERSONAL_LOAN', 'CREDIT_CARD', 'PURCHASE', 'BORROWED_MONEY', 'OTHER']).optional(),
         notes: z.string().max(500).nullable().optional(),
         status: z.enum(['ACTIVE', 'PAID', 'OVERDUE', 'CANCELLED', 'RENEGOTIATED']).optional(),
@@ -776,7 +776,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
       params: z.object({ id: z.string().uuid() }),
       body: z.object({
         amount: z.number().int().positive(),
-        date: z.string().datetime().optional(),
+        date: dateInputSchema.optional(),
         notes: z.string().max(500).optional(),
       }),
     },

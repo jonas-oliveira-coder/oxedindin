@@ -125,6 +125,22 @@ describe('shared-debts routes', () => {
     expect(db.all(notification)[0].userId).toBe(CREDITOR_ID);
   });
 
+  it('accepts civil date YYYY-MM-DD for shared debt payment date', async () => {
+    seedDebt(db);
+    seedShared(db, 'ACCEPTED', 5000);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/shared-debts/${SHARED_ID}/pay`,
+      payload: {
+        amount: 5000,
+        paymentDate: '2026-09-30',
+        method: 'PIX',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
   it('rejects a payment exceeding the debtor portion (400)', async () => {
     seedDebt(db);
     seedShared(db, 'ACCEPTED', 5000);
