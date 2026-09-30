@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -12,8 +11,10 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getStatusColor } from '@/lib/utils';
 import { CreditCard, Loader2, CalendarClock } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { positiveMoneyCentsSchema, uuidSchema } from '@oxedindin/shared';
+import { CurrencyInput } from '@/components/forms';
 
 interface Invoice {
   id: string;
@@ -52,8 +53,8 @@ const statusLabels: Record<string, string> = {
 };
 
 const paySchema = z.object({
-  amount: z.number().positive(),
-  accountId: z.string().uuid().optional(),
+  amount: positiveMoneyCentsSchema,
+  accountId: uuidSchema.optional().or(z.literal('')),
 });
 
 async function fetchInvoices(status?: string): Promise<Invoice[]> {
@@ -88,7 +89,13 @@ export function InvoicesPage() {
 
   const payMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: z.infer<typeof paySchema> }) => {
-      await api.post(`/invoices/${id}/pay`, data);
+      const payload: { amount: number; accountId?: string } = {
+        amount: data.amount,
+      };
+      if (data.accountId && data.accountId.trim() !== '') {
+        payload.accountId = data.accountId;
+      }
+      await api.post(`/invoices/${id}/pay`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
@@ -97,12 +104,17 @@ export function InvoicesPage() {
       toast({ title: 'Pagamento realizado', description: 'Fatura paga com sucesso.' });
       setPayingInvoice(null);
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error: unknown) =>
+      toast({
+        title: 'Erro ao pagar fatura',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      }),
   });
 
   const openPayDialog = (invoice: Invoice) => {
     setPayingInvoice(invoice);
-    payForm.reset({ amount: invoice.remaining.cents / 100, accountId: undefined });
+    payForm.reset({ amount: invoice.remaining.cents, accountId: '' });
   };
 
   const handlePay = (data: z.infer<typeof paySchema>) => {
@@ -222,16 +234,36 @@ export function InvoicesPage() {
           </DialogHeader>
           <form onSubmit={payForm.handleSubmit(handlePay)} className="space-y-4" noValidate>
             <div className="space-y-2">
-              <Label htmlFor="amount">Valor a pagar (R$)</Label>
-              <Input id="amount" type="number" step="0.01" min="0.01" {...payForm.register('amount', { valueAsNumber: true })} />
+              <Label htmlFor="amount">Valor a pagar</Label>
+              <Controller
+                name="amount"
+                control={payForm.control}
+                render={({ field }) => (
+                  <CurrencyInput
+                    id="amount"
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="R$ 0,00"
+                  />
+                )}
+              />
+              {payForm.formState.errors.amount && (
+                <p className="text-xs text-destructive">
+                  {payForm.formState.errors.amount.message}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="accountId">Conta (opcional)</Label>
-              <Select value={payForm.watch('accountId')} onValueChange={(value) => payForm.setValue('accountId', value)}>
+              <Select
+                value={payForm.watch('accountId') ?? ''}
+                onValueChange={(value) => payForm.setValue('accountId', value)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione uma conta" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="">Nenhuma</SelectItem>
                   {(accounts ?? []).map((acc) => (
                     <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
                   ))}
