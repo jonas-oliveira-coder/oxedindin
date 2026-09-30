@@ -199,4 +199,51 @@ describe('debts routes', () => {
 
     expect(res.statusCode).toBe(400);
   });
+
+  it('isolates debts to pay from debts owed to user', async () => {
+    const personId = '77777777-7777-4777-8777-777777777777';
+    db.seed(person, [{
+      id: personId,
+      userId: TEST_USER_ID,
+      name: 'Carlos',
+      type: 'INDIVIDUAL',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    // 1. Dívida a pagar (eu devo para Carlos)
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/debts',
+      payload: {
+        description: 'Devo a Carlos',
+        totalAmount: 10000,
+        dueDate: '2026-10-10',
+        type: 'PERSONAL_LOAN',
+        relatedPersonId: personId,
+      },
+    });
+
+    // 2. Dívida a receber (Carlos me deve)
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/debts/owed',
+      payload: {
+        description: 'Carlos me deve',
+        totalAmount: 20000,
+        dueDate: '2026-10-15',
+        type: 'PERSONAL_LOAN',
+        personId,
+      },
+    });
+
+    const debtsRes = await app.inject({ method: 'GET', url: '/api/v1/debts' });
+    const owedRes = await app.inject({ method: 'GET', url: '/api/v1/debts/owed' });
+
+    expect(debtsRes.json().data).toHaveLength(1);
+    expect(debtsRes.json().data[0].description).toBe('Devo a Carlos');
+
+    expect(owedRes.json().data).toHaveLength(1);
+    expect(owedRes.json().data[0].description).toBe('Carlos me deve');
+  });
 });

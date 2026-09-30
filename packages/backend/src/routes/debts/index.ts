@@ -1,6 +1,6 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { eq, and, gte, lte, desc, asc, count, sql, inArray } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, asc, count, sql, inArray, isNull } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { createDebtSchema, paginationSchema, dateRangeSchema, dateInputSchema } from '../../types/schemas.js';
 import { debt, person, sharedDebt, debtSplit, sharedDebtEvent, user, bankAccount, transaction, notification } from '../../db/schema/index.js';
@@ -47,7 +47,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, startDate, endDate, status, type } = request.query;
     const userId = request.authUser!.id;
 
-    const conditions = [eq(debt.userId, userId)];
+    const conditions = [eq(debt.userId, userId), isNull(debt.creditorId)];
     if (startDate) conditions.push(gte(debt.dueDate, new Date(startDate)));
     if (endDate) conditions.push(lte(debt.dueDate, new Date(endDate)));
     if (status) conditions.push(eq(debt.status, status));
@@ -474,7 +474,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
     const { page, limit, startDate, endDate, status } = request.query;
     const userId = request.authUser!.id;
 
-    const conditions = [eq(person.userId, userId)];
+    const conditions = [eq(debt.creditorId, userId)];
     if (startDate) conditions.push(gte(debt.dueDate, new Date(startDate)));
     if (endDate) conditions.push(lte(debt.dueDate, new Date(endDate)));
     if (status) conditions.push(eq(debt.status, status));
@@ -573,6 +573,7 @@ const debtsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     const [newDebt] = await app.db.insert(debt).values({
       userId,
+      creditorId: userId,
       description,
       totalAmountCents: totalAmount,
       paidAmountCents: 0n,

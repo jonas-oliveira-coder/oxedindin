@@ -337,7 +337,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
       })
         .from(debt)
         .leftJoin(person, eq(debt.relatedPersonId, person.id))
-        .where(and(eq(debt.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE'])))
+        .where(and(eq(debt.userId, userId), isNull(debt.creditorId), inArray(debt.status, ['ACTIVE', 'OVERDUE'])))
         .orderBy(asc(debt.dueDate)),
       app.db.select({
         debt,
@@ -345,7 +345,7 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
       })
         .from(debt)
         .innerJoin(person, eq(debt.relatedPersonId, person.id))
-        .where(and(eq(person.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE'])))
+        .where(and(eq(debt.creditorId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE'])))
         .orderBy(asc(debt.dueDate)),
     ]);
 
@@ -511,11 +511,10 @@ const reportsRoutes: FastifyPluginAsyncZod = async (app) => {
         .where(and(eq(bill.userId, userId), inArray(bill.status, ['PENDING', 'OVERDUE']))),
       app.db.select({ sum: sum(debt.remainingAmountCents) })
         .from(debt)
-        .where(and(eq(debt.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE']))),
+        .where(and(eq(debt.userId, userId), isNull(debt.creditorId), inArray(debt.status, ['ACTIVE', 'OVERDUE']))),
       app.db.select({ sum: sum(debt.remainingAmountCents) })
         .from(debt)
-        .innerJoin(person, eq(debt.relatedPersonId, person.id))
-        .where(and(eq(person.userId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE']))),
+        .where(and(eq(debt.creditorId, userId), inArray(debt.status, ['ACTIVE', 'OVERDUE']))),
       app.db.select({
         invoice,
         card: creditCard,
