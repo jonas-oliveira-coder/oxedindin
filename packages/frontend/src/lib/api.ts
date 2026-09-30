@@ -6,9 +6,6 @@ const API_URL = import.meta.env.VITE_API_URL ?? '';
 export const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
   withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
 const UNSAFE_METHODS = new Set(['post', 'put', 'patch', 'delete']);
@@ -32,6 +29,15 @@ async function ensureCsrfToken(): Promise<void> {
 
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      if (config.headers?.delete) {
+        config.headers.delete('Content-Type');
+        config.headers.delete('content-type');
+      } else if (config.headers) {
+        delete (config.headers as Record<string, unknown>)['Content-Type'];
+        delete (config.headers as Record<string, unknown>)['content-type'];
+      }
+    }
     if (UNSAFE_METHODS.has((config.method ?? '').toLowerCase())) {
       await ensureCsrfToken();
       const token = getCsrfToken();
@@ -59,7 +65,8 @@ const processQueue = (error: Error | null) => {
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const originalRequest = error?.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+    if (!originalRequest) return Promise.reject(error);
 
     const isRefreshRequest = originalRequest.url?.includes('/auth/refresh');
     if (error.response?.status === 401 && !originalRequest._retry && !isRefreshRequest) {
@@ -107,6 +114,10 @@ export function isApiError(error: unknown): error is AxiosError<ApiErrorBody> {
 
 export function getErrorMessage(error: unknown): string {
   if (isApiError(error)) {
+    const fields = error.response?.data?.error?.fields;
+    if (fields && Object.keys(fields).length > 0) {
+      return Object.values(fields).join(' ');
+    }
     return error.response?.data?.error?.message || 'Erro desconhecido.';
   }
   if (error instanceof Error) {

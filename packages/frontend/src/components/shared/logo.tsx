@@ -11,7 +11,7 @@ function isDark() {
   return document.documentElement.classList.contains('dark');
 }
 
-export function Logo({ className, variant = 'mark' }: LogoProps) {
+export function Logo({ className, variant: _variant = 'mark' }: LogoProps) {
   const [darkMode, setDarkMode] = useState(isDark);
 
   useEffect(() => {

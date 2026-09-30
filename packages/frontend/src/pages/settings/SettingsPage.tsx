@@ -97,9 +97,15 @@ export function SettingsPage() {
   });
 
   const settingsMutation = useMutation({
-    mutationFn: async (data: SettingsInput) => (await api.patch('/settings', data)).data,
-    onSuccess: () => {
+    mutationFn: async (data: SettingsInput) => (await api.patch('/settings', data)).data as Settings,
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      const isDark =
+        data.theme === 'dark' ||
+        (data.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      localStorage.setItem('drizzle-dark-mode', isDark.toString());
+      document.documentElement.classList.toggle('dark', isDark);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
       toast({ title: 'Preferências salvas', description: 'Suas preferências foram atualizadas.' });
     },
     onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),

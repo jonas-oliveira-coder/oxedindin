@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -98,7 +98,7 @@ export function NotificationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const markAllReadMutation = useMutation({
@@ -107,7 +107,7 @@ export function NotificationsPage() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       toast({ title: 'Tudo lido', description: 'Todas as notificações foram marcadas como lidas.' });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const prefsMutation = useMutation({
@@ -115,7 +115,7 @@ export function NotificationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notificationPreferences'] });
     },
-    onError: (error: Error) => toast({ title: 'Erro', description: error.message, variant: 'destructive' }),
+    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
   const togglePreference = (key: PreferenceKey, value: boolean) => {
