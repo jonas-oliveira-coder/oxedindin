@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api, getErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SecurityPage } from '@/pages/security/SecurityPage';
+import { CategoriesPage } from '@/pages/categories/CategoriesPage';
+import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -52,7 +57,7 @@ async function fetchPushPrefs(): Promise<NotificationPreferences> {
   return response.data;
 }
 
-export function SettingsPage() {
+export function ProfileSettingsTab({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const { user, refreshUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -184,10 +189,12 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Configurações</h1>
-        <p className="text-muted-foreground">Gerencie seu perfil e preferências do aplicativo</p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Configurações</h1>
+          <p className="text-muted-foreground">Gerencie seu perfil e preferências do aplicativo</p>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -351,6 +358,50 @@ export function SettingsPage() {
           <p className="text-sm text-muted-foreground">OxeDinDin — seu centro de controle financeiro pessoal.</p>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+export function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const validTabs = ['profile', 'security', 'categories', 'notifications'];
+  const currentTab = searchParams.get('tab') || 'profile';
+  const activeTab = validTabs.includes(currentTab) ? currentTab : 'profile';
+
+  const handleTabChange = (value: string) => {
+    setSearchParams({ tab: value }, { replace: true });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Configurações</h1>
+        <p className="text-muted-foreground">
+          Perfil, segurança, categorias e preferências de notificação
+        </p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 md:w-auto md:inline-grid">
+          <TabsTrigger value="profile">Perfil & Geral</TabsTrigger>
+          <TabsTrigger value="security">Segurança</TabsTrigger>
+          <TabsTrigger value="categories">Categorias</TabsTrigger>
+          <TabsTrigger value="notifications">Notificações</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="profile" className="mt-6">
+          <ProfileSettingsTab embedded />
+        </TabsContent>
+        <TabsContent value="security" className="mt-6">
+          <SecurityPage embedded />
+        </TabsContent>
+        <TabsContent value="categories" className="mt-6">
+          <CategoriesPage embedded />
+        </TabsContent>
+        <TabsContent value="notifications" className="mt-6">
+          <NotificationsPage embedded />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

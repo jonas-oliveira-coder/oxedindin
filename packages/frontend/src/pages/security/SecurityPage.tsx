@@ -56,7 +56,7 @@ async function fetchAuditLog(): Promise<AuditLog[]> {
   return response.data.data;
 }
 
-export function SecurityPage() {
+export function SecurityPage({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [generatedPassword, setGeneratedPassword] = useState('');
   const [genOptions, setGenOptions] = useState({ length: 16, uppercase: true, lowercase: true, numbers: true, symbols: true });
@@ -143,10 +143,12 @@ export function SecurityPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Segurança</h1>
-        <p className="text-muted-foreground">Gerencie sua segurança, sessões e credenciais</p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Segurança</h1>
+          <p className="text-muted-foreground">Gerencie sua segurança, sessões e credenciais</p>
+        </div>
+      )}
 
       <Card>
         <CardHeader>

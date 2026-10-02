@@ -52,7 +52,7 @@ async function initializeDefaults(): Promise<void> {
   await api.post('/categories/initialize-defaults');
 }
 
-export function CategoriesPage() {
+export function CategoriesPage({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -159,10 +159,17 @@ export function CategoriesPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Categorias</h1>
-          <p className="text-muted-foreground">Gerencie suas categorias de transações</p>
-        </div>
+        {embedded ? (
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Categorias</h2>
+            <p className="text-sm text-muted-foreground">Gerencie suas categorias de receitas e despesas</p>
+          </div>
+        ) : (
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Categorias</h1>
+            <p className="text-muted-foreground">Gerencie suas categorias de transações</p>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => initMutation.mutate()} loading={initMutation.isPending}>
             {!initMutation.isPending && <Sparkles className="mr-2 h-4 w-4" />}

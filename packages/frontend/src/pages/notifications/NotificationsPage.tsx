@@ -86,7 +86,7 @@ const preferenceGroups: Array<{ label: string; items: Array<{ key: PreferenceKey
   },
 ];
 
-export function NotificationsPage() {
+export function NotificationsPage({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [showPreferences, setShowPreferences] = useState(false);
 
@@ -144,13 +144,22 @@ export function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Notificações</h1>
-          <p className="text-muted-foreground">
-            {unreadCount > 0 ? `${unreadCount} não lida(s)` : 'Todas as notificações foram lidas'}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {embedded ? (
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Notificações</h2>
+            <p className="text-sm text-muted-foreground">
+              {unreadCount > 0 ? `${unreadCount} não lida(s)` : 'Todas as notificações foram lidas'}
+            </p>
+          </div>
+        ) : (
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Notificações</h1>
+            <p className="text-muted-foreground">
+              {unreadCount > 0 ? `${unreadCount} não lida(s)` : 'Todas as notificações foram lidas'}
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setShowPreferences((v) => !v)}>
             Preferências

@@ -14,9 +14,6 @@ import { TransactionsPage } from '@/pages/transactions/TransactionsPage';
 import { BillsPage } from '@/pages/bills/BillsPage';
 import { DebtsPage } from '@/pages/debts/DebtsPage';
 import { ReportsPage } from '@/pages/reports/ReportsPage';
-import { CategoriesPage } from '@/pages/categories/CategoriesPage';
-import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
-import { SecurityPage } from '@/pages/security/SecurityPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -83,9 +80,9 @@ function AppRoutes() {
         <Route path="/shared-debts" element={<Navigate to="/debts?tab=shared" replace />} />
         <Route path="/people" element={<Navigate to="/debts?tab=people" replace />} />
         <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/categories" element={<CategoriesPage />} />
-        <Route path="/notifications" element={<NotificationsPage />} />
-        <Route path="/security" element={<SecurityPage />} />
+        <Route path="/categories" element={<Navigate to="/settings?tab=categories" replace />} />
+        <Route path="/notifications" element={<Navigate to="/settings?tab=notifications" replace />} />
+        <Route path="/security" element={<Navigate to="/settings?tab=security" replace />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
 
