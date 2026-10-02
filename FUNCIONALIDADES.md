@@ -1,32 +1,37 @@
 # Manual de Funcionalidades e Menus do OxeDinDin
 
-O **OxeDinDin** é um gerenciador financeiro pessoal completo, seguro e moderno (*Secure by Design* e *Secure by Default*), desenvolvido com arquitetura web moderna (React, TypeScript, Tailwind CSS, Fastify, PostgreSQL via Drizzle ORM e Redis) e suporte a Progressive Web App (PWA).
+O **OxeDinDin** é um gerenciador financeiro pessoal completo, seguro e moderno (*Secure by Design* e *Secure by Default*), desenvolvido com arquitetura web moderna (React, TypeScript, Tailwind CSS, Fastify, PostgreSQL via Drizzle ORM e Radix UI) e suporte a Progressive Web App (PWA).
 
-Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades e regras de negócio** implementadas no sistema.
+A interface do usuário foi projetada em torno de **6 Hubs de Domínio Financeiro** organizados por abas (`Tabs` sincronizadas via URL `?tab=...`), eliminando duplicações e sobrecargas de menus e proporcionando um fluxo de trabalho ágil e coeso, com retrocompatibilidade total para rotas legadas via redirecionamento automático.
+
+Este documento detalha **cada hub**, **cada aba/tela** e **todas as funcionalidades e regras de negócio** implementadas no sistema.
 
 ---
 
 ## Sumário
 
 1. [Acesso e Autenticação](#1-acesso-e-autenticação)
-2. [Estrutura de Navegação e Layout Global](#2-estrutura-de-navegação-e-layout-global)
+2. [Estrutura de Navegação Global (Hubs de Domínio)](#2-estrutura-de-navegação-global-hubs-de-domínio)
 3. [Dashboard (Painel Principal)](#3-dashboard-painel-principal)
-4. [Contas Bancárias](#4-contas-bancárias)
-5. [Cartões de Crédito](#5-cartões-de-crédito)
-6. [Faturas de Cartão](#6-faturas-de-cartão)
-7. [Transações e Extrato Financeiro](#7-transações-e-extrato-financeiro)
-8. [Parcelamentos](#8-parcelamentos)
-9. [Contas a Pagar (Avulsas e Recorrentes)](#9-contas-a-pagar-avulsas-e-recorrentes)
-10. [Dívidas e Empréstimos](#10-dívidas-e-empréstimos)
-11. [Dívidas Compartilhadas (Módulo Bilateral)](#11-dívidas-compartilhadas-módulo-bilateral)
-12. [Pessoas e Contatos](#12-pessoas-e-contatos)
-13. [Relatórios e Inteligência Financeira](#13-relatórios-e-inteligência-financeira)
-14. [Categorias](#14-categorias)
-15. [Notificações e Preferências](#15-notificações-e-preferências)
-16. [Segurança, Sessões e Passkeys](#16-segurança-sessões-e-passkeys)
-17. [Configurações e Perfil](#17-configurações-e-perfil)
-18. [Recursos de Plataforma (PWA e Offline)](#18-recursos-de-plataforma-pwa-e-offline)
-19. [Mapeamento Técnico de Rotas da API (Backend)](#19-mapeamento-técnico-de-rotas-da-api-backend)
+4. [Hub de Contas & Cartões (`/accounts`)](#4-hub-de-contas--cartões-accounts)
+   - 4.1. Contas Bancárias (`?tab=accounts`)
+   - 4.2. Cartões de Crédito (`?tab=cards`)
+   - 4.3. Faturas de Cartão (`?tab=invoices`)
+   - 4.4. Parcelamentos (`?tab=installments`)
+5. [Transações e Extrato Financeiro (`/transactions`)](#5-transações-e-extrato-financeiro-transactions)
+6. [Contas a Pagar (Avulsas e Recorrentes) (`/bills`)](#6-contas-a-pagar-avulsas-e-recorrentes-bills)
+7. [Hub de Dívidas & Contatos (`/debts`)](#7-hub-de-dívidas--contatos-debts)
+   - 7.1. Dívidas e Empréstimos Pessoais (`?tab=personal`)
+   - 7.2. Dívidas Compartilhadas Bilaterais (`?tab=shared`)
+   - 7.3. Gestão de Pessoas e Contatos (`?tab=people`)
+8. [Relatórios e Inteligência Financeira (`/reports`)](#8-relatórios-e-inteligência-financeira-reports)
+9. [Hub de Configurações (`/settings`)](#9-hub-de-configurações-settings)
+   - 9.1. Perfil e Preferências Gerais (`?tab=profile`)
+   - 9.2. Segurança, Sessões e Passkeys (`?tab=security`)
+   - 9.3. Gestão de Categorias (`?tab=categories`)
+   - 9.4. Central de Notificações (`?tab=notifications`)
+10. [Recursos de Plataforma (PWA e Offline)](#10-recursos-de-plataforma-pwa-e-offline)
+11. [Mapeamento Técnico de Rotas da API (Backend)](#11-mapeamento-técnico-de-rotas-da-api-backend)
 
 ---
 
@@ -36,11 +41,11 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 - **Autenticação Tradicional por E-mail e Senha**:
   - Validação estrita via schema Zod e sanitização de dados.
   - Verificação de hash criptográfico de alta resistência utilizando **Argon2id**.
-  - Criação de sessão persistente no banco de dados e Redis, emitindo Access Token JWT (validade de 15 minutos) e Refresh Token (validade de 7 dias).
+  - Criação de sessão persistente no banco de dados PostgreSQL via Drizzle ORM, emitindo Access Token JWT (validade de 15 minutos) e Refresh Token (validade de 7 dias).
   - Proteção contra força bruta através de rate limiting global por IP e endpoint.
 - **Login sem Senha com Passkey (WebAuthn / Biometria / FIDO2)**:
   - Permite entrar com Touch ID, Face ID, Windows Hello ou chaves físicas de segurança (YubiKey).
-  - Fluxo em dois passos: requisição de desafio criptográfico (`/api/v1/auth/passkey/login/start`) e validação da assinatura da credencial (`/api/v1/auth/passkey/login/finish`).
+  - Fluxo em dois passos: requisição de desafio criptográfico com expiração em memória (`/api/v1/auth/passkey/login/start`) e validação da assinatura da credencial (`/api/v1/auth/passkey/login/finish`).
 - **Recuperação de Senha**:
   - Link direto para fluxo de solicitação e redefinição de senha com token temporário e revogação de sessões antigas.
 - **Redirecionamento Inteligente**:
@@ -55,30 +60,44 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 
 ---
 
-## 2. Estrutura de Navegação e Layout Global
+## 2. Estrutura de Navegação Global (Hubs de Domínio)
+
+Para prevenir dispersão e duplicação na experiência do usuário, a navegação do OxeDinDin foi consolidada em torno de **6 domínios centrais** mais o Dashboard executivo. Cada hub reúne módulos afins sob navegação instantânea em abas com sincronização na URL:
+
+1. **Dashboard** (`/dashboard`): Visão executiva consolidada.
+2. **Transações** (`/transactions`): Extrato e lançamentos.
+3. **Contas & Cartões** (`/accounts`): Hub com Contas, Cartões, Faturas e Parcelamentos.
+4. **Contas a Pagar** (`/bills`): Despesas avulsas e recorrentes.
+5. **Dívidas & Contatos** (`/debts`): Hub com Dívidas Pessoais, Compartilhadas e Pessoas.
+6. **Relatórios** (`/reports`): Gráficos analíticos e fluxo de caixa.
+7. **Configurações** (`/settings`): Hub com Perfil/Geral, Segurança, Categorias e Notificações.
 
 ### 2.1. Barra Lateral (Sidebar Desktop)
 - Visível em telas grandes (desktop e tablets horizontais).
 - Exibe o logotipo oficial do OxeDinDin.
-- Links diretos com destaque visual do menu ativo (`NavLink`).
-- Badge de notificação com contador dinâmico em tempo real de mensagens não lidas no menu **Notificações**.
+- 7 links de alto nível para os domínios centrais com destaque visual do menu ativo (`NavLink`).
+- Badge de notificação no hub de **Configurações** quando houver notificações não lidas.
 - Rodapé com identificação do usuário conectado (foto/avatar, nome e e-mail).
-- Menu suspenso de conta:
-  - Atalho para a página de **Configurações**.
-  - Alternador rápido de **Modo Claro / Modo Escuro**.
-  - Botão de **Sair (Logout)** que revoga a sessão no backend e limpa os tokens do cliente.
+- Menu suspenso de conta com atalho para Configurações, alternador Claro/Escuro e botão de Logout.
 
-### 2.2. Gaveta de Navegação Mobile (Drawer)
-- Menu retrátil responsivo para dispositivos móveis acionado pelo ícone hambúrguer no cabeçalho.
-- Suporte a fechamento pelo botão de fechar, clique no backdrop ou tecla `Escape`.
+### 2.2. Cabeçalho Superior (Header Global)
+- Botão hambúrguer no mobile para abertura do Drawer.
+- Ícone de Notificações com **Badge contador em tempo real** no canto superior direito, dando acesso rápido à aba de notificações a partir de qualquer tela da aplicação.
 
-### 2.3. Barra Inferior de Navegação Rápida (Mobile Bottom Bar)
-- Fixa na parte inferior de celulares para ergonomia móvel:
-  1. **Dashboard**
-  2. **Dívidas**
-  3. **Transações**
-  4. **Notificações** (com badge de não lidas)
-  5. **Mais** (abre a gaveta lateral com os demais menus)
+### 2.3. Gaveta de Navegação Mobile (Drawer)
+- Menu retrátil responsivo para dispositivos móveis acionado pelo ícone hambúrguer no cabeçalho ou pelo botão "Mais" da barra inferior.
+- Contém a navegação completa para todos os hubs e opções da conta.
+
+### 2.4. Barra Inferior de Navegação Rápida (Mobile Bottom Bar)
+- Fixa na parte inferior de celulares para ergonomia com o polegar:
+  1. **Início** (`/dashboard`)
+  2. **Transações** (`/transactions`)
+  3. **Contas** (`/accounts`)
+  4. **Dívidas** (`/debts`)
+  5. **Mais** (abre a gaveta lateral completa com Contas a Pagar, Relatórios, Configurações e Logout)
+
+### 2.5. Retrocompatibilidade Total de Rotas
+- Links externos, favoritos ou referências a rotas antigas (`/cards`, `/invoices`, `/installments`, `/shared-debts`, `/people`, `/categories`, `/notifications`, `/security`) continuam funcionando com redirecionamento automático (`Navigate replace`) diretamente para a aba correspondente do respectivo hub.
 
 ---
 
@@ -112,12 +131,13 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 
 ---
 
-## 4. Contas Bancárias
+## 4. Hub de Contas & Cartões (`/accounts`)
 
-**Rota**: `/accounts`  
-**Objetivo**: Gerenciar contas em bancos tradicionais, carteiras digitais e instituições financeiras.
+**Rota Principal**: `/accounts`  
+**Objetivo**: Centralizar toda a gestão bancária, limites de crédito, ciclos de fatura e planos de parcelamento em um único hub integrado com 4 abas e sincronização por URL (`?tab=...`). As rotas legadas `/cards`, `/invoices` e `/installments` são automaticamente redirecionadas para suas respectivas abas neste hub.
 
-### Funcionalidades:
+### 4.1. Aba: Contas Bancárias (`?tab=accounts`)
+
 - **Listagem de Contas**:
   - Exibe nome da conta, banco/instituição financeira, tipo, agência, número, saldo atual consolidado e status (`Ativa` ou `Inativa`).
 - **Cadastrar Nova Conta**:
@@ -139,14 +159,8 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 - **Regra de Saldo**:
   - O saldo é recalculado pelo backend com base no saldo inicial somado às receitas e transferências de entrada, e subtraído de despesas, pagamentos e transferências de saída.
 
----
+### 4.2. Aba: Cartões de Crédito (`?tab=cards`)
 
-## 5. Cartões de Crédito
-
-**Rota**: `/cards`  
-**Objetivo**: Controle de limites, bandeiras e datas de fechamento e vencimento de cartões de crédito.
-
-### Funcionalidades:
 - **Visualização em Cartão Interativo**:
   - Layout visual imitando um cartão de crédito com identificação da bandeira, instituição e últimos 4 dígitos.
   - Indicador numérico de Limite Total e Limite Disponível.
@@ -168,14 +182,8 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 - **Excluir Cartão**:
   - Remoção com confirmação de segurança.
 
----
+### 4.3. Aba: Faturas de Cartão (`?tab=invoices`)
 
-## 6. Faturas de Cartão
-
-**Rota**: `/invoices`  
-**Objetivo**: Acompanhamento dos ciclos de faturas, verificação de gastos e liquidação de saldos de cartão.
-
-### Funcionalidades:
 - **Filtro de Faturas por Status**:
   - Todas as faturas.
   - Abertas (`OPEN`).
@@ -194,9 +202,26 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
     - Seleção opcional da conta bancária de onde o valor será debitado.
   - Gera automaticamente a baixa no saldo da fatura e o registro de saída no extrato bancário.
 
+### 4.4. Aba: Parcelamentos (`?tab=installments`)
+
+- **Listagem Agrupada por Plano de Parcelamento**:
+  - Exibe cada plano de compra (ex: "Geladeira Nova - 10x"), total da compra, cartão utilizado e o status de cada uma das parcelas.
+- **Registrar Nova Compra Parcelada**:
+  - *Descrição da compra*.
+  - *Valor total da compra*.
+  - *Quantidade de parcelas* (de 1 até 60 parcelas).
+  - *Data da compra* e *Data da primeira fatura*.
+  - *Cartão de crédito* de destino.
+  - *Categoria* da compra.
+  - O sistema gera automaticamente todas as parcelas futuras distribuídas cronologicamente nas faturas correspondentes.
+- **Pagamento Individual de Parcela**:
+  - Permite dar baixa ou antecipar uma parcela individualmente, com opção de selecionar a conta bancária para debitar o valor.
+- **Cancelamento de Plano de Parcelamento**:
+  - Cancela todas as parcelas pendentes daquele plano e libera proporcionalmente o limite comprometido no cartão.
+
 ---
 
-## 7. Transações e Extrato Financeiro
+## 5. Transações e Extrato Financeiro (`/transactions`)
 
 **Rota**: `/transactions`  
 **Objetivo**: Extrato financeiro unificado, registro de lançamentos diários e divisão colaborativa de gastos.
@@ -232,30 +257,7 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 
 ---
 
-## 8. Parcelamentos
-
-**Rota**: `/installments`  
-**Objetivo**: Gestão de compras a prazo divididas em várias prestações no cartão de crédito.
-
-### Funcionalidades:
-- **Listagem Agrupada por Plano de Parcelamento**:
-  - Exibe cada plano de compra (ex: "Geladeira Nova - 10x"), total da compra, cartão utilizado e o status de cada uma das parcelas.
-- **Registrar Nova Compra Parcelada**:
-  - *Descrição da compra*.
-  - *Valor total da compra*.
-  - *Quantidade de parcelas* (de 1 até 60 parcelas).
-  - *Data da compra* e *Data da primeira fatura*.
-  - *Cartão de crédito* de destino.
-  - *Categoria* da compra.
-  - O sistema gera automaticamente todas as parcelas futuras distribuídas cronologicamente nas faturas correspondentes.
-- **Pagamento Individual de Parcela**:
-  - Permite dar baixa ou antecipar uma parcela individualmente, com opção de selecionar a conta bancária para debitar o valor.
-- **Cancelamento de Plano de Parcelamento**:
-  - Cancela todas as parcelas pendentes daquele plano e libera proporcionalmente o limite comprometido no cartão.
-
----
-
-## 9. Contas a Pagar (Avulsas e Recorrentes)
+## 6. Contas a Pagar (Avulsas e Recorrentes) (`/bills`)
 
 **Rota**: `/bills`  
 **Objetivo**: Gerenciar contas de consumo, boletos e assinaturas periódicas.
@@ -287,67 +289,45 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 
 ---
 
-## 10. Dívidas e Empréstimos
+## 7. Hub de Dívidas & Contatos (`/debts`)
 
-**Rota**: `/debts`  
-**Objetivo**: Controle de obrigações assumidas com terceiros e créditos a receber de contatos.
+**Rota Principal**: `/debts`  
+**Objetivo**: Centralizar o controle de obrigações assumidas, créditos com terceiros, conciliação bilateral compartilhada e catálogo de contatos em um único hub com 3 abas sincronizadas via URL (`?tab=...`). As rotas legadas `/shared-debts` e `/people` redirecionam automaticamente para suas respectivas abas neste hub.
 
-### Funcionalidades divididas em duas abas:
+### 7.1. Aba: Dívidas e Empréstimos Pessoais (`?tab=personal`)
 
-#### Aba 1: Dívidas a Pagar
-- **Registro de Dívidas**:
-  - Descrição da pendência.
-  - Valor total devido.
-  - Data de vencimento prevista.
-  - Tipo de dívida: Empréstimo Pessoal (`PERSONAL_LOAN`), Cartão de Crédito (`CREDIT_CARD`), Compra (`PURCHASE`), Dinheiro Emprestado (`BORROWED_MONEY`) ou Outro (`OTHER`).
-  - Pessoa credora (vinculada aos contatos).
-  - Observações.
-- **Amortização / Pagamento**:
-  - Botão para amortizar ou liquidar a dívida, informando o valor pago.
-- **Dividir Dívida (`Split`)**:
-  - Ratear a dívida com outras pessoas da sua lista de contatos.
-- **Compartilhar Dívida (`Share`)**:
-  - Envia convite por e-mail para que outro usuário do OxeDinDin acompanhe a dívida bilateralmente no módulo de **Dívidas Compartilhadas**.
+- **Visão de Dívidas a Pagar**:
+  - *Registro de Dívidas*: Descrição, valor total devido, vencimento previsto, tipo (Empréstimo Pessoal, Cartão, Compra, etc.), pessoa credora vinculada e notas.
+  - *Amortização / Pagamento*: Botão para amortizar ou quitar integralmente a dívida informando o valor pago.
+  - *Dividir Dívida (`Split`)*: Ratear a dívida com outras pessoas da sua lista de contatos.
+  - *Compartilhar Dívida (`Share`)*: Envia convite por e-mail para que outro usuário do OxeDinDin acompanhe a dívida bilateralmente no módulo de Dívidas Compartilhadas.
+- **Visão de Valores a Receber (Créditos)**:
+  - *Registro de Valores a Cobrar*: Quantias emprestadas a terceiros com data combinada de devolução e contato devedor.
+  - *Baixa de Recebimento*: Registro de recebimentos parciais ou totais.
 
-#### Aba 2: Valores a Receber (Créditos)
-- **Registro de Valores a Cobrar**:
-  - Registro de quantias emprestadas a parentes, amigos ou clientes.
-  - Descrição, valor, data combinada para devolução, contato devedor e notas.
-- **Baixa de Recebimento**:
-  - Registro de pagamentos recebidos (totais ou parciais).
+### 7.2. Aba: Dívidas Compartilhadas Bilaterais (`?tab=shared`)
 
----
-
-## 11. Dívidas Compartilhadas (Módulo Bilateral)
-
-**Rota**: `/shared-debts`  
 **Objetivo**: Gestão colaborativa em tempo real entre dois usuários da plataforma OxeDinDin.
 
-### Papéis Suportados:
-- **Como Devedor (`role: debtor`)**: Dívidas onde o usuário logado é o responsável pelo pagamento.
-- **Como Credor (`role: creditor`)**: Dívidas onde o usuário logado é quem tem direito ao recebimento.
+- **Papéis Suportados**:
+  - *Como Devedor (`role: debtor`)*: Dívidas onde o usuário logado é o responsável pelo pagamento.
+  - *Como Credor (`role: creditor`)*: Dívidas onde o usuário logado é quem tem direito ao recebimento.
+- **Ciclo de Estados da Dívida Compartilhada**:
+  1. `PENDING`: O credor cadastrou e enviou o convite; aguardando resposta do devedor.
+  2. `ACCEPTED`: O devedor aceitou e reconheceu a dívida.
+  3. `PAYMENT_REPORTED`: O devedor realizou o pagamento e notificou o credor no sistema (informando valor, data do pagamento, método utilizado como PIX/Dinheiro/Boleto e notas explicativas).
+  4. `PAYMENT_CONFIRMED`: O credor conferiu sua conta bancária e confirmou o recebimento, quitando ou amortizando a dívida.
+  5. `PAYMENT_VERIFYING`: Pagamento sob verificação ou contestação por divergência.
+  6. `REJECTED`: O devedor recusou o convite por não reconhecer o valor.
+  7. `CANCELLED`: O credor cancelou o compartilhamento da dívida.
+- **Recursos**:
+  - *Linha do Tempo e Trilha de Auditoria*: Registro completo de quem realizou cada ação (criação, aceite, aviso de pagamento e confirmação) com data e hora.
+  - *Notificações Integradas*: Cada alteração de status gera notificações imediatas no app e push para a outra parte.
 
-### Ciclo de Estados da Dívida Compartilhada:
-1. `PENDING`: O credor cadastrou e enviou o convite; aguardando resposta do devedor.
-2. `ACCEPTED`: O devedor aceitou e reconheceu a dívida.
-3. `PAYMENT_REPORTED`: O devedor realizou o pagamento e notificou o credor no sistema (informando valor, data do pagamento, método utilizado como PIX/Dinheiro/Boleto e notas explicativas).
-4. `PAYMENT_CONFIRMED`: O credor conferiu sua conta bancária e confirmou o recebimento, quitando ou amortizando a dívida.
-5. `PAYMENT_VERIFYING`: Pagamento sob verificação ou contestação por divergência.
-6. `REJECTED`: O devedor recusou o convite por não reconhecer o valor.
-7. `CANCELLED`: O credor cancelou o compartilhamento da dívida.
+### 7.3. Aba: Pessoas e Contatos (`?tab=people`)
 
-### Recursos:
-- **Linha do Tempo e Trilha de Auditoria**: Registro completo de quem realizou cada ação (criação, aceite, aviso de pagamento e confirmação) com data e hora.
-- **Notificações Integradas**: Cada alteração de status gera notificações imediatas no app e push para a outra parte.
-
----
-
-## 12. Pessoas e Contatos
-
-**Rota**: `/people`  
 **Objetivo**: Catálogo central de contatos (Pessoas Físicas e Jurídicas) associados a despesas, dívidas e divisões.
 
-### Funcionalidades:
 - **Listagem de Contatos**:
   - Cartões exibindo nome, tipo (Pessoa Física ou Pessoa Jurídica), e-mail, telefone formatado, documento (CPF ou CNPJ) e observações.
 - **Cadastrar Nova Pessoa com Vínculo Financeiro Rápido**:
@@ -357,13 +337,13 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
     - Uma dívida que ela deve pagar ao usuário (`RESPONSIBLE_OWED`).
     - Uma divisão de dívida existente (`SPLIT`).
 - **Botão "Vincular a Dívida"**:
-  - Presente em cada card de contato, permite vincular uma obrigação ou crédito a qualquer momento sem sair da tela de pessoas.
+  - Presente em cada card de contato, permite vincular uma obrigação ou crédito a qualquer momento sem sair da tela.
 - **Editar e Excluir**:
   - Manutenção completa dos dados do contato.
 
 ---
 
-## 13. Relatórios e Inteligência Financeira
+## 8. Relatórios e Inteligência Financeira (`/reports`)
 
 **Rota**: `/reports`  
 **Objetivo**: Análise gráfica e estatística do comportamento financeiro para tomada de decisões.
@@ -382,118 +362,61 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 
 ---
 
-## 14. Categorias
+## 9. Hub de Configurações (`/settings`)
 
-**Rota**: `/categories`  
-**Objetivo**: Estruturar a classificação de receitas e despesas.
+**Rota Principal**: `/settings`  
+**Objetivo**: Centralizar perfil, credenciais, segurança, passkeys, categorias e notificações em um único hub integrado com 4 abas e sincronização por URL (`?tab=...`). As rotas legadas `/security`, `/categories` e `/notifications` redirecionam automaticamente para suas respectivas abas.
 
-### Funcionalidades:
-- **Listagem de Categorias**:
-  - Exibe categorias do sistema e categorias personalizadas do usuário com ícone representativo e tag com cor personalizada.
-- **Distinção entre Padrão e Personalizada**:
-  - Categorias padrão do sistema são identificadas para manter integridade dos relatórios.
-- **Cadastrar Nova Categoria**:
-  - *Nome da categoria* (ex: "Assinaturas de Software", "PET").
-  - *Ícone* representativo.
-  - *Cor em Hexadecimal* (com validação estrita no formato `#RRGGBB`).
-- **Editar Categoria**:
-  - Permite alterar nome, ícone e cor.
-- **Excluir Categoria**:
-  - Permite remover categorias customizadas criadas pelo usuário.
+### 9.1. Aba: Perfil e Preferências Gerais (`?tab=profile`)
+
+- **Perfil do Usuário**:
+  - Atualização do Nome do usuário e exibição do e-mail.
+  - *Upload de Foto de Perfil (Avatar)* com validação estrita (JPG, PNG, WebP até 2 MB) e suporte a remoção.
+- **Preferências de Interface e Sistema**:
+  - *Tema*: Claro (`light`), Escuro (`dark`) ou Automático do Sistema (`system`).
+  - *Idioma*: Português do Brasil (`pt-BR`).
+  - *Moeda*: Real Brasileiro (`BRL`).
+  - *Primeiro Dia da Semana*: Domingo ou Segunda-feira.
+- **Notificações Push Web & Instalação**:
+  - Ativação rápida de notificações push no navegador.
+  - Botão de instalação PWA e atualização do app.
+- **Seção "Sobre"**:
+  - Versão da plataforma e dados informativos.
+
+### 9.2. Aba: Segurança, Sessões e Passkeys (`?tab=security`)
+
+- **Alteração de Senha**:
+  - Exige validação da senha atual e nova senha. A alteração revoga automaticamente as outras sessões ativas do usuário.
+- **Gerador de Senhas Seguras Embutido**:
+  - Geração de senhas fortes com tamanho configurável, caracteres especiais e cópia com um clique.
+- **Gerenciamento de Passkeys (WebAuthn / Biometria / FIDO2)**:
+  - Registro de biometria ou chave física (Touch ID, Face ID, Windows Hello, YubiKey).
+  - Listagem com data de criação e último uso, além de revogação a qualquer momento.
+- **Monitoramento de Dispositivos e Sessões Ativas**:
+  - Lista de sessões persistentes no banco com IP, User-Agent, data de expiração, identificação da sessão atual e encerramento remoto de outras sessões.
+- **Log de Auditoria de Segurança**:
+  - Trilha imutável de eventos relevantes (login, logout, troca de senha, passkey, revogações).
+
+### 9.3. Aba: Gestão de Categorias (`?tab=categories`)
+
+- **Listagem e Organização**:
+  - Categorias padrão do sistema e categorias personalizadas pelo usuário, com cores e ícones customizáveis.
+- **Cadastrar / Editar / Excluir Categoria**:
+  - Nome, ícone e código de cor hexadecimal (`#RRGGBB`).
 - **Inicializar Categorias Padrão**:
-  - Botão com ação de inicialização (`POST /categories/initialize-defaults`) que recria o conjunto base de categorias financeiras (Alimentação, Transporte, Moradia, Saúde, Lazer, Educação, etc.) caso o usuário deseje restaurá-las.
+  - Botão de restauração do catálogo padrão de categorias financeiras.
 
----
+### 9.4. Aba: Central de Notificações (`?tab=notifications`)
 
-## 15. Notificações e Preferências
-
-**Rota**: `/notifications`  
-**Objetivo**: Central de avisos e personalização das regras de disparo de alertas.
-
-### Funcionalidades:
-- **Caixa de Entrada de Notificações**:
-  - Listagem cronológica com status visual de mensagem lida ou não lida.
-  - Botão para marcar notificação individual como lida.
-  - Botão global "Marcar todas como lidas".
+- **Caixa de Entrada**:
+  - Mensagens informativas com status lida/não lida e botão "Marcar todas como lidas".
 - **Painel de Preferências Granular**:
-  - **Gatilhos Financeiros Configuráveis (Ativar/Desativar)**:
-    - *Fatura próxima do vencimento*
-    - *Fatura vencida*
-    - *Conta próxima do vencimento*
-    - *Conta vencida*
-    - *Parcela próxima do vencimento*
-    - *Dívida próxima do vencimento*
-    - *Nova dívida compartilhada*
-    - *Dívida compartilhada atualizada*
-    - *Pagamento recebido*
-    - *Alerta de segurança da conta*
-  - **Canais de Notificação**:
-    - *Notificações no Aplicativo* (`inAppEnabled`)
-    - *Notificações por E-mail* (`emailEnabled`)
-    - *Notificações Push no Navegador/Celular* (`pushEnabled`)
+  - Ativação ou desativação de 10 gatilhos financeiros (faturas, contas, parcelas, dívidas, pagamentos e alertas de segurança).
+  - Controle de canais de entrega: no aplicativo (`inApp`), por e-mail (`email`) e push no navegador (`push`).
 
 ---
 
-## 16. Segurança, Sessões e Passkeys
-
-**Rota**: `/security`  
-**Objetivo**: Controle rigoroso da segurança da conta, credenciais, sessões ativas e biometria.
-
-### Funcionalidades:
-1. **Alteração de Senha**:
-   - Exige digitação da senha atual e nova senha conforme regras de complexidade.
-   - Ao alterar a senha com sucesso, o backend revoga automaticamente todas as demais sessões ativas do usuário por segurança.
-2. **Gerador de Senhas Seguras Embutido**:
-   - Ferramenta para geração de senhas de alta entropia.
-   - Opções configuráveis: Comprimento da senha (ex: 16 caracteres), inclusão de letras maiúsculas, minúsculas, números e símbolos especiais.
-   - Botão para copiar a senha gerada com um clique para a área de transferência.
-3. **Gerenciamento de Passkeys (WebAuthn / Biometria)**:
-   - Permite registrar a biometria do dispositivo (Touch ID, Face ID, Windows Hello) ou chave de segurança de hardware.
-   - Listagem das chaves cadastradas com nome, data de criação e data do último uso.
-   - Opção para revogar e excluir chaves individuais a qualquer momento.
-4. **Monitoramento de Dispositivos e Sessões Ativas**:
-   - Exibe todos os navegadores e dispositivos conectados à conta com:
-     - Nome do dispositivo / sistema operacional.
-     - Endereço IP de origem.
-     - Data e hora de criação da sessão.
-     - Data de expiração.
-     - Destaque identificando a **Sessão Atual**.
-   - Botão para **Desconectar/Encerrar Sessão** remotamente em qualquer outro dispositivo.
-5. **Log de Auditoria de Segurança**:
-   - Registro detalhado e imutável de eventos de segurança da conta (como logins efetuados, logouts, trocas de senha, registros de passkey e revogações de sessões) contendo carimbo de data/hora e identificador do agente.
-
----
-
-## 17. Configurações e Perfil
-
-**Rota**: `/settings`  
-**Objetivo**: Personalização da experiência de uso, dados do perfil do usuário e preferências regionais.
-
-### Funcionalidades:
-1. **Perfil do Usuário**:
-   - Atualização do Nome do usuário.
-   - Visualização do e-mail cadastrado.
-   - **Upload de Foto de Perfil (Avatar)**:
-     - Seleção de arquivos de imagem (formatos suportados: JPG, PNG ou WebP até 2 MB).
-     - Validação de cabeçalho e tipo MIME no cliente e no servidor.
-     - Pré-visualização instantânea da foto selecionada.
-     - Botão para remover a foto de perfil personalizada (restaurando as iniciais padrão).
-2. **Preferências de Interface e Sistema**:
-   - **Tema**: Claro (`light`), Escuro (`dark`) ou Automático do Sistema (`system`).
-   - **Idioma**: Português do Brasil (`pt-BR`).
-   - **Moeda**: Real Brasileiro (`BRL`).
-   - **Primeiro Dia da Semana**: Domingo ou Segunda-feira (ajustando a renderização de calendários e análises).
-3. **Notificações Push Web**:
-   - Switch para habilitar ou desabilitar o recebimento de notificações push no navegador ou celular através de integração com o Service Worker.
-4. **Instalação do Aplicativo (PWA)**:
-   - Botão para instalar o aplicativo no celular ou computador desktop.
-   - Botão para atualizar o cache do aplicativo quando houver nova versão.
-5. **Seção "Sobre"**:
-   - Dados descritivos da versão da plataforma.
-
----
-
-## 18. Recursos de Plataforma (PWA e Offline)
+## 10. Recursos de Plataforma (PWA e Offline)
 
 - **Progressive Web App (PWA)**:
   - Totalmente instalável na tela inicial do Android, iOS, Windows, macOS e Linux.
@@ -505,7 +428,7 @@ Este documento detalha **cada menu**, **cada tela** e **todas as funcionalidades
 
 ---
 
-## 19. Mapeamento Técnico de Rotas da API (Backend)
+## 11. Mapeamento Técnico de Rotas da API (Backend)
 
 Todas as rotas da API são prefixadas com `/api/v1/` e utilizam validação estrita via schemas Zod (`fastify-type-provider-zod`).
 

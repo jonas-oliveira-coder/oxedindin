@@ -14,13 +14,12 @@ O projeto possui:
 - API REST em Fastify;
 - frontend React com Vite;
 - PostgreSQL com Drizzle ORM;
-- Redis;
 - imagens Docker para backend e frontend;
 - pipeline de testes, build e publicacao no GitHub Actions.
 
 Repositorio publico: [github.com/jonas-oliveira-coder/oxedindin](https://github.com/jonas-oliveira-coder/oxedindin)
 
-> **Documentação Completa de Menus e Funções:** Consulte o arquivo [FUNCIONALIDADES.md](FUNCIONALIDADES.md) para o detalhamento completo de cada tela, menu, fluxo de negócio e endpoints do OxeDinDin.
+> **Documentação Completa de Menus e Funções:** Consulte o arquivo [FUNCIONALIDADES.md](FUNCIONALIDADES.md) para o detalhamento completo dos 6 Hubs de Domínio da aplicação, cada tela, menu, fluxo de negócio e endpoints do OxeDinDin.
 
 ### Fluxo de acesso
 
@@ -34,9 +33,9 @@ Repositorio publico: [github.com/jonas-oliveira-coder/oxedindin](https://github.
 
 | Camada | Tecnologia |
 |---|---|
-| Frontend | React, TypeScript, Vite, Tailwind CSS, Radix UI |
+| Frontend | React, TypeScript, Vite, Tailwind CSS, Radix UI (6 Hubs de Domínio) |
 | Backend | Node.js 20, Fastify, TypeScript |
-| Dados | PostgreSQL, Drizzle ORM, Redis |
+| Dados | PostgreSQL, Drizzle ORM |
 | Autenticacao | JWT, sessoes persistidas, Argon2id e WebAuthn/Passkey |
 | Validacao | Zod, Fastify Type Provider e AJV |
 | Infraestrutura | Docker, Nginx no container frontend, GHCR e Coolify |
@@ -49,12 +48,12 @@ Repositorio publico: [github.com/jonas-oliveira-coder/oxedindin](https://github.
 - Node.js 20 ou superior;
 - npm 10 ou superior;
 - Docker e Docker Compose;
-- PostgreSQL 16 e Redis 7, ou os servicos do Compose.
+- PostgreSQL 16 ou o servico do Compose.
 
 ```bash
 cp .env.example .env
 npm install
-docker compose up -d postgres redis
+docker compose up -d postgres
 npm run db:migrate
 npm run dev
 ```
