@@ -10,15 +10,9 @@ import { Logo } from '@/components/shared/logo';
 import {
   LayoutDashboard,
   CreditCard,
-  FileText,
   Receipt,
-  ListChecks,
-  DollarSign,
   Users,
   BarChart3,
-  Tags,
-  Bell,
-  Shield,
   Settings,
   LogOut,
   Menu,
@@ -26,32 +20,26 @@ import {
   Moon,
   Sun,
   MoreHorizontal,
+  ArrowLeftRight,
+  Bell,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Contas', href: '/accounts', icon: CreditCard },
-  { name: 'Cartões', href: '/cards', icon: CreditCard },
-  { name: 'Faturas', href: '/invoices', icon: FileText },
-  { name: 'Transações', href: '/transactions', icon: Receipt },
-  { name: 'Parcelamentos', href: '/installments', icon: ListChecks },
-  { name: 'Contas a Pagar', href: '/bills', icon: DollarSign },
-  { name: 'Dívidas', href: '/debts', icon: Users },
-  { name: 'Dívidas compartilhadas', href: '/shared-debts', icon: Users },
-  { name: 'Pessoas', href: '/people', icon: Users },
+  { name: 'Transações', href: '/transactions', icon: ArrowLeftRight },
+  { name: 'Contas & Cartões', href: '/accounts', icon: CreditCard },
+  { name: 'Contas a Pagar', href: '/bills', icon: Receipt },
+  { name: 'Dívidas & Contatos', href: '/debts', icon: Users },
   { name: 'Relatórios', href: '/reports', icon: BarChart3 },
-  { name: 'Categorias', href: '/categories', icon: Tags },
-  { name: 'Notificações', href: '/notifications', icon: Bell },
-  { name: 'Segurança', href: '/security', icon: Shield },
   { name: 'Configurações', href: '/settings', icon: Settings },
 ];
 
 const MAIN_TABS = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Início', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Transações', href: '/transactions', icon: ArrowLeftRight },
+  { name: 'Contas', href: '/accounts', icon: CreditCard },
   { name: 'Dívidas', href: '/debts', icon: Users },
-  { name: 'Transações', href: '/transactions', icon: Receipt },
-  { name: 'Notificações', href: '/notifications', icon: Bell },
 ];
 
 function useUnreadNotifications() {
@@ -116,7 +104,7 @@ function SidebarContent({ onNavigate, onLogout }: { onNavigate: () => void; onLo
             >
               <item.icon className="h-5 w-5 shrink-0" />
               <span className="truncate">{item.name}</span>
-              {item.href === '/notifications' && <NotificationBadge />}
+              {item.href === '/settings' && <NotificationBadge />}
             </NavLink>
           ))}
         </div>
@@ -236,6 +224,14 @@ export function Layout() {
           </button>
 
           <div className="flex-1" />
+          <NavLink
+            to="/settings?tab=notifications"
+            className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label="Notificações"
+          >
+            <Bell className="h-5 w-5" />
+            <NotificationBadge />
+          </NavLink>
         </header>
 
         <main className="p-4 pb-20 lg:p-6 lg:pb-6">
@@ -261,10 +257,7 @@ export function Layout() {
               )
             }
           >
-            <span className="relative">
-              <item.icon className="h-6 w-6" />
-              {item.href === '/notifications' && <NotificationBadge />}
-            </span>
+            <item.icon className="h-6 w-6" />
             {item.name}
           </NavLink>
         ))}
