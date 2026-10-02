@@ -75,7 +75,7 @@ async function deleteCard(id: string): Promise<void> {
   await api.delete(`/cards/${id}`);
 }
 
-export function CardsPage() {
+export function CardsPage({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -182,10 +182,17 @@ export function CardsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Cartões de Crédito</h1>
-          <p className="text-muted-foreground">Gerencie seus cartões e faturas</p>
-        </div>
+        {!embedded ? (
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Cartões de Crédito</h1>
+            <p className="text-muted-foreground">Gerencie seus cartões e limites</p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <CreditCardIcon className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-xl font-semibold">Meus Cartões</h2>
+          </div>
+        )}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={openCreateDialog}>

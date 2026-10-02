@@ -79,10 +79,10 @@ function AppRoutes() {
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
-        <Route path="/cards" element={<CardsPage />} />
-        <Route path="/invoices" element={<InvoicesPage />} />
+        <Route path="/cards" element={<Navigate to="/accounts?tab=cards" replace />} />
+        <Route path="/invoices" element={<Navigate to="/accounts?tab=invoices" replace />} />
         <Route path="/transactions" element={<TransactionsPage />} />
-        <Route path="/installments" element={<InstallmentsPage />} />
+        <Route path="/installments" element={<Navigate to="/accounts?tab=installments" replace />} />
         <Route path="/bills" element={<BillsPage />} />
         <Route path="/debts" element={<DebtsPage />} />
         <Route path="/shared-debts" element={<SharedDebtsPage />} />

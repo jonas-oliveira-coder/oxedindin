@@ -72,7 +72,7 @@ async function fetchAccounts(): Promise<IdName[]> {
   return response.data.data.filter((a: any) => a.status === 'ACTIVE');
 }
 
-export function InvoicesPage() {
+export function InvoicesPage({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
@@ -140,11 +140,18 @@ export function InvoicesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Faturas</h1>
-          <p className="text-muted-foreground">Gerencie as faturas dos seus cartões de crédito</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {!embedded ? (
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Faturas</h1>
+            <p className="text-muted-foreground">Gerencie as faturas dos seus cartões de crédito</p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-xl font-semibold">Faturas dos Cartões</h2>
+          </div>
+        )}
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Todas as faturas" />

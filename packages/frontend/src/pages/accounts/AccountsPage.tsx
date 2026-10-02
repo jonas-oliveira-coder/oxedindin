@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api, getErrorMessage } from '@/lib/api';
@@ -6,15 +7,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { SelectItem } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, getAccountTypeLabel, cn } from '@/lib/utils';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Landmark, CreditCard as CreditCardIcon, FileText, ListChecks } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { accountTypeSchema, accountStatusSchema, type CreateAccountInput, type UpdateAccountInput } from '@/lib/validation';
 import { nameSchema, moneyCentsSchema } from '@oxedindin/shared';
 import { FormField, TextInput, CurrencyInput, Textarea, FormSelect } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { CardsPage } from '@/pages/cards/CardsPage';
+import { InvoicesPage } from '@/pages/invoices/InvoicesPage';
+import { InstallmentsPage } from '@/pages/installments/InstallmentsPage';
 
 interface BankAccount {
   id: string;
@@ -63,7 +68,7 @@ async function deleteAccount(id: string): Promise<void> {
   await api.delete(`/accounts/${id}`);
 }
 
-export function AccountsPage() {
+export function BankAccountsTab({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -167,10 +172,17 @@ export function AccountsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Contas Bancárias</h1>
-          <p className="text-muted-foreground">Gerencie suas contas bancárias e saldos</p>
-        </div>
+        {!embedded ? (
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Contas Bancárias</h1>
+            <p className="text-muted-foreground">Gerencie suas contas bancárias e saldos</p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Landmark className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-xl font-semibold">Minhas Contas</h2>
+          </div>
+        )}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={openCreateDialog}>
@@ -249,39 +261,61 @@ export function AccountsPage() {
       {accounts && accounts.length > 0 ? (
         <div className="space-y-4">
           {accounts.map((account) => (
-            <Card key={account.id}>
-              <CardContent className="pt-6">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="p-3 rounded-lg bg-primary/10 shrink-0">
-                      <svg className="h-6 w-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="2" y="3" width="20" height="14" rx="2" />
-                        <path d="M8 21h8" />
-                        <path d="M12 17v4" />
-                      </svg>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-lg">{account.name}</h3>
-                        <span className={cn('px-2 py-0.5 text-xs rounded-full', account.status === 'ACTIVE' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground')}>
-                          {account.status === 'ACTIVE' ? 'Ativa' : 'Inativa'}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{account.institution} • {getAccountTypeLabel(account.type)}</p>
-                      {account.number && <p className="text-sm text-muted-foreground">Conta: {account.number} • Ag: {account.agency}</p>}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-2xl font-bold">{formatMoney(account.balance.cents)}</p>
-                      <p className="text-sm text-muted-foreground">Saldo inicial: {formatMoney(account.initialBalance.cents)}</p>
-                    </div>
+            <Card key={account.id} className="overflow-hidden">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(account)} aria-label="Editar conta">
+                      <span className="font-semibold text-lg">{account.name}</span>
+                      <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">
+                        {getAccountTypeLabel(account.type)}
+                      </span>
+                      {account.status === 'INACTIVE' && (
+                        <span className="text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded">
+                          Inativa
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {account.institution}
+                      {account.agency && ` • Ag: ${account.agency}`}
+                      {account.number && ` • CC: ${account.number}`}
+                    </p>
+                    {account.notes && (
+                      <p className="text-xs text-muted-foreground mt-1">{account.notes}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-6 pt-2 sm:pt-0 border-t sm:border-0">
+                    <div className="text-left sm:text-right">
+                      <p className="text-xs text-muted-foreground">Saldo atual</p>
+                      <p
+                        className={cn(
+                          'text-xl font-bold',
+                          account.balance.cents >= 0 ? 'text-foreground' : 'text-destructive',
+                        )}
+                      >
+                        {formatMoney(account.balance.cents)}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditDialog(account)}
+                        aria-label={`Editar conta ${account.name}`}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(account.id)} aria-label="Excluir conta">
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteId(account.id)}
+                        aria-label={`Excluir conta ${account.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -311,6 +345,71 @@ export function AccountsPage() {
         loading={deleteMutation.isPending}
         onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
       />
+    </div>
+  );
+}
+
+export function AccountsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get('tab') || 'accounts';
+
+  const setTab = (tab: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (tab === 'accounts') {
+          next.delete('tab');
+        } else {
+          next.set('tab', tab);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Contas & Cartões</h1>
+        <p className="text-muted-foreground">
+          Gerencie suas contas bancárias, cartões de crédito, faturas e parcelamentos em um só lugar
+        </p>
+      </div>
+
+      <Tabs value={currentTab} onValueChange={setTab} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 max-w-2xl h-auto p-1 gap-1">
+          <TabsTrigger value="accounts" className="flex items-center gap-2 py-2">
+            <Landmark className="h-4 w-4" />
+            <span>Contas</span>
+          </TabsTrigger>
+          <TabsTrigger value="cards" className="flex items-center gap-2 py-2">
+            <CreditCardIcon className="h-4 w-4" />
+            <span>Cartões</span>
+          </TabsTrigger>
+          <TabsTrigger value="invoices" className="flex items-center gap-2 py-2">
+            <FileText className="h-4 w-4" />
+            <span>Faturas</span>
+          </TabsTrigger>
+          <TabsTrigger value="installments" className="flex items-center gap-2 py-2">
+            <ListChecks className="h-4 w-4" />
+            <span>Parcelamentos</span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="accounts" className="space-y-6 m-0">
+          <BankAccountsTab embedded />
+        </TabsContent>
+        <TabsContent value="cards" className="space-y-6 m-0">
+          <CardsPage embedded />
+        </TabsContent>
+        <TabsContent value="invoices" className="space-y-6 m-0">
+          <InvoicesPage embedded />
+        </TabsContent>
+        <TabsContent value="installments" className="space-y-6 m-0">
+          <InstallmentsPage embedded />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

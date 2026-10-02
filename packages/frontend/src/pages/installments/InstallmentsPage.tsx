@@ -69,7 +69,7 @@ async function fetchAccounts(): Promise<IdName[]> {
   return response.data.data.filter((a: any) => a.status === 'ACTIVE');
 }
 
-export function InstallmentsPage() {
+export function InstallmentsPage({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<Installment | null>(null);
@@ -168,10 +168,17 @@ export function InstallmentsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Parcelamentos</h1>
-          <p className="text-muted-foreground">Gerencie suas compras parceladas</p>
-        </div>
+        {!embedded ? (
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Parcelamentos</h1>
+            <p className="text-muted-foreground">Gerencie suas compras parceladas</p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-xl font-semibold">Compras Parceladas</h2>
+          </div>
+        )}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button>
