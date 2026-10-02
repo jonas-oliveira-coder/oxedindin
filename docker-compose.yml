@@ -16,21 +16,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: oxedindin-redis
-    sysctls:
-      vm.overcommit_memory: 1
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   backend:
     build:
       context: .
@@ -38,7 +23,6 @@ services:
     container_name: oxedindin-backend
     environment:
       DATABASE_URL: postgresql://oxedindin:oxedindin@postgres:5432/oxedindin?schema=public
-      REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-min-32-chars-long-change-in-production}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-min-32-chars-long-change-in-production}
       COOKIE_SECRET: ${COOKIE_SECRET:-your-super-secret-cookie-key-min-32-chars-long-change-in-production}
@@ -60,8 +44,6 @@ services:
       - "3000:3000"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       - ./packages/backend:/app/packages/backend
@@ -87,5 +69,4 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   uploads_data:
