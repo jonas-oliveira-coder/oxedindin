@@ -137,7 +137,7 @@ function personPayload(values: PersonFormValues): CreatePersonInput {
   };
 }
 
-export function PeoplePage() {
+export function PeoplePage({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -313,10 +313,17 @@ export function PeoplePage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Pessoas</h1>
-          <p className="text-muted-foreground">Gerencie pessoas para dívidas compartilhadas</p>
-        </div>
+        {!embedded ? (
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Pessoas</h1>
+            <p className="text-muted-foreground">Gerencie pessoas para dívidas e divisões</p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <User className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-xl font-semibold">Contatos & Pessoas</h2>
+          </div>
+        )}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={openCreateDialog}>

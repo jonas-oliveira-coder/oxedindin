@@ -10,14 +10,9 @@ import { LoginPage } from '@/pages/auth/LoginPage';
 import { RegisterPage } from '@/pages/auth/RegisterPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { AccountsPage } from '@/pages/accounts/AccountsPage';
-import { CardsPage } from '@/pages/cards/CardsPage';
-import { InvoicesPage } from '@/pages/invoices/InvoicesPage';
 import { TransactionsPage } from '@/pages/transactions/TransactionsPage';
-import { InstallmentsPage } from '@/pages/installments/InstallmentsPage';
 import { BillsPage } from '@/pages/bills/BillsPage';
 import { DebtsPage } from '@/pages/debts/DebtsPage';
-import { SharedDebtsPage } from '@/pages/debts/SharedDebtsPage';
-import { PeoplePage } from '@/pages/people/PeoplePage';
 import { ReportsPage } from '@/pages/reports/ReportsPage';
 import { CategoriesPage } from '@/pages/categories/CategoriesPage';
 import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
@@ -85,8 +80,8 @@ function AppRoutes() {
         <Route path="/installments" element={<Navigate to="/accounts?tab=installments" replace />} />
         <Route path="/bills" element={<BillsPage />} />
         <Route path="/debts" element={<DebtsPage />} />
-        <Route path="/shared-debts" element={<SharedDebtsPage />} />
-        <Route path="/people" element={<PeoplePage />} />
+        <Route path="/shared-debts" element={<Navigate to="/debts?tab=shared" replace />} />
+        <Route path="/people" element={<Navigate to="/debts?tab=people" replace />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />

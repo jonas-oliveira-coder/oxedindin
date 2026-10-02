@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api, getErrorMessage } from '@/lib/api';
@@ -10,12 +11,14 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getStatusColor, getDebtTypeLabel } from '@/lib/utils';
-import { Plus, Trash2, Share2, CheckCircle2, Scale } from 'lucide-react';
+import { Plus, Trash2, Share2, CheckCircle2, Scale, Users } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema, emailSchema } from '@oxedindin/shared';
 import { FormField, TextInput, CurrencyInput, DateInput, EmailInput, FormSelect } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { SharedDebtsPage } from '@/pages/debts/SharedDebtsPage';
+import { PeoplePage } from '@/pages/people/PeoplePage';
 
 interface Debt {
   id: string;
@@ -80,7 +83,7 @@ async function fetchPeople(): Promise<IdName[]> {
   return response.data.data;
 }
 
-export function DebtsPage() {
+export function PersonalDebtsTab({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [debtDialogOpen, setDebtDialogOpen] = useState(false);
   const [owedDialogOpen, setOwedDialogOpen] = useState(false);
@@ -299,10 +302,17 @@ export function DebtsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dívidas</h1>
-          <p className="text-muted-foreground">Gerencie suas dívidas e valores a receber</p>
-        </div>
+        {embedded ? (
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Dívidas Pessoais</h2>
+            <p className="text-sm text-muted-foreground">Gerencie dívidas a pagar e valores a receber</p>
+          </div>
+        ) : (
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Dívidas</h1>
+            <p className="text-muted-foreground">Gerencie suas dívidas e valores a receber</p>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Dialog open={owedDialogOpen} onOpenChange={setOwedDialogOpen}>
             <DialogTrigger asChild>
@@ -519,6 +529,46 @@ export function DebtsPage() {
         loading={deleteMutation.isPending}
         onConfirm={() => deleteDebtId && deleteMutation.mutate(deleteDebtId)}
       />
+    </div>
+  );
+}
+
+export function DebtsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const validTabs = ['personal', 'shared', 'people'];
+  const currentTab = searchParams.get('tab') || 'personal';
+  const activeTab = validTabs.includes(currentTab) ? currentTab : 'personal';
+
+  const handleTabChange = (value: string) => {
+    setSearchParams({ tab: value }, { replace: true });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Dívidas & Contatos</h1>
+        <p className="text-muted-foreground">
+          Dívidas pessoais, compromissos compartilhados e gestão de contatos
+        </p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="grid w-full grid-cols-3 md:w-auto md:inline-grid">
+          <TabsTrigger value="personal">Dívidas Pessoais</TabsTrigger>
+          <TabsTrigger value="shared">Compartilhadas</TabsTrigger>
+          <TabsTrigger value="people">Pessoas & Contatos</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="personal" className="mt-6">
+          <PersonalDebtsTab embedded />
+        </TabsContent>
+        <TabsContent value="shared" className="mt-6">
+          <SharedDebtsPage embedded />
+        </TabsContent>
+        <TabsContent value="people" className="mt-6">
+          <PeoplePage embedded />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

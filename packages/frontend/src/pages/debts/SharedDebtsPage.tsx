@@ -75,7 +75,7 @@ function statusIcon(status: SharedDebtStatus) {
   }
 }
 
-export function SharedDebtsPage() {
+export function SharedDebtsPage({ embedded }: { embedded?: boolean } = {}) {
   const qc = useQueryClient();
   const [tab, setTab] = useState<'debtor' | 'creditor'>('debtor');
   const [selected, setSelected] = useState<SharedDebt | null>(null);
@@ -168,12 +168,14 @@ export function SharedDebtsPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Dívidas compartilhadas</h1>
-          <p className="text-sm text-muted-foreground">Solicitações de divisão de contas entre usuários.</p>
+      {!embedded && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Dívidas compartilhadas</h1>
+            <p className="text-sm text-muted-foreground">Solicitações de divisão de contas entre usuários.</p>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="inline-flex rounded-lg bg-muted p-1">
         {(['debtor', 'creditor'] as const).map((t) => (
