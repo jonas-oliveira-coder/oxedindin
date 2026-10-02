@@ -99,29 +99,30 @@ export class AuthService {
   private readonly challenges = new Map<string, ChallengeRecord>();
   private readonly CHALLENGE_TTL_SECONDS = 300;
 
-  private async setChallenge(challenge: string, type: 'registration' | 'authentication', userId?: string): Promise<string> {
-    const id = crypto.randomUUID();
-    const record: ChallengeRecord = { challenge, type, userId };
-    if (this.app.redis) {
-      await this.app.redis.set(`passkey:challenge:${id}`, JSON.stringify(record), 'EX', this.CHALLENGE_TTL_SECONDS);
-      return id;
+  private purgeExpiredChallenges(): void {
+    const now = Date.now();
+    for (const [id, record] of this.challenges.entries()) {
+      if (record.expiresAt !== undefined && record.expiresAt < now) {
+        this.challenges.delete(id);
+      }
     }
-    this.challenges.set(id, { ...record, expiresAt: Date.now() + this.CHALLENGE_TTL_SECONDS * 1000 });
+  }
+
+  private async setChallenge(challenge: string, type: 'registration' | 'authentication', userId?: string): Promise<string> {
+    this.purgeExpiredChallenges();
+    const id = crypto.randomUUID();
+    const record: ChallengeRecord = {
+      challenge,
+      type,
+      userId,
+      expiresAt: Date.now() + this.CHALLENGE_TTL_SECONDS * 1000,
+    };
+    this.challenges.set(id, record);
     return id;
   }
 
   private async takeChallenge(id: string): Promise<ChallengeRecord | null> {
-    if (this.app.redis) {
-      const raw = await this.app.redis.get(`passkey:challenge:${id}`);
-      if (!raw) return null;
-      await this.app.redis.del(`passkey:challenge:${id}`);
-      try {
-        return JSON.parse(raw) as ChallengeRecord;
-      } catch {
-        return null;
-      }
-    }
-
+    this.purgeExpiredChallenges();
     const record = this.challenges.get(id);
     if (!record) return null;
     this.challenges.delete(id);

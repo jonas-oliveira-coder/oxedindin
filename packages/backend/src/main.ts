@@ -208,7 +208,6 @@ await app.register(autoload, {
 
 app.get('/health', async () => {
   let database: 'ok' | 'down' = 'ok';
-  let redis: 'ok' | 'down' = 'ok';
 
   try {
     await app.db.execute(sql`SELECT 1`);
@@ -216,22 +215,12 @@ app.get('/health', async () => {
     database = 'down';
   }
 
-  if (!app.redis) {
-    redis = 'down';
-  } else {
-    try {
-      await app.redis.ping();
-    } catch {
-      redis = 'down';
-    }
-  }
-
-  const status = database === 'ok' && redis === 'ok' ? 'ok' : database === 'down' ? 'down' : 'degraded';
+  const status = database === 'ok' ? 'ok' : 'down';
 
   return {
     status,
     timestamp: new Date().toISOString(),
-    services: { database, redis },
+    services: { database },
     version: process.env.npm_package_version || '0.0.0',
   };
 });

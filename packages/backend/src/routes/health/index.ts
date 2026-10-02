@@ -3,8 +3,7 @@ import { sql } from 'drizzle-orm';
 
 const healthRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', async (request: any, reply: any) => {
-    let dbStatus = 'ok';
-    let redisStatus = 'ok';
+    let dbStatus: 'ok' | 'down' = 'ok';
 
     try {
       await app.db.execute(sql`SELECT 1`);
@@ -12,22 +11,13 @@ const healthRoutes: FastifyPluginAsyncZod = async (app) => {
       dbStatus = 'down';
     }
 
-    try {
-      if (app.redis) {
-        await app.redis.ping();
-      }
-    } catch {
-      redisStatus = 'down';
-    }
-
-    const status = dbStatus === 'ok' && redisStatus === 'ok' ? 'ok' : 'degraded';
+    const status = dbStatus === 'ok' ? 'ok' : 'down';
 
     return {
       status,
       timestamp: new Date().toISOString(),
       services: {
         database: dbStatus,
-        redis: redisStatus,
       },
       version: process.env.npm_package_version || '0.0.0',
     };

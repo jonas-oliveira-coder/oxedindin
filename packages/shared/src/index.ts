@@ -528,7 +528,6 @@ export interface HealthCheck {
   timestamp: string;
   services: {
     database: 'ok' | 'down';
-    redis: 'ok' | 'down';
   };
   version: string;
 }
