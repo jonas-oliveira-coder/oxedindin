@@ -20,6 +20,8 @@ O projeto possui:
 
 Repositorio publico: [github.com/jonas-oliveira-coder/oxedindin](https://github.com/jonas-oliveira-coder/oxedindin)
 
+> **Documentação Completa de Menus e Funções:** Consulte o arquivo [FUNCIONALIDADES.md](FUNCIONALIDADES.md) para o detalhamento completo de cada tela, menu, fluxo de negócio e endpoints do OxeDinDin.
+
 ### Fluxo de acesso
 
 1. O usuario acessa `/login`.
