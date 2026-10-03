@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui/use-toast';
 import { cn, formatDateTime } from '@/lib/utils';
 import { CheckCheck, Bell, Check } from 'lucide-react';
+import { subscribeToPush, unsubscribeFromPush } from '@/lib/push';
 
 interface Notification {
   id: string;
@@ -118,8 +119,24 @@ export function NotificationsPage({ embedded }: { embedded?: boolean } = {}) {
     onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
 
-  const togglePreference = (key: PreferenceKey, value: boolean) => {
+  const togglePreference = async (key: PreferenceKey, value: boolean) => {
     if (!prefs) return;
+    if (key === 'pushEnabled') {
+      if (value) {
+        try {
+          await subscribeToPush();
+        } catch (err) {
+          toast({
+            title: 'Não foi possível ativar push',
+            description: err instanceof Error ? err.message : 'Erro ao ativar notificações push.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      } else {
+        await unsubscribeFromPush().catch(() => {});
+      }
+    }
     prefsMutation.mutate({ [key]: value });
   };
 

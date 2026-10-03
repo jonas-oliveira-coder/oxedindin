@@ -8,6 +8,10 @@ import { PwaProvider } from '@/components/pwa/pwa-provider';
 import { Layout } from '@/components/shared/layout';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { RegisterPage } from '@/pages/auth/RegisterPage';
+import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage';
+import { TermsPage } from '@/pages/legal/TermsPage';
+import { PrivacyPage } from '@/pages/legal/PrivacyPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { AccountsPage } from '@/pages/accounts/AccountsPage';
 import { TransactionsPage } from '@/pages/transactions/TransactionsPage';
@@ -67,6 +71,10 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+      <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
+      <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<DashboardPage />} />

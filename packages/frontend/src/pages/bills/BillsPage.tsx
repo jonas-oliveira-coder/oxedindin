@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getStatusColor, getFrequencyLabel } from '@/lib/utils';
-import { Plus, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, CheckCircle2, Receipt } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema } from '@oxedindin/shared';
@@ -314,10 +314,16 @@ export function BillsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="bills">
-        <TabsList>
-          <TabsTrigger value="bills">Contas</TabsTrigger>
-          <TabsTrigger value="recurring">Recorrentes</TabsTrigger>
+      <Tabs defaultValue="bills" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2 max-w-sm h-auto p-1 gap-1">
+          <TabsTrigger value="bills" className="flex items-center gap-2 py-2">
+            <Receipt className="h-4 w-4 shrink-0" />
+            <span>Contas</span>
+          </TabsTrigger>
+          <TabsTrigger value="recurring" className="flex items-center gap-2 py-2">
+            <RefreshCw className="h-4 w-4 shrink-0" />
+            <span>Recorrentes</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="bills" className="space-y-3">

@@ -25,31 +25,55 @@ export function browserSupportsPush(): boolean {
 }
 
 export async function subscribeToPush(): Promise<boolean> {
-  if (!(await isPushSupported())) return false;
+  if (!browserSupportsPush()) {
+    throw new Error('Seu navegador ou dispositivo não possui suporte a notificações push.');
+  }
 
-  const publicKey = await getVapidPublicKey();
-  if (!publicKey) return false;
+  if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+    throw new Error('Notificações push requerem uma conexão segura HTTPS.');
+  }
 
-  if (Notification.permission === 'denied') return false;
+  let publicKey: string | null = null;
+  try {
+    publicKey = await getVapidPublicKey();
+  } catch {
+    throw new Error('Não foi possível conectar ao serviço de notificações do servidor.');
+  }
+
+  if (!publicKey) {
+    throw new Error('O servidor não possui as chaves VAPID configuradas (VAPID_PUBLIC_KEY). Configure as chaves no servidor para habilitar notificações push.');
+  }
+
+  if (Notification.permission === 'denied') {
+    throw new Error('Permissão de notificações bloqueada no navegador. Permita notificações nas configurações do site (ícone de cadeado na barra de endereços).');
+  }
+
   if (Notification.permission !== 'granted') {
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return false;
+    if (permission === 'denied') {
+      throw new Error('Permissão de notificações foi recusada no navegador.');
+    }
+    if (permission !== 'granted') {
+      throw new Error('Permissão de notificações não foi autorizada.');
+    }
+  }
+
+  if (!('serviceWorker' in navigator)) {
+    throw new Error('Service Worker não está disponível no navegador.');
   }
 
   const reg = await navigator.serviceWorker.ready;
-  const existing = await reg.pushManager.getSubscription();
-  if (existing) {
-    await api.post('/push/subscribe', {
-      endpoint: existing.endpoint,
-      keys: existing.toJSON() as any,
-    });
-    return true;
+  if (!reg.pushManager) {
+    throw new Error('PushManager não está ativo no Service Worker.');
   }
 
-  const subscription = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource,
-  });
+  let subscription = await reg.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource,
+    });
+  }
 
   await api.post('/push/subscribe', {
     endpoint: subscription.endpoint,

@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getStatusColor, getDebtTypeLabel } from '@/lib/utils';
-import { Plus, Trash2, Share2, CheckCircle2, Scale } from 'lucide-react';
+import { Plus, Trash2, Share2, CheckCircle2, Scale, Users } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema, emailSchema } from '@oxedindin/shared';
@@ -552,11 +552,20 @@ export function DebtsPage() {
         </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="grid w-full grid-cols-3 md:w-auto md:inline-grid">
-          <TabsTrigger value="personal">Dívidas Pessoais</TabsTrigger>
-          <TabsTrigger value="shared">Compartilhadas</TabsTrigger>
-          <TabsTrigger value="people">Pessoas & Contatos</TabsTrigger>
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3 max-w-xl h-auto p-1 gap-1">
+          <TabsTrigger value="personal" className="flex items-center gap-2 py-2">
+            <Scale className="h-4 w-4 shrink-0" />
+            <span className="truncate">Pessoais</span>
+          </TabsTrigger>
+          <TabsTrigger value="shared" className="flex items-center gap-2 py-2">
+            <Share2 className="h-4 w-4 shrink-0" />
+            <span className="truncate">Compartilhadas</span>
+          </TabsTrigger>
+          <TabsTrigger value="people" className="flex items-center gap-2 py-2">
+            <Users className="h-4 w-4 shrink-0" />
+            <span className="truncate">Pessoas & Contatos</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="personal" className="mt-6">

@@ -12,17 +12,15 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from '@/components/ui/use-toast';
-import { Save, User as UserIcon, Camera, Trash2, BellRing, Download } from 'lucide-react';
+import { Save, User as UserIcon, Camera, Trash2, Shield, Tags, Bell } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { settingsSchema, type SettingsInput } from '@/lib/validation';
 import { FormField, TextInput } from '@/components/forms';
 import { useAuth } from '@/hooks/use-auth';
 import { InstallPWAButton } from '@/components/pwa/install-button';
-import { subscribeToPush, unsubscribeFromPush, browserSupportsPush } from '@/lib/push';
 import { validateAvatarFile } from '@/lib/avatar';
 
 interface Settings {
@@ -36,11 +34,6 @@ interface Settings {
   dashboardLayout: string[];
 }
 
-interface NotificationPreferences {
-  pushEnabled?: boolean;
-  inAppEnabled?: boolean;
-}
-
 const profileSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório').max(100),
 });
@@ -52,11 +45,6 @@ async function fetchSettings(): Promise<Settings> {
   return response.data;
 }
 
-async function fetchPushPrefs(): Promise<NotificationPreferences> {
-  const response = await api.get('/notifications/preferences');
-  return response.data;
-}
-
 export function ProfileSettingsTab({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const { user, refreshUser } = useAuth();
@@ -64,7 +52,6 @@ export function ProfileSettingsTab({ embedded }: { embedded?: boolean } = {}) {
   const [preview, setPreview] = useState<string | null>(null);
 
   const { data: settings, isLoading } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
-  const { data: pushPrefs } = useQuery({ queryKey: ['notification-preferences'], queryFn: fetchPushPrefs });
 
   const profileForm = useForm<ProfileInput>({
     resolver: zodResolver(profileSchema),
@@ -137,24 +124,6 @@ export function ProfileSettingsTab({ embedded }: { embedded?: boolean } = {}) {
       refreshUser();
       setPreview(null);
       toast({ title: 'Foto removida' });
-    },
-    onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
-  });
-
-  const pushToggle = useMutation({
-    mutationFn: async (enable: boolean) => {
-      if (enable) {
-        const ok = await subscribeToPush();
-        if (!ok) throw new Error('Não foi possível ativar as notificações push.');
-      } else {
-        await unsubscribeFromPush();
-      }
-      await api.patch('/notifications/preferences', { pushEnabled: enable });
-      return enable;
-    },
-    onSuccess: (enable) => {
-      queryClient.invalidateQueries({ queryKey: ['notification-preferences'] });
-      toast({ title: enable ? 'Notificações push ativadas' : 'Notificações push desativadas' });
     },
     onError: (error) => toast({ title: 'Erro', description: getErrorMessage(error), variant: 'destructive' }),
   });
@@ -318,44 +287,15 @@ export function ProfileSettingsTab({ embedded }: { embedded?: boolean } = {}) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Notificações</CardTitle>
-          <CardDescription>Receba alertas de dívidas compartilhadas e pagamentos</CardDescription>
+          <CardTitle>Sobre o Aplicativo</CardTitle>
+          <CardDescription>Versão e instalação do sistema</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <BellRing className="mt-0.5 h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">Notificações push</p>
-                <p className="text-xs text-muted-foreground">
-                  {browserSupportsPush() ? 'Receba notificações mesmo com o app fechado.' : 'Seu navegador não suporta notificações push.'}
-                </p>
-              </div>
-            </div>
-            <Switch
-                checked={!!pushPrefs?.pushEnabled}
-                disabled={!browserSupportsPush() || pushToggle.isPending}
-                onCheckedChange={(checked) => pushToggle.mutate(checked)}
-              />
+          <div className="flex items-center gap-3">
+            <UserIcon className="h-5 w-5 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">OxeDinDin — seu centro de controle financeiro pessoal.</p>
           </div>
-          <Separator />
-          <div className="flex flex-col gap-3">
-            <InstallPWAButton className="w-full sm:w-auto" />
-            <Button variant="outline" className="w-full sm:w-auto" onClick={() => window.location.reload()}>
-              <Download className="mr-2 h-4 w-4" />
-              Atualizar aplicativo
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Sobre</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <UserIcon className="h-5 w-5 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">OxeDinDin — seu centro de controle financeiro pessoal.</p>
+          <InstallPWAButton className="w-full sm:w-auto" />
         </CardContent>
       </Card>
     </div>
@@ -382,11 +322,23 @@ export function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 md:w-auto md:inline-grid">
-          <TabsTrigger value="profile">Perfil & Geral</TabsTrigger>
-          <TabsTrigger value="security">Segurança</TabsTrigger>
-          <TabsTrigger value="categories">Categorias</TabsTrigger>
-          <TabsTrigger value="notifications">Notificações</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 max-w-2xl h-auto p-1 gap-1">
+          <TabsTrigger value="profile" className="flex items-center gap-2">
+            <UserIcon className="h-4 w-4" />
+            <span>Perfil & Geral</span>
+          </TabsTrigger>
+          <TabsTrigger value="security" className="flex items-center gap-2">
+            <Shield className="h-4 w-4" />
+            <span>Segurança</span>
+          </TabsTrigger>
+          <TabsTrigger value="categories" className="flex items-center gap-2">
+            <Tags className="h-4 w-4" />
+            <span>Categorias</span>
+          </TabsTrigger>
+          <TabsTrigger value="notifications" className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            <span>Notificações</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="mt-6">

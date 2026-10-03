@@ -321,26 +321,24 @@ export function DashboardPage() {
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Contas Bancárias</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {summary.accountsBalance.slice(0, 5).map((account) => (
-                <div key={account.accountId} className="flex items-center justify-between">
-                  <p className="font-medium">{account.name}</p>
-                  <p className="font-bold">{formatMoney(account.balance.cents)}</p>
-                </div>
-              ))}
-              {summary.accountsBalance.length === 0 && (
-                <p className="text-muted-foreground text-center py-4">Nenhuma conta cadastrada</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Contas Bancárias</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {summary.accountsBalance.map((account) => (
+              <div key={account.accountId} className="flex items-center justify-between p-3 rounded-lg border">
+                <p className="font-medium truncate mr-2">{account.name}</p>
+                <p className="font-bold shrink-0">{formatMoney(account.balance.cents)}</p>
+              </div>
+            ))}
+            {summary.accountsBalance.length === 0 && (
+              <p className="text-muted-foreground text-center py-4 col-span-full">Nenhuma conta cadastrada</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

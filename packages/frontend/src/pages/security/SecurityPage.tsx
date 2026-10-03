@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
 import { formatDateTime } from '@/lib/utils';
-import { KeyRound, Smartphone, Fingerprint, ShieldCheck, Copy, Trash2, ScrollText, Plus } from 'lucide-react';
+import { KeyRound, Smartphone, Fingerprint, ShieldCheck, Copy, Trash2, Plus } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { changePasswordSchema, type ChangePasswordInput } from '@/lib/validation';
@@ -32,15 +32,6 @@ interface Passkey {
   lastUsedAt?: string;
 }
 
-interface AuditLog {
-  id: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  createdAt: string;
-  userAgent?: string;
-}
-
 async function fetchDevices(): Promise<Device[]> {
   const response = await api.get('/security/devices');
   return response.data;
@@ -51,11 +42,6 @@ async function fetchPasskeys(): Promise<Passkey[]> {
   return response.data;
 }
 
-async function fetchAuditLog(): Promise<AuditLog[]> {
-  const response = await api.get('/security/audit-log');
-  return response.data.data;
-}
-
 export function SecurityPage({ embedded }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [generatedPassword, setGeneratedPassword] = useState('');
@@ -63,7 +49,6 @@ export function SecurityPage({ embedded }: { embedded?: boolean } = {}) {
 
   const { data: devices } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices });
   const { data: passkeys } = useQuery({ queryKey: ['passkeys'], queryFn: fetchPasskeys });
-  const { data: auditLogs } = useQuery({ queryKey: ['auditLog'], queryFn: fetchAuditLog });
 
   const changePasswordForm = useForm<ChangePasswordInput>({ resolver: zodResolver(changePasswordSchema) });
 
@@ -284,30 +269,6 @@ export function SecurityPage({ embedded }: { embedded?: boolean } = {}) {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Nenhuma sessão ativa identificada.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><ScrollText className="h-5 w-5" /> Registro de auditoria</CardTitle>
-          <CardDescription>Atividades recentes na sua conta</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {auditLogs && auditLogs.length > 0 ? (
-            <div className="space-y-2">
-              {auditLogs.slice(0, 20).map((log) => (
-                <div key={log.id} className="flex items-center justify-between p-3 rounded-lg border text-sm">
-                  <div>
-                    <p className="font-medium">{log.action}</p>
-                    <p className="text-muted-foreground">{log.entityType} · {log.entityId}</p>
-                  </div>
-                  <p className="text-muted-foreground text-xs">{formatDateTime(log.createdAt)}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma atividade registrada.</p>
           )}
         </CardContent>
       </Card>

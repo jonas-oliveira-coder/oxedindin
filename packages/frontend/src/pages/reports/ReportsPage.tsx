@@ -187,18 +187,20 @@ export function ReportsPage() {
           </CardHeader>
           <CardContent>
             {categoryChartData.length > 0 ? (
-              <div className="flex items-center gap-4">
-                <ResponsiveContainer width="60%" height={250}>
-                  <PieChart>
-                    <Pie data={categoryChartData} dataKey="value" nameKey="name" outerRadius={90} label>
-                      {categoryChartData.map((entry, index) => (
-                        <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => `R$ ${value.toFixed(2)}`} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex-1 space-y-2">
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-full sm:w-[60%] h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={categoryChartData} dataKey="value" nameKey="name" outerRadius={90} label>
+                        {categoryChartData.map((entry, index) => (
+                          <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => `R$ ${value.toFixed(2)}`} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="w-full sm:flex-1 space-y-2">
                   {categoryChartData.slice(0, 8).map((entry, index) => (
                     <div key={entry.name} className="flex items-center justify-between text-sm">
                       <span className="flex items-center gap-2">
