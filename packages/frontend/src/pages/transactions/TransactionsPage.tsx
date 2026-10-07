@@ -9,13 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getTransactionTypeColor, cleanParams } from '@/lib/utils';
-import { Plus, Trash2, ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
+import { Plus, Trash2, ChevronLeft, ChevronRight, Pencil, X, Sparkles } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createTransactionSchema, type CreateTransactionInput } from '@/lib/validation';
 import { FormField, TextInput, CurrencyInput, DateInput, Textarea, FormSelect, NumberInput } from '@/components/forms';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { AiBulkImportDialog } from '@/components/transactions/ai-bulk-import-dialog';
 import { todayCivilDate } from '@oxedindin/shared';
 import { cn } from '@/lib/utils';
 import { equalSplitShares } from '@/lib/splits';
@@ -128,6 +129,7 @@ const paymentMethodLabels: Record<string, string> = {
 export function TransactionsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [aiImportOpen, setAiImportOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [filters, setFilters] = useState({
@@ -302,13 +304,18 @@ export function TransactionsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Transações</h1>
           <p className="text-muted-foreground">Registre e gerencie suas transações financeiras</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Transação
-            </Button>
-          </DialogTrigger>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => setAiImportOpen(true)} className="gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Importar com IA
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => setDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Nova Transação
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Nova Transação</DialogTitle>
@@ -412,6 +419,7 @@ export function TransactionsPage() {
             </form>
           </DialogContent>
         </Dialog>
+      </div>
 
         <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
           <DialogContent className="max-w-lg">
@@ -682,10 +690,16 @@ export function TransactionsPage() {
           ) : (
             <div className="text-center py-12">
               <p className="text-muted-foreground">Nenhuma transação encontrada</p>
-              <Button onClick={() => setDialogOpen(true)} className="mt-4">
-                <Plus className="mr-2 h-4 w-4" />
-                Nova Transação
-              </Button>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button variant="outline" onClick={() => setAiImportOpen(true)} className="gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Importar com IA
+                </Button>
+                <Button onClick={() => setDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nova Transação
+                </Button>
+              </div>
             </div>
           )}
 
@@ -714,6 +728,11 @@ export function TransactionsPage() {
         description="Essa ação removerá permanentemente a transação e revertirá seus efeitos no saldo. Essa ação não pode ser desfeita."
         loading={deleteMutation.isPending}
         onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
+      />
+
+      <AiBulkImportDialog
+        open={aiImportOpen}
+        onOpenChange={setAiImportOpen}
       />
     </div>
   );

@@ -1,8 +1,8 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eq, and, desc, gte, lte, count, sum, sql, inArray } from 'drizzle-orm';
-import { createTransactionSchema, paginationSchema, dateRangeSchema, dateInputSchema } from '../../types/schemas.js';
-import { transaction, bankAccount, creditCard, category, invoice, installmentPlan, installment, person, transactionSplit } from '../../db/schema/index.js';
+import { createTransactionSchema, paginationSchema, dateRangeSchema, dateInputSchema, bulkImportSchema } from '../../types/schemas.js';
+import { transaction, bankAccount, creditCard, category, invoice, installmentPlan, installment, person, transactionSplit, bill, debt } from '../../db/schema/index.js';
 
 function calculateInstallmentValue(totalCents: number, count: number): number[] {
   const baseValue = Math.floor(totalCents / count);
@@ -87,7 +87,7 @@ async function createInstallmentPlan(app: any, input: {
     description,
     totalAmountCents: totalAmount,
     installmentsCount,
-    installmentValueCents: BigInt(installmentValue),
+    installmentValueCents: installmentValue,
     startDate,
     firstInvoiceDate,
     categoryId,
@@ -113,9 +113,9 @@ async function createInstallmentPlan(app: any, input: {
         periodEnd: invoiceInfo.periodEnd,
         closingDate: invoiceInfo.closingDate,
         dueDate: invoiceInfo.dueDate,
-        totalCents: 0n,
-        paidCents: 0n,
-        remainingCents: 0n,
+        totalCents: 0,
+        paidCents: 0,
+        remainingCents: 0,
         status: 'OPEN',
       }).returning();
       invoiceRecord = newInvoice;
@@ -125,7 +125,7 @@ async function createInstallmentPlan(app: any, input: {
       planId: plan.id,
       invoiceId: invoiceRecord.id,
       number: i + 1,
-      amountCents: BigInt(installmentValues[i]),
+      amountCents: installmentValues[i],
       dueDate: invoiceInfo.dueDate,
       status: 'PENDING',
     }).returning();
@@ -539,6 +539,292 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         ...i,
         amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
       })),
+    });
+  });
+
+  app.post('/bulk-import', {
+    schema: bulkImportSchema,
+    preHandler: [app.authenticate],
+  }, async (request: any, reply: any) => {
+    const userId = request.authUser.id;
+    const body = request.body as z.infer<typeof bulkImportSchema.shape.body>;
+
+    const toCentsVal = (val: number | string | undefined | null, fallbackCents?: number): number => {
+      if (fallbackCents !== undefined && Number.isInteger(fallbackCents)) {
+        return fallbackCents;
+      }
+      if (typeof val === 'number') {
+        return Math.round(val * 100);
+      }
+      if (typeof val === 'string') {
+        const cleaned = val.replace(/[R$\s]/g, '').replace(',', '.');
+        const num = parseFloat(cleaned);
+        if (!isNaN(num)) return Math.round(num * 100);
+      }
+      return 0;
+    };
+
+    const parseDateVal = (dateStr: string): Date => {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? new Date() : d;
+    };
+
+    const result = await app.db.transaction(async (tx: any) => {
+      // 1. Pessoas
+      const existingPeople = await tx.select().from(person).where(eq(person.userId, userId));
+      const peopleMap = new Map<string, string>();
+      for (const p of existingPeople) {
+        peopleMap.set(p.name.trim().toLowerCase(), p.id);
+      }
+      let createdPeopleCount = 0;
+      for (const p of body.people || []) {
+        const key = p.name.trim().toLowerCase();
+        if (!peopleMap.has(key)) {
+          const [created] = await tx.insert(person).values({
+            userId,
+            name: p.name.trim(),
+            email: p.email || null,
+            phone: p.phone || null,
+            notes: p.notes || null,
+          }).returning();
+          peopleMap.set(key, created.id);
+          createdPeopleCount++;
+        }
+      }
+
+      // 2. Categorias
+      const existingCategories = await tx.select().from(category).where(eq(category.userId, userId));
+      const categoriesMap = new Map<string, string>();
+      for (const c of existingCategories) {
+        categoriesMap.set(c.name.trim().toLowerCase(), c.id);
+      }
+      let createdCategoriesCount = 0;
+      for (const c of body.categories || []) {
+        const key = c.name.trim().toLowerCase();
+        if (!categoriesMap.has(key)) {
+          const [created] = await tx.insert(category).values({
+            userId,
+            name: c.name.trim(),
+            color: c.color || null,
+            icon: c.icon || null,
+          }).returning();
+          categoriesMap.set(key, created.id);
+          createdCategoriesCount++;
+        }
+      }
+
+      // 3. Contas Bancárias
+      const existingAccounts = await tx.select().from(bankAccount).where(eq(bankAccount.userId, userId));
+      const accountsMap = new Map<string, string>();
+      for (const a of existingAccounts) {
+        accountsMap.set(a.name.trim().toLowerCase(), a.id);
+      }
+      let createdAccountsCount = 0;
+      for (const a of body.bankAccounts || []) {
+        const key = a.name.trim().toLowerCase();
+        if (!accountsMap.has(key)) {
+          const initialBalanceCents = toCentsVal(a.initialBalance, a.initialBalanceCents);
+          const [created] = await tx.insert(bankAccount).values({
+            userId,
+            name: a.name.trim(),
+            institution: a.institution.trim() || 'Outro',
+            type: a.type || 'CHECKING',
+            number: a.number || null,
+            agency: a.agency || null,
+            initialBalanceCents,
+            balanceCents: initialBalanceCents,
+            notes: a.notes || null,
+          }).returning();
+          accountsMap.set(key, created.id);
+          createdAccountsCount++;
+        }
+      }
+
+      // 4. Cartões de Crédito
+      const existingCards = await tx.select().from(creditCard).where(eq(creditCard.userId, userId));
+      const cardsMap = new Map<string, string>();
+      for (const c of existingCards) {
+        cardsMap.set(c.name.trim().toLowerCase(), c.id);
+      }
+      let createdCardsCount = 0;
+      for (const c of body.creditCards || []) {
+        const key = c.name.trim().toLowerCase();
+        if (!cardsMap.has(key)) {
+          const limitCents = toCentsVal(c.limit, c.limitCents) || 500000;
+          const linkedAccountId = c.accountName ? accountsMap.get(c.accountName.trim().toLowerCase()) || null : null;
+          const [created] = await tx.insert(creditCard).values({
+            userId,
+            name: c.name.trim(),
+            institution: c.institution.trim() || 'Outro',
+            brand: c.brand || 'MASTERCARD',
+            last4: '0000',
+            limitCents,
+            availableLimitCents: limitCents,
+            closingDay: c.closingDay || 25,
+            dueDay: c.dueDay || 5,
+            accountId: linkedAccountId,
+            notes: c.notes || null,
+          }).returning();
+          cardsMap.set(key, created.id);
+          createdCardsCount++;
+        }
+      }
+
+      // 5. Transações
+      let createdTransactionsCount = 0;
+      for (const t of body.transactions || []) {
+        const amount = toCentsVal(t.amount, t.amountCents);
+        if (amount <= 0) continue;
+
+        const linkedAccountId = t.accountName ? accountsMap.get(t.accountName.trim().toLowerCase()) || null : null;
+        const linkedCardId = t.cardName ? cardsMap.get(t.cardName.trim().toLowerCase()) || null : null;
+        const linkedCategoryId = t.categoryName ? categoriesMap.get(t.categoryName.trim().toLowerCase()) || null : null;
+        const tDate = parseDateVal(t.date);
+
+        const [newTx] = await tx.insert(transaction).values({
+          userId,
+          description: t.description.trim(),
+          amountCents: amount,
+          type: t.type || 'EXPENSE',
+          categoryId: linkedCategoryId,
+          date: tDate,
+          paymentMethod: t.paymentMethod || 'PIX',
+          accountId: linkedAccountId,
+          cardId: linkedCardId,
+          notes: t.notes || null,
+        }).returning();
+        createdTransactionsCount++;
+
+        // Atualizar saldo da conta bancária
+        if (linkedAccountId && t.type === 'EXPENSE') {
+          await tx.update(bankAccount)
+            .set({ balanceCents: sql`${bankAccount.balanceCents} - ${amount}` })
+            .where(eq(bankAccount.id, linkedAccountId));
+        } else if (linkedAccountId && t.type === 'INCOME') {
+          await tx.update(bankAccount)
+            .set({ balanceCents: sql`${bankAccount.balanceCents} + ${amount}` })
+            .where(eq(bankAccount.id, linkedAccountId));
+        }
+
+        // Atualizar fatura e limite do cartão
+        if (linkedCardId) {
+          const [card] = await tx.select().from(creditCard).where(eq(creditCard.id, linkedCardId)).limit(1);
+          if (card) {
+            const { closingDate, dueDate, periodStart, periodEnd } = getInvoiceForDate(
+              tDate,
+              card.closingDay,
+              card.dueDay
+            );
+            const [existingInv] = await tx.select().from(invoice)
+              .where(and(eq(invoice.cardId, linkedCardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
+              .limit(1);
+
+            let invRecord = existingInv;
+            if (!invRecord) {
+              const [newInv] = await tx.insert(invoice).values({
+                cardId: linkedCardId,
+                periodStart,
+                periodEnd,
+                closingDate,
+                dueDate,
+                totalCents: 0,
+                paidCents: 0,
+                remainingCents: 0,
+                status: 'OPEN',
+              }).returning();
+              invRecord = newInv;
+            }
+
+            await tx.update(invoice)
+              .set({
+                totalCents: sql`${invoice.totalCents} + ${amount}`,
+                remainingCents: sql`${invoice.remainingCents} + ${amount}`,
+              })
+              .where(eq(invoice.id, invRecord.id));
+
+            await tx.update(creditCard)
+              .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${amount}` })
+              .where(eq(creditCard.id, linkedCardId));
+
+            await tx.update(transaction)
+              .set({ invoiceId: invRecord.id })
+              .where(eq(transaction.id, newTx.id));
+          }
+        }
+      }
+
+      // 6. Contas a Pagar (Bills)
+      let createdBillsCount = 0;
+      for (const b of body.bills || []) {
+        const amount = toCentsVal(b.amount, b.amountCents);
+        if (amount <= 0) continue;
+
+        const linkedCategoryId = b.categoryName ? categoriesMap.get(b.categoryName.trim().toLowerCase()) || null : null;
+        const linkedAccountId = b.accountName ? accountsMap.get(b.accountName.trim().toLowerCase()) || null : null;
+        const bDueDate = parseDateVal(b.dueDate);
+
+        await tx.insert(bill).values({
+          userId,
+          description: b.description.trim(),
+          amountCents: amount,
+          dueDate: bDueDate,
+          status: b.status || 'PENDING',
+          paymentMethod: b.paymentMethod || null,
+          categoryId: linkedCategoryId,
+          accountId: linkedAccountId,
+          notes: b.notes || null,
+        });
+        createdBillsCount++;
+      }
+
+      // 7. Dívidas (Debts)
+      let createdDebtsCount = 0;
+      for (const d of body.debts || []) {
+        const totalAmount = toCentsVal(d.totalAmount, d.totalAmountCents);
+        if (totalAmount <= 0) continue;
+
+        const linkedPersonId = d.personName ? peopleMap.get(d.personName.trim().toLowerCase()) || null : null;
+        const dDueDate = parseDateVal(d.dueDate);
+
+        await tx.insert(debt).values({
+          userId,
+          description: d.description.trim(),
+          totalAmountCents: totalAmount,
+          paidAmountCents: 0,
+          remainingAmountCents: totalAmount,
+          dueDate: dDueDate,
+          type: d.type || 'BORROWED_MONEY',
+          relatedPersonId: linkedPersonId,
+          status: 'ACTIVE',
+          notes: d.notes || null,
+        });
+        createdDebtsCount++;
+      }
+
+      return {
+        bankAccounts: createdAccountsCount,
+        creditCards: createdCardsCount,
+        categories: createdCategoriesCount,
+        people: createdPeopleCount,
+        transactions: createdTransactionsCount,
+        bills: createdBillsCount,
+        debts: createdDebtsCount,
+      };
+    });
+
+    await app.auditLog({
+      userId,
+      action: 'BULK_IMPORT',
+      entityType: 'System',
+      entityId: userId,
+      newData: result,
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
+
+    return reply.status(201).send({
+      success: true,
+      imported: result,
     });
   });
 

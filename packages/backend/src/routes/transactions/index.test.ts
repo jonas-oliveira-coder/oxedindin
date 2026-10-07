@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import transactionsRoutes from './index.js';
 import { buildApp, TEST_USER_ID, OTHER_USER_ID } from '../../test/helpers.js';
-import { transaction, creditCard, installmentPlan, installment, person, transactionSplit } from '../../db/schema/index.js';
+import { transaction, creditCard, installmentPlan, installment, person, transactionSplit, bankAccount, category, bill, debt } from '../../db/schema/index.js';
 
 describe('transactions routes', () => {
   let app: any;
@@ -664,5 +664,143 @@ describe('transactions routes', () => {
     const rows = db.all(transaction);
     expect(rows[0].invoiceId).toBeDefined();
     expect(rows[0].invoiceId).not.toBeNull();
+  });
+
+  describe('POST /bulk-import', () => {
+    it('imports full financial data payload and links relations', async () => {
+      const payload = {
+        bankAccounts: [
+          { name: 'Nubank Conta', institution: 'Nubank', type: 'DIGITAL', initialBalance: 2500.50 }
+        ],
+        creditCards: [
+          { name: 'Nubank Ultravioleta', institution: 'Nubank', brand: 'MASTERCARD', limit: 8000, closingDay: 20, dueDay: 28, accountName: 'Nubank Conta' }
+        ],
+        categories: [
+          { name: 'Alimentação', color: '#EF4444', icon: '🍔' },
+          { name: 'Salário', color: '#22C55E', icon: '💼' }
+        ],
+        people: [
+          { name: 'Carlos Amigo', email: 'carlos@exemplo.com' }
+        ],
+        transactions: [
+          {
+            description: 'Supermercado',
+            amount: 250.00,
+            type: 'EXPENSE',
+            date: '2026-10-01',
+            paymentMethod: 'DEBIT_CARD',
+            accountName: 'Nubank Conta',
+            categoryName: 'Alimentação',
+          },
+          {
+            description: 'Compra no Cartão',
+            amount: 150.75,
+            type: 'EXPENSE',
+            date: '2026-10-02',
+            paymentMethod: 'CREDIT_CARD',
+            cardName: 'Nubank Ultravioleta',
+            categoryName: 'Alimentação',
+          }
+        ],
+        bills: [
+          { description: 'Energia Enel', amount: 180.00, dueDate: '2026-10-15', categoryName: 'Alimentação' }
+        ],
+        debts: [
+          { description: 'Empréstimo', totalAmount: 300.00, dueDate: '2026-11-01', personName: 'Carlos Amigo' }
+        ],
+      };
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/transactions/bulk-import',
+        payload,
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.success).toBe(true);
+      expect(body.imported.bankAccounts).toBe(1);
+      expect(body.imported.creditCards).toBe(1);
+      expect(body.imported.categories).toBe(2);
+      expect(body.imported.people).toBe(1);
+      expect(body.imported.transactions).toBe(2);
+      expect(body.imported.bills).toBe(1);
+      expect(body.imported.debts).toBe(1);
+
+      // Verify db state
+      const accounts = db.all(bankAccount);
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].name).toBe('Nubank Conta');
+      expect(accounts[0].initialBalanceCents).toBe(250050);
+
+      const cards = db.all(creditCard);
+      expect(cards).toHaveLength(1);
+      expect(cards[0].accountId).toBe(accounts[0].id);
+
+      const txs = db.all(transaction);
+      expect(txs).toHaveLength(2);
+      const debitTx = txs.find((t: any) => t.description === 'Supermercado');
+      expect(debitTx.accountId).toBe(accounts[0].id);
+      expect(Number(debitTx.amountCents)).toBe(25000);
+
+      const cardTx = txs.find((t: any) => t.description === 'Compra no Cartão');
+      expect(cardTx.cardId).toBe(cards[0].id);
+      expect(Number(cardTx.amountCents)).toBe(15075);
+
+      const bills = db.all(bill);
+      expect(bills).toHaveLength(1);
+      expect(bills[0].description).toBe('Energia Enel');
+      expect(Number(bills[0].amountCents)).toBe(18000);
+
+      const debts = db.all(debt);
+      expect(debts).toHaveLength(1);
+      expect(debts[0].description).toBe('Empréstimo');
+      expect(Number(debts[0].totalAmountCents)).toBe(30000);
+      const peoples = db.all(person);
+      expect(debts[0].relatedPersonId).toBe(peoples[0].id);
+    });
+
+    it('reuses existing categories and bank accounts without duplicating', async () => {
+      // Pre-seed category
+      db.seed(category, [{
+        id: '11111111-1111-4111-8111-111111111111',
+        userId: TEST_USER_ID,
+        name: 'Alimentação',
+        color: '#000000',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }]);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/transactions/bulk-import',
+        payload: {
+          categories: [
+            { name: 'Alimentação' }
+          ],
+          transactions: [
+            {
+              description: 'Almoço',
+              amount: 45.00,
+              type: 'EXPENSE',
+              date: '2026-10-05',
+              paymentMethod: 'CASH',
+              categoryName: 'Alimentação',
+            }
+          ]
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.imported.categories).toBe(0); // Not re-created
+      expect(body.imported.transactions).toBe(1);
+
+      const cats = db.all(category);
+      expect(cats).toHaveLength(1);
+
+      const txs = db.all(transaction);
+      expect(txs[0].categoryId).toBe('11111111-1111-4111-8111-111111111111');
+    });
   });
 });

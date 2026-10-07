@@ -585,4 +585,79 @@ export const reportFiltersSchema = z.object({
   }),
 });
 
+export const bulkImportSchema = z.object({
+  body: z.object({
+    bankAccounts: z.array(z.object({
+      name: z.string().trim().min(1, 'Nome da conta obrigatório').max(100),
+      institution: z.string().trim().max(100).default('Outro'),
+      type: accountTypeEnum.default('CHECKING'),
+      initialBalance: z.union([z.number(), z.string()]).optional(),
+      initialBalanceCents: z.number().int().optional(),
+      number: z.string().max(20).optional().nullable(),
+      agency: z.string().max(10).optional().nullable(),
+      notes: z.string().max(500).optional().nullable(),
+    })).optional().default([]),
+
+    creditCards: z.array(z.object({
+      name: z.string().trim().min(1, 'Nome do cartão obrigatório').max(100),
+      institution: z.string().trim().max(100).default('Outro'),
+      brand: cardBrandEnum.default('MASTERCARD'),
+      limit: z.union([z.number(), z.string()]).optional(),
+      limitCents: z.number().int().optional(),
+      closingDay: z.number().int().min(1).max(31).default(25),
+      dueDay: z.number().int().min(1).max(31).default(5),
+      accountName: z.string().optional().nullable(),
+      notes: z.string().max(500).optional().nullable(),
+    })).optional().default([]),
+
+    categories: z.array(z.object({
+      name: z.string().trim().min(1, 'Nome da categoria obrigatório').max(50),
+      color: z.string().optional().nullable(),
+      icon: z.string().optional().nullable(),
+    })).optional().default([]),
+
+    people: z.array(z.object({
+      name: z.string().trim().min(1, 'Nome da pessoa obrigatório').max(100),
+      email: z.string().email().optional().nullable().or(z.literal('')),
+      phone: z.string().max(20).optional().nullable(),
+      notes: z.string().max(500).optional().nullable(),
+    })).optional().default([]),
+
+    transactions: z.array(z.object({
+      description: z.string().trim().min(1, 'Descrição obrigatória').max(200),
+      amount: z.union([z.number(), z.string()]).optional(),
+      amountCents: z.number().int().positive().optional(),
+      type: transactionTypeEnum.default('EXPENSE'),
+      date: z.string().min(1, 'Data obrigatória'),
+      paymentMethod: paymentMethodEnum.default('PIX'),
+      accountName: z.string().optional().nullable(),
+      cardName: z.string().optional().nullable(),
+      categoryName: z.string().optional().nullable(),
+      notes: z.string().max(500).optional().nullable(),
+    })).optional().default([]),
+
+    bills: z.array(z.object({
+      description: z.string().trim().min(1, 'Descrição obrigatória').max(200),
+      amount: z.union([z.number(), z.string()]).optional(),
+      amountCents: z.number().int().positive().optional(),
+      dueDate: z.string().min(1, 'Data de vencimento obrigatória'),
+      status: billStatusEnum.default('PENDING'),
+      paymentMethod: paymentMethodEnum.optional().nullable(),
+      categoryName: z.string().optional().nullable(),
+      accountName: z.string().optional().nullable(),
+      notes: z.string().max(500).optional().nullable(),
+    })).optional().default([]),
+
+    debts: z.array(z.object({
+      description: z.string().trim().min(1, 'Descrição obrigatória').max(200),
+      totalAmount: z.union([z.number(), z.string()]).optional(),
+      totalAmountCents: z.number().int().positive().optional(),
+      dueDate: z.string().min(1, 'Data de vencimento obrigatória'),
+      type: debtTypeEnum.default('BORROWED_MONEY'),
+      personName: z.string().optional().nullable(),
+      notes: z.string().max(500).optional().nullable(),
+    })).optional().default([]),
+  }),
+});
+
 export { paginationSchema, dateInputSchema };
