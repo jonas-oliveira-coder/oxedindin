@@ -206,11 +206,25 @@ export async function recalculateInvoice(dbOrTx: any, invoiceId: string): Promis
     .from(transaction)
     .where(and(eq(transaction.invoiceId, invoiceId), eq(transaction.type, 'EXPENSE')));
 
-  const [instSum] = await dbOrTx.select({ sum: sum(installment.amountCents) })
+  // Find plan IDs that already have transactions recorded on this invoice
+  const txRows = await dbOrTx.select({ installmentPlanId: transaction.installmentPlanId })
+    .from(transaction)
+    .where(and(eq(transaction.invoiceId, invoiceId), eq(transaction.type, 'EXPENSE')));
+  const plansWithTransactions = new Set(txRows.map((t: any) => t.installmentPlanId).filter(Boolean));
+
+  // Only sum legacy/orphan installments that don't already have a corresponding transaction
+  const instRows = await dbOrTx.select({ amountCents: installment.amountCents, planId: installment.planId })
     .from(installment)
     .where(eq(installment.invoiceId, invoiceId));
 
-  const total = Number(txSum?.sum || 0) + Number(instSum?.sum || 0);
+  let orphanInstSum = 0;
+  for (const inst of instRows) {
+    if (!plansWithTransactions.has(inst.planId)) {
+      orphanInstSum += Number(inst.amountCents || 0);
+    }
+  }
+
+  const total = Number(txSum?.sum || 0) + orphanInstSum;
   const paid = Number(inv.paidCents || 0);
   const remaining = Math.max(0, total - paid);
 

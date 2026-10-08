@@ -33,7 +33,7 @@ async function createInstallmentPlan(app: any, input: {
   firstInvoiceDate?: Date;
   cardId: string;
   categoryId?: string | null;
-}, db?: any): Promise<{ plan: any; installments: any[] }> {
+}, db?: any): Promise<{ plan: any; installments: any[]; transactions: any[] }> {
   const dbOrTx = db || app.db;
   const { userId, description, totalAmount, installmentsCount, startDate, firstInvoiceDate, cardId, categoryId } = input;
 
@@ -78,6 +78,7 @@ async function createInstallmentPlan(app: any, input: {
   }).returning();
 
   const createdInstallments = [];
+  const createdTransactions = [];
   for (let i = 0; i < installmentsCount; i++) {
     const cycle = getInvoiceCycle(firstCycle.cycleYear, firstCycle.cycleMonth + i, card.closingDay, card.dueDay);
     const invoiceRecord = await getOrCreateInvoiceForCycle(dbOrTx, card, cycle);
@@ -91,15 +92,31 @@ async function createInstallmentPlan(app: any, input: {
       status: 'PENDING',
     }).returning();
 
+    const installmentDate = (i === 0 && startDate) ? startDate : cycle.dueDate;
+    const [txRecord] = await dbOrTx.insert(transaction).values({
+      userId,
+      description: `${description} (${i + 1}/${installmentsCount})`,
+      amountCents: installmentValues[i],
+      type: 'EXPENSE',
+      categoryId,
+      date: installmentDate,
+      paymentMethod: 'CREDIT_CARD',
+      cardId,
+      invoiceId: invoiceRecord.id,
+      installmentPlanId: plan.id,
+      notes: `Parcela ${i + 1} de ${installmentsCount}`,
+    }).returning();
+
     await recalculateInvoice(dbOrTx, invoiceRecord.id);
     createdInstallments.push(newInstallment);
+    createdTransactions.push(txRecord);
   }
 
   await dbOrTx.update(creditCard)
     .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${totalAmount}` })
     .where(eq(creditCard.id, cardId));
 
-  return { plan, installments: createdInstallments };
+  return { plan, installments: createdInstallments, transactions: createdTransactions };
 }
 
 async function loadSplitsForTransactions(app: any, transactionIds: string[]) {
@@ -322,7 +339,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
 
       const purchaseDate = new Date(date);
 
-      const { plan, installments } = await createInstallmentPlan(app, {
+      const { plan, installments, transactions: planTransactions } = await createInstallmentPlan(app, {
         userId,
         description,
         totalAmount: amount,
@@ -349,6 +366,10 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         installments: installments.map((i: any) => ({
           ...i,
           amount: { cents: Number(i.amountCents), currency: 'BRL' as const },
+        })),
+        transactions: planTransactions.map((t: any) => ({
+          ...t,
+          amount: { cents: Number(t.amountCents), currency: 'BRL' as const },
         })),
       });
     }
@@ -612,7 +633,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         if (t.installmentsCount && t.installmentsCount > 1 && linkedCardId) {
           const [cardForPlan] = await tx.select().from(creditCard).where(eq(creditCard.id, linkedCardId)).limit(1);
           if (cardForPlan) {
-            await createInstallmentPlan(app, {
+            const { transactions: planTxs } = await createInstallmentPlan(app, {
               userId,
               description: t.description.trim(),
               totalAmount: amount,
@@ -622,6 +643,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
               categoryId: linkedCategoryId,
             }, tx);
             createdInstallmentPlansCount++;
+            createdTransactionsCount += (planTxs?.length || 0);
             continue;
           }
         }
@@ -847,8 +869,20 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       throw app.httpErrors.notFound('Transação não encontrada.');
     }
 
-    if (existing.installmentPlanId || (existing.description && existing.description.startsWith('Pagamento'))) {
-      throw app.httpErrors.conflict('Esta transação foi gerada por um parcelamento e não pode ser editada diretamente. Gerencie-a na origem.');
+    if (existing.description && existing.description.startsWith('Pagamento parcela')) {
+      throw app.httpErrors.conflict('Esta transação foi gerada por um pagamento de parcela e não pode ser editada diretamente. Gerencie-a na origem.');
+    }
+
+    if (existing.installmentPlanId) {
+      if (body.amount !== undefined && body.amount !== Number(existing.amountCents)) {
+        throw app.httpErrors.badRequest('O valor da parcela não pode ser alterado diretamente. Gerencie na aba de parcelamentos.');
+      }
+      if (body.type !== undefined && body.type !== existing.type) {
+        throw app.httpErrors.badRequest('O tipo de parcelas do cartão não pode ser alterado.');
+      }
+      if (body.cardId !== undefined && body.cardId !== existing.cardId) {
+        throw app.httpErrors.badRequest('O cartão vinculado ao parcelamento não pode ser alterado individualmente.');
+      }
     }
 
     const nextAccountId = body.accountId !== undefined ? body.accountId : existing.accountId;
@@ -997,11 +1031,28 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       throw app.httpErrors.notFound('Transação não encontrada.');
     }
 
-    if (existing.installmentPlanId || (existing.description && existing.description.startsWith('Pagamento'))) {
-      throw app.httpErrors.conflict('Esta transação foi gerada por um pagamento e não pode ser excluída diretamente. Reverta o pagamento na origem.');
+    if (existing.description && existing.description.startsWith('Pagamento parcela')) {
+      throw app.httpErrors.conflict('Esta transação foi gerada por um pagamento de parcela e não pode ser excluída diretamente. Reverta o pagamento na aba de parcelamentos.');
     }
 
     const amountCents = Number(existing.amountCents);
+
+    // Se for uma parcela de cartão de crédito vinculada a um plano
+    if (existing.installmentPlanId) {
+      if (existing.invoiceId) {
+        const [matchingInst] = await app.db.select()
+          .from(installment)
+          .where(and(
+            eq(installment.planId, existing.installmentPlanId),
+            eq(installment.invoiceId, existing.invoiceId)
+          ))
+          .limit(1);
+
+        if (matchingInst) {
+          await app.db.delete(installment).where(eq(installment.id, matchingInst.id));
+        }
+      }
+    }
 
     if (existing.accountId) {
       if (existing.type === 'EXPENSE') {
@@ -1027,6 +1078,16 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
 
     if (invoiceIdToRecalculate) {
       await recalculateInvoice(app.db, invoiceIdToRecalculate);
+    }
+
+    if (existing.installmentPlanId) {
+      const [remainingTxs] = await app.db.select({ count: count() })
+        .from(transaction)
+        .where(eq(transaction.installmentPlanId, existing.installmentPlanId));
+
+      if (Number(remainingTxs?.count || 0) === 0) {
+        await app.db.delete(installmentPlan).where(eq(installmentPlan.id, existing.installmentPlanId));
+      }
     }
 
     await app.auditLog({

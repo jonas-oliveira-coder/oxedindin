@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { eq, and, gte, lte, asc, count, sql, inArray, desc } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
 import { installment, installmentPlan, creditCard, invoice, bankAccount, transaction, category } from '../../db/schema/index.js';
+import { recalculateInvoice } from '../../services/invoice.service.js';
 
 const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -269,6 +270,15 @@ const installmentsRoutes: FastifyPluginAsyncZod = async (app) => {
         eq(installment.planId, request.params.id),
         inArray(installment.id, pendingInstallments.map(i => i.id))
       ));
+
+    await app.db.delete(transaction)
+      .where(eq(transaction.installmentPlanId, request.params.id));
+
+    for (const installmentRecord of pendingInstallments) {
+      if (installmentRecord.invoiceId) {
+        await recalculateInvoice(app.db, installmentRecord.invoiceId);
+      }
+    }
 
     await app.auditLog({
       userId: request.authUser!.id,

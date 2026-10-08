@@ -223,6 +223,11 @@ export function Layout() {
             <Menu className="h-5 w-5" />
           </button>
 
+          <div className="flex items-center gap-2 lg:hidden">
+            <Logo className="h-6 w-6" />
+            <span className="font-semibold text-sm tracking-tight">OxeDinDin</span>
+          </div>
+
           <div className="flex-1" />
           <NavLink
             to="/settings?tab=notifications"

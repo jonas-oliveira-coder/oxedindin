@@ -14,7 +14,7 @@ import { Plus, Trash2, RefreshCw, CheckCircle2, Receipt } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema } from '@oxedindin/shared';
-import { FormField, TextInput, CurrencyInput, NumberInput, DateInput, Textarea, FormSelect } from '@/components/forms';
+import { FormField, TextInput, CurrencyInput, NumberInput, DateInput, DatePicker, Textarea, FormSelect } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 interface Bill {
@@ -290,7 +290,7 @@ export function BillsPage() {
                     />
                   </FormField>
                   <FormField id="dueDate" label="Vencimento" error={billForm.formState.errors.dueDate?.message}>
-                    <DateInput id="dueDate" {...billForm.register('dueDate')} />
+                    <DatePicker id="dueDate" value={billForm.watch('dueDate')} onChange={(v: string) => billForm.setValue('dueDate', v, { shouldValidate: true })} />
                   </FormField>
                 </div>
                 <FormField id="accountId" label="Conta (opcional)" error={billForm.formState.errors.accountId?.message}>
@@ -343,17 +343,19 @@ export function BillsPage() {
                       <p className="text-sm text-muted-foreground">Vence em {formatDate(bill.dueDate)}</p>
                       {bill.notes && <p className="text-sm text-muted-foreground">{bill.notes}</p>}
                     </div>
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-0">
                       <p className="font-bold text-lg">{formatMoney(bill.amount.cents)}</p>
-                      {bill.status !== 'PAID' && bill.status !== 'CANCELLED' && (
-                        <>
-                          <Button size="sm" onClick={() => { setPayTarget(bill); payForm.reset({ accountId: '' }); }}>Pagar</Button>
-                          <Button variant="ghost" size="icon" onClick={() => setCancelBillId(bill.id)} aria-label="Excluir conta">
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </>
-                      )}
-                      {bill.status === 'PAID' && <CheckCircle2 className="h-5 w-5 text-success" />}
+                      <div className="flex items-center gap-2">
+                        {bill.status !== 'PAID' && bill.status !== 'CANCELLED' && (
+                          <>
+                            <Button size="sm" onClick={() => { setPayTarget(bill); payForm.reset({ accountId: '' }); }}>Pagar</Button>
+                            <Button variant="ghost" size="icon" onClick={() => setCancelBillId(bill.id)} aria-label="Excluir conta">
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </>
+                        )}
+                        {bill.status === 'PAID' && <CheckCircle2 className="h-5 w-5 text-success" />}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -385,14 +387,16 @@ export function BillsPage() {
                         Dia {bill.dueDay} · Próximo: {formatDate(bill.nextDueDate)}
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-0">
                       <p className="font-bold text-lg">{formatMoney(bill.amount.cents)}</p>
-                      <Button variant="outline" size="sm" onClick={() => generateMutation.mutate(bill.id)}>
-                        Gerar próxima
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteRecurringId(bill.id)} aria-label="Excluir conta recorrente">
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        <Button variant="outline" size="sm" onClick={() => generateMutation.mutate(bill.id)}>
+                          Gerar próxima
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteRecurringId(bill.id)} aria-label="Excluir conta recorrente">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import transactionsRoutes from './index.js';
 import { buildApp, TEST_USER_ID, OTHER_USER_ID } from '../../test/helpers.js';
-import { transaction, creditCard, installmentPlan, installment, person, transactionSplit, bankAccount, category, bill, debt } from '../../db/schema/index.js';
+import { transaction, creditCard, installmentPlan, installment, person, transactionSplit, bankAccount, category, bill, debt, invoice } from '../../db/schema/index.js';
 
 describe('transactions routes', () => {
   let app: any;
@@ -170,6 +170,51 @@ describe('transactions routes', () => {
     expect(res.statusCode).toBe(409);
   });
 
+  it('allows deleting an installment transaction and cleans up matching installment', async () => {
+    const cardId = '11111111-2222-4111-8111-111111111111';
+    const planId = '22222222-3333-4111-8111-222222222222';
+    const invId = '33333333-4444-4111-8111-333333333333';
+    const txId = '44444444-5555-4111-8111-444444444444';
+    const instId = '55555555-6666-4111-8111-555555555555';
+
+    db.seed(creditCard, [{
+      id: cardId, userId: TEST_USER_ID, name: 'Card', institution: 'Bank', brand: 'VISA', last4: '1234',
+      limitCents: 100000, availableLimitCents: 80000, closingDay: 5, dueDay: 10, status: 'ACTIVE',
+      createdAt: new Date(), updatedAt: new Date(),
+    }]);
+    db.seed(installmentPlan, [{
+      id: planId, userId: TEST_USER_ID, cardId, description: 'TV', totalAmountCents: 20000,
+      installmentsCount: 1, installmentValueCents: 20000, startDate: new Date(), firstInvoiceDate: new Date(),
+      createdAt: new Date(), updatedAt: new Date(),
+    }]);
+    db.seed(installment, [{
+      id: instId, planId, number: 1, amountCents: 20000, dueDate: new Date(), status: 'PENDING',
+      invoiceId: invId, createdAt: new Date(), updatedAt: new Date(),
+    }]);
+    db.seed(transaction, [{
+      id: txId, userId: TEST_USER_ID, description: 'TV (1/1)', amountCents: 20000, type: 'EXPENSE',
+      date: new Date(), paymentMethod: 'CREDIT_CARD', cardId, invoiceId: invId, installmentPlanId: planId,
+      createdAt: new Date(), updatedAt: new Date(),
+    }]);
+    db.seed(invoice, [{
+      id: invId, cardId, periodStart: new Date(), periodEnd: new Date(), closingDate: new Date(),
+      dueDate: new Date(), totalCents: 20000, paidCents: 0, remainingCents: 20000, status: 'OPEN',
+      createdAt: new Date(), updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/transactions/${txId}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.all(transaction)).toHaveLength(0);
+    expect(db.all(installment)).toHaveLength(0);
+    expect(db.all(installmentPlan)).toHaveLength(0);
+    const [c] = db.all(creditCard);
+    expect(c).toBeDefined();
+  });
+
   it('rejects an edit with an account not owned by the user', async () => {
     db.seed(transaction, [{
       id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
@@ -225,7 +270,8 @@ describe('transactions routes', () => {
 
     expect(res.statusCode).toBe(201);
     expect(res.json().installments).toHaveLength(3);
-    expect(db.all(transaction)).toHaveLength(0);
+    expect(res.json().transactions).toHaveLength(3);
+    expect(db.all(transaction)).toHaveLength(3);
     expect(db.all(installmentPlan)).toHaveLength(1);
     expect(db.all(installment)).toHaveLength(3);
   });

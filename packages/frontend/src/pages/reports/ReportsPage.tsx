@@ -135,46 +135,46 @@ export function ReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Relatórios</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Relatórios</h1>
         <p className="text-muted-foreground">Visualize relatórios e análises financeiras</p>
       </div>
 
       {fixedVsVariable && (
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted-foreground">Gastos fixos</p>
-                <PiggyBank className="h-5 w-5 text-primary" />
+                <p className="text-xs sm:text-sm font-medium text-muted-foreground">Gastos fixos</p>
+                <PiggyBank className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
               </div>
-              <p className="text-2xl font-bold mt-1">{formatMoney(fixedVsVariable.fixed.cents)}</p>
+              <p className="text-lg sm:text-2xl font-bold mt-1 truncate">{formatMoney(fixedVsVariable.fixed.cents)}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted-foreground">Gastos variáveis</p>
-                <TrendingDown className="h-5 w-5 text-destructive" />
+                <p className="text-xs sm:text-sm font-medium text-muted-foreground">Gastos variáveis</p>
+                <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5 text-destructive" />
               </div>
-              <p className="text-2xl font-bold mt-1">{formatMoney(fixedVsVariable.variable.cents)}</p>
+              <p className="text-lg sm:text-2xl font-bold mt-1 truncate">{formatMoney(fixedVsVariable.variable.cents)}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted-foreground">Parcelamentos</p>
-                <TrendingUp className="h-5 w-5 text-warning" />
+                <p className="text-xs sm:text-sm font-medium text-muted-foreground">Parcelamentos</p>
+                <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-warning" />
               </div>
-              <p className="text-2xl font-bold mt-1">{formatMoney(fixedVsVariable.installments.cents)}</p>
+              <p className="text-lg sm:text-2xl font-bold mt-1 truncate">{formatMoney(fixedVsVariable.installments.cents)}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted-foreground">Recorrentes</p>
-                <PiggyBank className="h-5 w-5 text-success" />
+                <p className="text-xs sm:text-sm font-medium text-muted-foreground">Recorrentes</p>
+                <PiggyBank className="h-4 w-4 sm:h-5 sm:w-5 text-success" />
               </div>
-              <p className="text-2xl font-bold mt-1">{formatMoney(fixedVsVariable.recurring.cents)}</p>
+              <p className="text-lg sm:text-2xl font-bold mt-1 truncate">{formatMoney(fixedVsVariable.recurring.cents)}</p>
             </CardContent>
           </Card>
         </div>
@@ -188,10 +188,10 @@ export function ReportsPage() {
           <CardContent>
             {categoryChartData.length > 0 ? (
               <div className="flex flex-col sm:flex-row items-center gap-4">
-                <div className="w-full sm:w-[60%] h-[250px]">
+                <div className="w-full sm:w-[60%] h-[240px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={categoryChartData} dataKey="value" nameKey="name" outerRadius={90} label>
+                      <Pie data={categoryChartData} dataKey="value" nameKey="name" outerRadius={75}>
                         {categoryChartData.map((entry, index) => (
                           <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                         ))}

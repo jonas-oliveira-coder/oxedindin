@@ -125,31 +125,31 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Olá! Aqui está seu resumo financeiro de {new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(new Date())}.
           </p>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {stats.map((stat) => (
           <Card key={stat.name}>
-            <CardContent className="pt-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">{stat.name}</p>
-                  <p className="text-2xl font-bold mt-1">{stat.value}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-muted-foreground truncate">{stat.name}</p>
+                  <p className="text-lg sm:text-2xl font-bold mt-1 truncate">{stat.value}</p>
                   {stat.trend && (
-                    <p className="text-xs font-medium mt-1 flex items-center gap-1">
+                    <p className="text-[10px] sm:text-xs font-medium mt-1 flex items-center gap-1 truncate">
                       <span className={stat.trend.startsWith('+') ? 'text-success' : 'text-destructive'}>
                         {stat.trend}{stat.trendValue} vs mês passado
                       </span>
                     </p>
                   )}
                 </div>
-                <div className={cn('p-3 rounded-full', stat.bgColor)}>
-                  <stat.icon className={cn('h-6 w-6', stat.color)} />
+                <div className={cn('p-2.5 sm:p-3 rounded-full shrink-0 ml-2', stat.bgColor)}>
+                  <stat.icon className={cn('h-5 w-5 sm:h-6 sm:w-6', stat.color)} />
                 </div>
               </div>
             </CardContent>

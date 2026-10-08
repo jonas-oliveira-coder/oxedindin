@@ -13,7 +13,7 @@ import { Plus, TriangleAlert, CheckCircle2 } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema } from '@oxedindin/shared';
-import { FormField, TextInput, CurrencyInput, NumberInput, DateInput, FormSelect } from '@/components/forms';
+import { FormField, TextInput, CurrencyInput, NumberInput, DatePicker, FormSelect } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 const createPlanFormSchema = z.object({
@@ -215,10 +215,10 @@ export function InstallmentsPage({ embedded }: { embedded?: boolean } = {}) {
               </FormField>
               <div className="grid gap-2 grid-cols-2">
                 <FormField id="startDate" label="Data da compra" error={createForm.formState.errors.startDate?.message}>
-                  <DateInput id="startDate" {...createForm.register('startDate')} />
+                  <DatePicker id="startDate" value={createForm.watch('startDate')} onChange={(v: string) => createForm.setValue('startDate', v, { shouldValidate: true })} />
                 </FormField>
                 <FormField id="firstInvoiceDate" label="Primeira fatura" error={createForm.formState.errors.firstInvoiceDate?.message}>
-                  <DateInput id="firstInvoiceDate" {...createForm.register('firstInvoiceDate')} />
+                  <DatePicker id="firstInvoiceDate" value={createForm.watch('firstInvoiceDate')} onChange={(v: string) => createForm.setValue('firstInvoiceDate', v, { shouldValidate: true })} />
                 </FormField>
               </div>
               <DialogFooter>
@@ -235,14 +235,14 @@ export function InstallmentsPage({ embedded }: { embedded?: boolean } = {}) {
           {Array.from(grouped.values()).map(({ plan, items }) => (
             <Card key={plan.id}>
               <CardContent className="pt-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                   <div>
                     <h3 className="font-semibold text-lg">{plan.description}</h3>
                     <p className="text-sm text-muted-foreground">
                       {items.length} de {plan.installmentsCount} parcelas · Total {formatMoney(Number(plan.totalAmountCents))}
                     </p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => setCancelPlanId(plan.id)}>
+                  <Button variant="outline" size="sm" onClick={() => setCancelPlanId(plan.id)} className="w-full sm:w-auto">
                     <TriangleAlert className="mr-1 h-4 w-4" />
                     Cancelar
                   </Button>
@@ -251,17 +251,17 @@ export function InstallmentsPage({ embedded }: { embedded?: boolean } = {}) {
                   {items
                     .sort((a, b) => a.number - b.number)
                     .map((installment) => (
-                      <div key={installment.id} className="flex flex-col gap-2 p-3 rounded-lg border sm:flex-row sm:items-center sm:justify-between">
+                      <div key={installment.id} className="flex flex-col gap-3 p-3 rounded-lg border sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-3">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium">
                             {installment.number}
                           </div>
                           <div>
                             <p className="font-medium">{formatMoney(installment.amount.cents)}</p>
-                            <p className="text-sm text-muted-foreground">Vence em {formatDate(installment.dueDate)}</p>
+                            <p className="text-xs sm:text-sm text-muted-foreground">Vence em {formatDate(installment.dueDate)}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-0">
                           <Badge variant="outline" className={getStatusColor(installment.status)}>
                             {statusLabels[installment.status] || installment.status}
                           </Badge>

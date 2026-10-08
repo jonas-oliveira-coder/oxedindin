@@ -98,8 +98,8 @@ async function updateTransaction(id: string, data: TransactionPatchInput): Promi
   return response.data;
 }
 
-function isInstallmentGenerated(transaction: Transaction): boolean {
-  return Boolean(transaction.installmentPlanId) || transaction.description.startsWith('Pagamento');
+function isSystemLocked(transaction: Transaction): boolean {
+  return transaction.description.startsWith('Pagamento de fatura') || transaction.description === 'Pagamento de fatura';
 }
 
 type TransactionPatchInput = Omit<Partial<CreateTransactionInput>, 'accountId' | 'cardId' | 'categoryId'> & {
@@ -131,6 +131,7 @@ export function TransactionsPage() {
   const [aiImportOpen, setAiImportOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     page: 1,
     limit: 20,
@@ -259,6 +260,17 @@ export function TransactionsPage() {
 
   const onEditSubmit = (data: CreateTransactionInput) => {
     if (!editing) return;
+    if (editing.installmentPlanId) {
+      editMutation.mutate({
+        id: editing.id,
+        data: {
+          description: data.description,
+          categoryId: data.categoryId || null,
+          notes: data.notes || undefined,
+        },
+      });
+      return;
+    }
     editMutation.mutate({
       id: editing.id,
       data: {
@@ -296,11 +308,24 @@ export function TransactionsPage() {
   const transactions = data?.data || [];
   const meta = data?.meta || { total: 0, page: 1, limit: 20, totalPages: 1 };
 
+  const activeFiltersCount = [
+    filters.startDate,
+    filters.endDate,
+    filters.categoryId,
+    filters.accountId,
+    filters.cardId,
+    filters.type,
+  ].filter(Boolean).length;
+
+  const transactionToDelete = transactions.find((t) => t.id === deleteId);
+  const isDeletingInstallment = Boolean(transactionToDelete?.installmentPlanId);
+  const isEditingInstallment = Boolean(editing?.installmentPlanId);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Transações</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Transações</h1>
           <p className="text-muted-foreground">Registre e gerencie suas transações financeiras</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -443,6 +468,13 @@ export function TransactionsPage() {
               <DialogTitle>Editar Transação</DialogTitle>
             </DialogHeader>
             <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4" noValidate>
+              {isEditingInstallment && (
+                <div className="rounded-lg bg-primary/10 border border-primary/20 p-3 text-xs text-primary flex items-start gap-2">
+                  <Sparkles className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>Esta transação é uma <strong>parcela</strong> vinculada a um parcelamento. Valor, tipo, data e cartão são vinculados à fatura. Você pode alterar a descrição, categoria e observações.</span>
+                </div>
+              )}
+
               <FormField id="edit-description" label="Descrição" error={editForm.formState.errors.description?.message}>
                 <TextInput id="edit-description" placeholder="Supermercado, Uber, Salário..." {...editForm.register('description')} />
               </FormField>
@@ -452,11 +484,19 @@ export function TransactionsPage() {
                   <Controller
                     name="amount"
                     control={editForm.control}
-                    render={({ field }) => <CurrencyInput id="edit-amount" value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                    render={({ field }) => (
+                      <CurrencyInput
+                        id="edit-amount"
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        disabled={isEditingInstallment}
+                      />
+                    )}
                   />
                 </FormField>
                 <FormField id="edit-type" label="Tipo" error={editForm.formState.errors.type?.message}>
-                  <FormSelect control={editForm.control} name="type" placeholder="Selecione">
+                  <FormSelect control={editForm.control} name="type" placeholder="Selecione" disabled={isEditingInstallment}>
                     <SelectItem value="EXPENSE">Despesa</SelectItem>
                     <SelectItem value="INCOME">Receita</SelectItem>
                     <SelectItem value="TRANSFER">Transferência</SelectItem>
@@ -484,12 +524,18 @@ export function TransactionsPage() {
                     name="date"
                     control={editForm.control}
                     render={({ field }) => (
-                      <DateInput id="edit-date" value={field.value} onChange={(e: any) => field.onChange(e?.target ? e.target.value : e)} onBlur={field.onBlur} />
+                      <DateInput
+                        id="edit-date"
+                        value={field.value}
+                        onChange={(e: any) => field.onChange(e?.target ? e.target.value : e)}
+                        onBlur={field.onBlur}
+                        disabled={isEditingInstallment}
+                      />
                     )}
                   />
                 </FormField>
                 <FormField id="edit-paymentMethod" label="Forma de pagamento" error={editForm.formState.errors.paymentMethod?.message}>
-                  <FormSelect control={editForm.control} name="paymentMethod" placeholder="Selecione">
+                  <FormSelect control={editForm.control} name="paymentMethod" placeholder="Selecione" disabled={isEditingInstallment}>
                     <SelectItem value="CASH">Dinheiro</SelectItem>
                     <SelectItem value="DEBIT_CARD">Débito</SelectItem>
                     <SelectItem value="CREDIT_CARD">Crédito</SelectItem>
@@ -503,7 +549,7 @@ export function TransactionsPage() {
 
               <div className="grid gap-2 grid-cols-2">
                 <FormField id="edit-accountId" label="Conta (opcional)" error={editForm.formState.errors.accountId?.message}>
-                  <FormSelect control={editForm.control} name="accountId" placeholder="Selecione">
+                  <FormSelect control={editForm.control} name="accountId" placeholder="Selecione" disabled={isEditingInstallment}>
                     <SelectItem value="">Nenhuma</SelectItem>
                     {(fetchedAccounts ?? []).map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
@@ -511,7 +557,7 @@ export function TransactionsPage() {
                   </FormSelect>
                 </FormField>
                 <FormField id="edit-cardId" label="Cartão (opcional)" error={editForm.formState.errors.cardId?.message}>
-                  <FormSelect control={editForm.control} name="cardId" placeholder="Selecione">
+                  <FormSelect control={editForm.control} name="cardId" placeholder="Selecione" disabled={isEditingInstallment}>
                     <SelectItem value="">Nenhum</SelectItem>
                     {(fetchedCards ?? []).map((card) => (
                       <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>
@@ -524,14 +570,16 @@ export function TransactionsPage() {
                 <Textarea id="edit-notes" placeholder="Observações opcionais" {...editForm.register('notes')} />
               </FormField>
 
-              <SplitsEditor
-                people={fetchedPeople}
-                totalCents={editForm.watch('amount') ?? 0}
-                mode={splitMode}
-                onModeChange={setSplitMode}
-                rows={splitRows}
-                onRowsChange={setSplitRows}
-              />
+              {!isEditingInstallment && (
+                <SplitsEditor
+                  people={fetchedPeople}
+                  totalCents={editForm.watch('amount') ?? 0}
+                  mode={splitMode}
+                  onModeChange={setSplitMode}
+                  rows={splitRows}
+                  onRowsChange={setSplitRows}
+                />
+              )}
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
@@ -543,11 +591,35 @@ export function TransactionsPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Filtros</CardTitle>
+        <CardHeader
+          className="cursor-pointer md:cursor-default py-3 sm:py-4"
+          onClick={() => setShowFilters((prev) => !prev)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base sm:text-lg">Filtros</CardTitle>
+              {activeFiltersCount > 0 && (
+                <Badge variant="secondary" className="text-xs">
+                  {activeFiltersCount} ativo{activeFiltersCount > 1 ? 's' : ''}
+                </Badge>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="md:hidden text-xs text-muted-foreground h-8"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowFilters((prev) => !prev);
+              }}
+            >
+              {showFilters ? 'Ocultar' : 'Filtrar'}
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-6">
+        <CardContent className={cn('pt-0 md:pt-0', !showFilters && 'hidden md:block')}>
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-6">
             <div className="space-y-2">
               <Label htmlFor="startDate">Data inicial</Label>
               <DatePicker id="startDate" value={filters.startDate} onChange={(e: any) => handleFilterChange('startDate', e?.target ? e.target.value : e)} placeholder="dd/mm/aaaa" />
@@ -627,7 +699,14 @@ export function TransactionsPage() {
                 <div key={transaction.id}>
                   <div className="flex items-start justify-between gap-3 border-b px-4 py-3 md:hidden">
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium truncate">{transaction.description}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-medium truncate">{transaction.description}</p>
+                        {transaction.installmentPlanId && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-primary/30 text-primary shrink-0">
+                            Parcela
+                          </Badge>
+                        )}
+                      </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                         {transaction.category && (
                           <span className="flex items-center gap-1.5">
@@ -639,12 +718,14 @@ export function TransactionsPage() {
                         )}
                         <span>{formatDate(transaction.date)}</span>
                         <span>{paymentMethodLabels[transaction.paymentMethod] || transaction.paymentMethod}</span>
-                        {transaction.account?.name && <span>{transaction.account.name}</span>}
+                        {(transaction.account?.name || transaction.card?.name) && (
+                          <span>{transaction.account?.name || transaction.card?.name}</span>
+                        )}
                       </div>
                       {transaction.splits && transaction.splits.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
+                        <div className="mt-1.5 flex flex-wrap gap-1">
                           {transaction.splits.map((s) => (
-                            <Badge key={s.id} variant="outline">{s.person?.name ?? 'Pessoa'} · {formatMoney(s.amount.cents)}</Badge>
+                            <Badge key={s.id} variant="outline" className="text-[10px]">{s.person?.name ?? 'Pessoa'} · {formatMoney(s.amount.cents)}</Badge>
                           ))}
                         </div>
                       )}
@@ -652,8 +733,8 @@ export function TransactionsPage() {
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <p className={cn('font-semibold', getTransactionTypeColor(transaction.type))}>{formatMoney(transaction.amount.cents)}</p>
                       <span className="text-xs text-muted-foreground">{transactionTypeLabels[transaction.type]}</span>
-                      <div className="flex items-center gap-1">
-                        {!isInstallmentGenerated(transaction) && (
+                      <div className="flex items-center gap-1 mt-1">
+                        {!isSystemLocked(transaction) && (
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(transaction)} aria-label="Editar transação">
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -666,7 +747,14 @@ export function TransactionsPage() {
                   </div>
 
                   <div className="hidden md:grid grid-cols-[1.7fr_1.1fr_0.9fr_1fr_1.1fr_1fr_1fr_96px] gap-3 px-4 py-3 border-b hover:bg-accent/50 items-center">
-                    <div className="font-medium truncate">{transaction.description}</div>
+                    <div className="font-medium truncate flex items-center gap-2">
+                      <span className="truncate">{transaction.description}</span>
+                      {transaction.installmentPlanId && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-primary/30 text-primary shrink-0">
+                          Parcela
+                        </Badge>
+                      )}
+                    </div>
                     {transaction.splits && transaction.splits.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {transaction.splits.map((s) => (
@@ -694,12 +782,12 @@ export function TransactionsPage() {
                       </span>
                     </div>
                     <div className="flex justify-end">
-                      {!isInstallmentGenerated(transaction) ? (
+                      {!isSystemLocked(transaction) ? (
                         <Button variant="ghost" size="icon" onClick={() => openEdit(transaction)} aria-label="Editar transação">
                           <Pencil className="h-4 w-4" />
                         </Button>
                       ) : (
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">parcelamento</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">bloqueada</span>
                       )}
                       <Button variant="ghost" size="icon" onClick={() => setDeleteId(transaction.id)} aria-label="Excluir transação">
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -746,8 +834,8 @@ export function TransactionsPage() {
       <ConfirmDeleteDialog
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
-        title="Excluir transação?"
-        description="Essa ação removerá permanentemente a transação e revertirá seus efeitos no saldo. Essa ação não pode ser desfeita."
+        title={isDeletingInstallment ? "Excluir parcela?" : "Excluir transação?"}
+        description={isDeletingInstallment ? "Esta transação é uma parcela de compra no cartão. Excluí-la irá remover esta parcela da fatura e restaurar o limite correspondente no cartão." : "Essa ação removerá permanentemente a transação e revertirá seus efeitos no saldo. Essa ação não pode ser desfeita."}
         loading={deleteMutation.isPending}
         onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
       />

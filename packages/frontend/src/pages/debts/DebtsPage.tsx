@@ -15,7 +15,7 @@ import { Plus, Trash2, Share2, CheckCircle2, Scale, Users } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { positiveMoneyCentsSchema, civilDateSchema, uuidSchema, emailSchema } from '@oxedindin/shared';
-import { FormField, TextInput, CurrencyInput, DateInput, EmailInput, FormSelect } from '@/components/forms';
+import { FormField, TextInput, CurrencyInput, DatePicker, EmailInput, FormSelect } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { SharedDebtsPage } from '@/pages/debts/SharedDebtsPage';
 import { PeoplePage } from '@/pages/people/PeoplePage';
@@ -255,7 +255,7 @@ export function PersonalDebtsTab({ embedded }: { embedded?: boolean } = {}) {
               </div>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-0">
             {debt.remainingAmount.cents > 0 && debt.status !== 'CANCELLED' && (
               <Button size="sm" onClick={() => { setPayTarget({ debt, kind }); payForm.reset({ amount: undefined }); }}>Pagar</Button>
             )}
@@ -338,7 +338,7 @@ export function PersonalDebtsTab({ embedded }: { embedded?: boolean } = {}) {
                     />
                   </FormField>
                   <FormField id="dueDate" label="Vencimento" error={owedForm.formState.errors.dueDate?.message}>
-                    <DateInput id="dueDate" {...owedForm.register('dueDate')} />
+                    <DatePicker id="dueDate" value={owedForm.watch('dueDate')} onChange={(v: string) => owedForm.setValue('dueDate', v, { shouldValidate: true })} />
                   </FormField>
                 </div>
                 <FormField id="personId" label="Pessoa" error={owedForm.formState.errors.personId?.message}>
@@ -385,7 +385,7 @@ export function PersonalDebtsTab({ embedded }: { embedded?: boolean } = {}) {
                     />
                   </FormField>
                   <FormField id="dueDate" label="Vencimento" error={debtForm.formState.errors.dueDate?.message}>
-                    <DateInput id="dueDate" {...debtForm.register('dueDate')} />
+                    <DatePicker id="dueDate" value={debtForm.watch('dueDate')} onChange={(v: string) => debtForm.setValue('dueDate', v, { shouldValidate: true })} />
                   </FormField>
                 </div>
                 <FormField id="type" label="Tipo" error={debtForm.formState.errors.type?.message}>
@@ -412,7 +412,7 @@ export function PersonalDebtsTab({ embedded }: { embedded?: boolean } = {}) {
       </div>
 
       <Tabs defaultValue="pay">
-        <TabsList>
+        <TabsList className="grid w-full grid-cols-2 max-w-xs">
           <TabsTrigger value="pay">A pagar</TabsTrigger>
           <TabsTrigger value="receive">A receber</TabsTrigger>
         </TabsList>

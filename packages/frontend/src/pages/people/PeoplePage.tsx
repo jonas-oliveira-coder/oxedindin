@@ -14,7 +14,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { personTypeSchema, type CreatePersonInput } from '@/lib/validation';
 import { nameSchema, emailSchema, phoneSchema, documentSchema, positiveMoneyCentsSchema, formatPhone } from '@oxedindin/shared';
-import { FormField, TextInput, EmailInput, PhoneInput, CpfInput, CnpjInput, Textarea, FormSelect, CurrencyInput, DateInput } from '@/components/forms';
+import { FormField, TextInput, EmailInput, PhoneInput, CpfInput, CnpjInput, Textarea, FormSelect, CurrencyInput, DatePicker } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 
 interface Person {
@@ -439,7 +439,7 @@ export function PeoplePage({ embedded }: { embedded?: boolean } = {}) {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-between sm:justify-end gap-1 pt-2 sm:pt-0 border-t sm:border-0">
                     <Button variant="ghost" size="icon" onClick={() => openLinkDialog(person)} aria-label="Vincular a dívida" title="Vincular a dívida">
                       <Share2 className="h-4 w-4" />
                     </Button>
@@ -527,7 +527,7 @@ function DebtLinkFields({ form, kind, debtOptions }: { form: any; kind: string; 
             />
           </FormField>
           <FormField id="debtDueDate" label="Vencimento" error={errors.debtDueDate?.message}>
-            <DateInput id="debtDueDate" {...form.register('debtDueDate')} />
+            <DatePicker id="debtDueDate" value={form.watch('debtDueDate')} onChange={(v: string) => form.setValue('debtDueDate', v, { shouldValidate: true })} />
           </FormField>
         </div>
         <FormField id="debtType" label="Tipo" error={errors.debtType?.message}>
