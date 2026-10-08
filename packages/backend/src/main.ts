@@ -34,6 +34,7 @@ async function migrateWithRetry() {
 }
 
 const app = Fastify({
+  trustProxy: true,
   pluginTimeout: 30000,
   logger: {
     transport: env.NODE_ENV !== 'production' ? {
@@ -124,7 +125,7 @@ app.addHook('preValidation', async (request: any, reply: any) => {
 });
 
 await app.register((await import('@fastify/rate-limit')).default, {
-  max: 100,
+  max: 600,
   timeWindow: '1 minute',
   keyGenerator: (req) => req.ip,
   skipOnError: true,

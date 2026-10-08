@@ -43,13 +43,22 @@ const MAIN_TABS = [
 ];
 
 function useUnreadNotifications() {
+  const { isAuthenticated } = useAuth();
   return useQuery({
     queryKey: ['notifications', 'unread-count'],
     queryFn: async () => {
-      const res = await api.get('/notifications', { params: { read: false, limit: 1 } });
-      return res.data?.meta?.total ?? 0;
+      const res = await api.get('/notifications');
+      if (typeof res.data?.meta?.unreadCount === 'number') {
+        return res.data.meta.unreadCount;
+      }
+      const list = res.data?.data;
+      if (Array.isArray(list)) {
+        return list.filter((n: any) => !n.read).length;
+      }
+      return 0;
     },
-    staleTime: 30_000,
+    enabled: !!isAuthenticated,
+    staleTime: 60_000,
   });
 }
 

@@ -8,8 +8,8 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     schema: {
       querystring: paginationSchema.merge(z.object({
-        read: z.union([z.boolean(), z.enum(['true', 'false'])])
-          .transform((v) => (v === true || v === 'true'))
+        read: z.union([z.boolean(), z.enum(['true', 'false', '0', '1'])])
+          .transform((v) => (v === true || v === 'true' || v === '1'))
           .optional(),
       })),
     },
@@ -21,20 +21,22 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
     const conditions = [eq(notification.userId, userId)];
     if (read !== undefined) conditions.push(eq(notification.read, read));
 
-    const [notificationsData, totalResult] = await Promise.all([
+    const [notificationsData, totalResult, unreadResult] = await Promise.all([
       app.db.select().from(notification)
         .where(and(...conditions))
         .orderBy(desc(notification.createdAt))
         .limit(limit)
         .offset((page - 1) * limit),
       app.db.select({ count: count() }).from(notification).where(and(...conditions)),
+      app.db.select({ count: count() }).from(notification).where(and(eq(notification.userId, userId), eq(notification.read, false))),
     ]);
 
     const total = totalResult[0]?.count || 0;
+    const unreadCount = unreadResult[0]?.count || 0;
 
     return {
       data: notificationsData,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      meta: { total, unreadCount, page, limit, totalPages: Math.ceil(total / limit) },
     };
   });
 
