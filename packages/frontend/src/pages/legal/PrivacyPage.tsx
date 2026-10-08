@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Logo } from '@/components/shared/logo';
 import {
   ArrowLeft,
+  ArrowRight,
   ShieldCheck,
   Printer,
   Moon,
@@ -27,6 +28,10 @@ export function PrivacyPage() {
   });
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, []);
+
+  useEffect(() => {
     const html = document.documentElement;
     html.classList.toggle('dark', darkMode);
     html.setAttribute('data-theme', darkMode ? 'dark' : 'light');
@@ -37,11 +42,11 @@ export function PrivacyPage() {
     window.print();
   };
 
-  const handleBack = () => {
-    if (isAuthenticated) {
-      navigate('/dashboard');
-    } else {
+  const handleGoBack = () => {
+    if (window.history.length > 1) {
       navigate(-1);
+    } else {
+      navigate('/');
     }
   };
 
@@ -88,12 +93,32 @@ export function PrivacyPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleBack}
-              className="flex items-center gap-1.5 text-xs sm:text-sm h-9"
+              onClick={handleGoBack}
+              className="flex items-center gap-1.5 text-xs sm:text-sm h-9 text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="h-4 w-4" />
-              {isAuthenticated ? 'Ir para Dashboard' : 'Voltar'}
+              Voltar
             </Button>
+
+            {isAuthenticated ? (
+              <Button
+                size="sm"
+                onClick={() => navigate('/dashboard')}
+                className="flex items-center gap-1.5 text-xs sm:text-sm h-9"
+              >
+                Dashboard
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => navigate('/login')}
+                className="flex items-center gap-1.5 text-xs sm:text-sm h-9"
+              >
+                Entrar
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -408,12 +433,25 @@ export function PrivacyPage() {
               </Link>
 
               <div className="flex items-center gap-3">
-                <Button variant="outline" onClick={handleBack}>
+                <Button
+                  variant="outline"
+                  onClick={handleGoBack}
+                  className="flex items-center gap-1.5"
+                >
+                  <ArrowLeft className="h-4 w-4" />
                   Voltar
                 </Button>
-                <Button onClick={() => navigate(isAuthenticated ? '/dashboard' : '/register')}>
-                  {isAuthenticated ? 'Voltar ao Dashboard' : 'Criar Minha Conta Grátis'}
-                </Button>
+                {isAuthenticated ? (
+                  <Button onClick={() => navigate('/dashboard')} className="flex items-center gap-1.5">
+                    Acessar Dashboard
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button onClick={() => navigate('/register')} className="flex items-center gap-1.5">
+                    Criar Minha Conta Grátis
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </main>

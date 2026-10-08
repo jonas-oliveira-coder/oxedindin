@@ -8,7 +8,9 @@ const notificationsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
     schema: {
       querystring: paginationSchema.merge(z.object({
-        read: z.boolean().optional(),
+        read: z.union([z.boolean(), z.enum(['true', 'false'])])
+          .transform((v) => (v === true || v === 'true'))
+          .optional(),
       })),
     },
     preHandler: [app.authenticate],
