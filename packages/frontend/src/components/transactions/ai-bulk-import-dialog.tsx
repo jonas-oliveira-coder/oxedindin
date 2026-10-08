@@ -331,25 +331,37 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl sm:max-w-3xl">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <DialogTitle className="text-xl">Importação Inteligente com IA</DialogTitle>
+        <DialogHeader className="text-left sm:text-left">
+          <div className="flex items-center gap-3 pr-6">
+            <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-primary">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg sm:text-xl font-bold">Importação Inteligente com IA</DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm mt-0.5">
+                Gere ou formate uma massa de dados completa usando IA e importe tudo com 1 clique.
+              </DialogDescription>
+            </div>
           </div>
-          <DialogDescription>
-            Gere ou formate uma massa de dados completa (contas, cartões, categorias, transações, faturas) usando IA e importe tudo com 1 clique.
-          </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'prompt' | 'import')} className="mt-2">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="prompt" className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              1. Prompt para IA
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'prompt' | 'import')} className="mt-3">
+          <TabsList className="grid w-full grid-cols-2 h-auto p-1 bg-muted/80 gap-1">
+            <TabsTrigger
+              value="prompt"
+              className="flex items-center justify-center gap-1.5 py-2 px-2 text-xs sm:text-sm font-medium whitespace-normal"
+            >
+              <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <span className="hidden sm:inline">1. Prompt para IA</span>
+              <span className="sm:hidden">1. Prompt IA</span>
             </TabsTrigger>
-            <TabsTrigger value="import" className="flex items-center gap-2">
-              <FileJson className="h-4 w-4" />
-              2. Colar JSON & Importar
+            <TabsTrigger
+              value="import"
+              className="flex items-center justify-center gap-1.5 py-2 px-2 text-xs sm:text-sm font-medium whitespace-normal"
+            >
+              <FileJson className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <span className="hidden sm:inline">2. Colar JSON &amp; Importar</span>
+              <span className="sm:hidden">2. Importar JSON</span>
             </TabsTrigger>
           </TabsList>
 
@@ -366,11 +378,11 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
 
             {/* Observação para parcelamentos */}
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-1">
-              <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+              <div className="flex items-start sm:items-center gap-1.5 font-semibold text-foreground">
+                <Sparkles className="h-4 w-4 text-amber-500 shrink-0 mt-0.5 sm:mt-0" />
                 <span>Observação importante: Compras parceladas sem cobranças retroativas</span>
               </div>
-              <p className="text-muted-foreground leading-relaxed">
+              <p className="text-muted-foreground leading-relaxed pl-5 sm:pl-5">
                 O prompt foi configurado para que a IA <strong>nunca gere parcelas passadas no histórico</strong>. Se o seu extrato contiver compras já em andamento (ex: &quot;3/10&quot;), a IA calculará e lançará apenas as parcelas restantes a partir de hoje. Isso mantém seu histórico limpo e evita gerar faturas retroativas vencidas!
               </p>
             </div>
@@ -391,11 +403,11 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
               </div>
             </div>
 
-            <DialogFooter className="pt-2 flex sm:justify-between items-center">
+            <DialogFooter className="pt-2 flex flex-col sm:flex-row sm:justify-between items-stretch sm:items-center gap-2">
               <span className="text-xs text-muted-foreground hidden sm:inline">
                 Dica: Você também pode carregar um exemplo de teste direto na próxima aba.
               </span>
-              <Button onClick={() => setActiveTab('import')} className="gap-2">
+              <Button onClick={() => setActiveTab('import')} className="gap-2 w-full sm:w-auto">
                 Avançar para Importação
                 <ArrowRight className="h-4 w-4" />
               </Button>
@@ -519,14 +531,14 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
                   )}
                 </div>
 
-                <DialogFooter className="pt-2 flex sm:justify-between items-center">
-                  <Button variant="ghost" onClick={() => setActiveTab('prompt')}>
+                <DialogFooter className="pt-2 flex flex-col-reverse sm:flex-row sm:justify-between items-stretch sm:items-center gap-2">
+                  <Button variant="ghost" onClick={() => setActiveTab('prompt')} className="w-full sm:w-auto">
                     Voltar para o Prompt
                   </Button>
                   <Button
                     onClick={handleImport}
                     disabled={!parsedData?.data || !!parsedData?.error || importMutation.isPending}
-                    className="gap-2"
+                    className="gap-2 w-full sm:w-auto"
                   >
                     {importMutation.isPending ? (
                       <>
