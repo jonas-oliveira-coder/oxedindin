@@ -32,6 +32,14 @@ interface CreditCard {
   updatedAt: string;
   notes?: string;
   account?: { id: string; name: string } | null;
+  currentInvoice?: {
+    id: string;
+    total: { cents: number; currency: string };
+    remaining: { cents: number; currency: string };
+    status: string;
+    dueDate: string;
+    closingDate: string;
+  } | null;
 }
 
 const last4Schema = z.string().regex(/^\d{4}$/, 'Informe os 4 últimos dígitos do cartão.');
@@ -356,6 +364,17 @@ export function CardsPage({ embedded }: { embedded?: boolean } = {}) {
                   <span>Fechamento: dia <strong>{card.closingDay}</strong></span>
                   <span>Vencimento: dia <strong>{card.dueDay}</strong></span>
                 </div>
+
+                {card.currentInvoice && (
+                  <div className="flex items-center justify-between text-xs bg-muted/50 px-2.5 py-1.5 rounded-md">
+                    <span className="text-muted-foreground">
+                      Fatura atual ({card.currentInvoice.status === 'OVERDUE' ? 'Vencida' : card.currentInvoice.status === 'CLOSED' ? 'Fechada' : card.currentInvoice.status === 'PAID' ? 'Paga' : 'Aberta'}):
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {formatMoney(card.currentInvoice.remaining?.cents ?? card.currentInvoice.total?.cents ?? 0)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Balance & Limits */}
                 <div className="space-y-2">

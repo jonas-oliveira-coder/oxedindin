@@ -4,6 +4,14 @@ import { eq, and, desc, gte, lte, count, sum, sql, inArray } from 'drizzle-orm';
 import { createTransactionSchema, paginationSchema, dateRangeSchema, dateInputSchema, bulkImportSchema } from '../../types/schemas.js';
 import { transaction, bankAccount, creditCard, category, invoice, installmentPlan, installment, person, transactionSplit, bill, debt } from '../../db/schema/index.js';
 
+import {
+  getInvoiceCycle,
+  getInvoiceCycleForDate,
+  getInvoiceCycleFromDueDate,
+  getOrCreateInvoiceForCycle,
+  recalculateInvoice,
+} from '../../services/invoice.service.js';
+
 function calculateInstallmentValue(totalCents: number, count: number): number[] {
   const baseValue = Math.floor(totalCents / count);
   const remainder = totalCents % count;
@@ -16,45 +24,13 @@ function calculateInstallmentValue(totalCents: number, count: number): number[] 
   return values;
 }
 
-function getInvoicePeriod(date: Date, closingDay: number): { start: Date; end: Date } {
-  const year = date.getFullYear();
-  const month = date.getMonth();
-
-  let closingDate = new Date(year, month, closingDay);
-  if (closingDate > date) {
-    closingDate = new Date(year, month - 1, closingDay);
-  }
-
-  const periodStart = new Date(closingDate);
-  periodStart.setDate(periodStart.getDate() + 1);
-
-  const periodEnd = new Date(closingDate);
-  periodEnd.setMonth(periodEnd.getMonth() + 1);
-
-  return { start: periodStart, end: periodEnd };
-}
-
-function getInvoiceForDate(date: Date, closingDay: number, dueDay: number): { closingDate: Date; dueDate: Date; periodStart: Date; periodEnd: Date } {
-  const { start, end } = getInvoicePeriod(date, closingDay);
-
-  const dueDate = new Date(end);
-  dueDate.setDate(dueDay);
-  if (dueDate <= end) {
-    dueDate.setMonth(dueDate.getMonth() + 1);
-  }
-
-  const closingDate = new Date(end);
-
-  return { closingDate, dueDate, periodStart: start, periodEnd: end };
-}
-
 async function createInstallmentPlan(app: any, input: {
   userId: string;
   description: string;
   totalAmount: number;
   installmentsCount: number;
   startDate: Date;
-  firstInvoiceDate: Date;
+  firstInvoiceDate?: Date;
   cardId: string;
   categoryId?: string | null;
 }, db?: any): Promise<{ plan: any; installments: any[] }> {
@@ -82,6 +58,13 @@ async function createInstallmentPlan(app: any, input: {
   const installmentValues = calculateInstallmentValue(totalAmount, installmentsCount);
   const installmentValue = installmentValues[0];
 
+  // Resolve starting invoice cycle:
+  // If firstInvoiceDate differs significantly from startDate, resolve cycle from due date
+  let firstCycle = getInvoiceCycleForDate(startDate, card.closingDay, card.dueDay);
+  if (firstInvoiceDate && Math.abs(firstInvoiceDate.getTime() - startDate.getTime()) > 86400000 * 2) {
+    firstCycle = getInvoiceCycleFromDueDate(firstInvoiceDate, card.closingDay, card.dueDay);
+  }
+
   const [plan] = await dbOrTx.insert(installmentPlan).values({
     userId,
     cardId,
@@ -90,54 +73,25 @@ async function createInstallmentPlan(app: any, input: {
     installmentsCount,
     installmentValueCents: installmentValue,
     startDate,
-    firstInvoiceDate,
+    firstInvoiceDate: firstCycle.dueDate,
     categoryId,
   }).returning();
 
   const createdInstallments = [];
   for (let i = 0; i < installmentsCount; i++) {
-    const dueDate = new Date(firstInvoiceDate);
-    dueDate.setMonth(dueDate.getMonth() + i);
-
-    const invoiceInfo = getInvoiceForDate(dueDate, card.closingDay, card.dueDay);
-
-    const [existingInvoice] = await dbOrTx.select()
-      .from(invoice)
-      .where(and(eq(invoice.cardId, cardId), eq(invoice.periodStart, invoiceInfo.periodStart), eq(invoice.periodEnd, invoiceInfo.periodEnd)))
-      .limit(1);
-
-    let invoiceRecord = existingInvoice;
-    if (!invoiceRecord) {
-      const [newInvoice] = await dbOrTx.insert(invoice).values({
-        cardId,
-        periodStart: invoiceInfo.periodStart,
-        periodEnd: invoiceInfo.periodEnd,
-        closingDate: invoiceInfo.closingDate,
-        dueDate: invoiceInfo.dueDate,
-        totalCents: 0,
-        paidCents: 0,
-        remainingCents: 0,
-        status: 'OPEN',
-      }).returning();
-      invoiceRecord = newInvoice;
-    }
+    const cycle = getInvoiceCycle(firstCycle.cycleYear, firstCycle.cycleMonth + i, card.closingDay, card.dueDay);
+    const invoiceRecord = await getOrCreateInvoiceForCycle(dbOrTx, card, cycle);
 
     const [newInstallment] = await dbOrTx.insert(installment).values({
       planId: plan.id,
       invoiceId: invoiceRecord.id,
       number: i + 1,
       amountCents: installmentValues[i],
-      dueDate: invoiceInfo.dueDate,
+      dueDate: cycle.dueDate,
       status: 'PENDING',
     }).returning();
 
-    await dbOrTx.update(invoice)
-      .set({
-        totalCents: sql`${invoice.totalCents} + ${installmentValues[i]}`,
-        remainingCents: sql`${invoice.remainingCents} + ${installmentValues[i]}`,
-      })
-      .where(eq(invoice.id, invoiceRecord.id));
-
+    await recalculateInvoice(dbOrTx, invoiceRecord.id);
     createdInstallments.push(newInstallment);
   }
 
@@ -367,7 +321,6 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       if (!cardForPlan) throw app.httpErrors.badRequest('Cartão não encontrado.');
 
       const purchaseDate = new Date(date);
-      const firstInvoiceDate = getInvoiceForDate(purchaseDate, cardForPlan.closingDay, cardForPlan.dueDay).dueDate;
 
       const { plan, installments } = await createInstallmentPlan(app, {
         userId,
@@ -375,7 +328,6 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         totalAmount: amount,
         installmentsCount,
         startDate: purchaseDate,
-        firstInvoiceDate,
         cardId,
         categoryId,
       });
@@ -434,39 +386,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         .where(eq(creditCard.id, cardId))
         .limit(1);
       if (card) {
-        const { closingDate, dueDate, periodStart, periodEnd } = getInvoiceForDate(
-          new Date(date),
-          card.closingDay,
-          card.dueDay
-        );
-
-        const [existingInvoice] = await app.db.select()
-          .from(invoice)
-          .where(and(eq(invoice.cardId, cardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
-          .limit(1);
-
-        let invoiceRecord = existingInvoice;
-        if (!invoiceRecord) {
-          const [newInvoice] = await app.db.insert(invoice).values({
-            cardId,
-            periodStart,
-            periodEnd,
-            closingDate,
-            dueDate,
-            totalCents: 0n,
-            paidCents: 0n,
-            remainingCents: 0n,
-            status: 'OPEN',
-          }).returning();
-          invoiceRecord = newInvoice;
-        }
-
-        await app.db.update(invoice)
-          .set({
-            totalCents: sql`${invoice.totalCents} + ${amount}`,
-            remainingCents: sql`${invoice.remainingCents} + ${amount}`,
-          })
-          .where(eq(invoice.id, invoiceRecord.id));
+        const cycle = getInvoiceCycleForDate(new Date(date), card.closingDay, card.dueDay);
+        const invoiceRecord = await getOrCreateInvoiceForCycle(app.db, card, cycle);
 
         await app.db.update(creditCard)
           .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${amount}` })
@@ -475,6 +396,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         await app.db.update(transaction)
           .set({ invoiceId: invoiceRecord.id })
           .where(eq(transaction.id, newTransaction.id));
+
+        await recalculateInvoice(app.db, invoiceRecord.id);
       }
     }
 
@@ -689,14 +612,12 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         if (t.installmentsCount && t.installmentsCount > 1 && linkedCardId) {
           const [cardForPlan] = await tx.select().from(creditCard).where(eq(creditCard.id, linkedCardId)).limit(1);
           if (cardForPlan) {
-            const firstInvoiceDate = getInvoiceForDate(tDate, cardForPlan.closingDay, cardForPlan.dueDay).dueDate;
             await createInstallmentPlan(app, {
               userId,
               description: t.description.trim(),
               totalAmount: amount,
               installmentsCount: t.installmentsCount,
               startDate: tDate,
-              firstInvoiceDate,
               cardId: linkedCardId,
               categoryId: linkedCategoryId,
             }, tx);
@@ -762,37 +683,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         if (linkedCardId) {
           const [card] = await tx.select().from(creditCard).where(eq(creditCard.id, linkedCardId)).limit(1);
           if (card) {
-            const { closingDate, dueDate, periodStart, periodEnd } = getInvoiceForDate(
-              tDate,
-              card.closingDay,
-              card.dueDay
-            );
-            const [existingInv] = await tx.select().from(invoice)
-              .where(and(eq(invoice.cardId, linkedCardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
-              .limit(1);
-
-            let invRecord = existingInv;
-            if (!invRecord) {
-              const [newInv] = await tx.insert(invoice).values({
-                cardId: linkedCardId,
-                periodStart,
-                periodEnd,
-                closingDate,
-                dueDate,
-                totalCents: 0,
-                paidCents: 0,
-                remainingCents: 0,
-                status: 'OPEN',
-              }).returning();
-              invRecord = newInv;
-            }
-
-            await tx.update(invoice)
-              .set({
-                totalCents: sql`${invoice.totalCents} + ${amount}`,
-                remainingCents: sql`${invoice.remainingCents} + ${amount}`,
-              })
-              .where(eq(invoice.id, invRecord.id));
+            const cycle = getInvoiceCycleForDate(tDate, card.closingDay, card.dueDay);
+            const invRecord = await getOrCreateInvoiceForCycle(tx, card, cycle);
 
             await tx.update(creditCard)
               .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${amount}` })
@@ -801,6 +693,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
             await tx.update(transaction)
               .set({ invoiceId: invRecord.id })
               .where(eq(transaction.id, newTx.id));
+
+            await recalculateInvoice(tx, invRecord.id);
           }
         }
       }
@@ -1002,29 +896,9 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     if (existing.cardId) {
-      const [oldCard] = await app.db.select()
-        .from(creditCard)
-        .where(eq(creditCard.id, existing.cardId))
-        .limit(1);
-      if (oldCard) {
-        const { periodStart, periodEnd } = getInvoiceForDate(new Date(existing.date), oldCard.closingDay, oldCard.dueDay);
-        const [linkedInvoice] = await app.db.select()
-          .from(invoice)
-          .where(and(eq(invoice.cardId, existing.cardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
-          .limit(1);
-        if (linkedInvoice) {
-          await app.db.update(invoice)
-            .set({
-              totalCents: sql`${invoice.totalCents} - ${oldAmount}`,
-              remainingCents: sql`${invoice.remainingCents} - ${oldAmount}`,
-            })
-            .where(eq(invoice.id, linkedInvoice.id));
-        }
-
-        await app.db.update(creditCard)
-          .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${oldAmount}` })
-          .where(eq(creditCard.id, existing.cardId));
-      }
+      await app.db.update(creditCard)
+        .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${oldAmount}` })
+        .where(eq(creditCard.id, existing.cardId));
     }
 
     const updateData: any = {};
@@ -1055,45 +929,35 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       }
     }
 
+    let newInvoiceRecordId: string | null = null;
     if (nextCardId) {
       const [newCard] = await app.db.select()
         .from(creditCard)
         .where(eq(creditCard.id, nextCardId))
         .limit(1);
       if (newCard) {
-        const { closingDate, dueDate, periodStart, periodEnd } = getInvoiceForDate(nextDate, newCard.closingDay, newCard.dueDay);
-        const [existingInvoice] = await app.db.select()
-          .from(invoice)
-          .where(and(eq(invoice.cardId, nextCardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
-          .limit(1);
-
-        let invoiceRecord = existingInvoice;
-        if (!invoiceRecord) {
-          const [newInvoice] = await app.db.insert(invoice).values({
-            cardId: nextCardId,
-            periodStart,
-            periodEnd,
-            closingDate,
-            dueDate,
-            totalCents: 0n,
-            paidCents: 0n,
-            remainingCents: 0n,
-            status: 'OPEN',
-          }).returning();
-          invoiceRecord = newInvoice;
-        }
-
-        await app.db.update(invoice)
-          .set({
-            totalCents: sql`${invoice.totalCents} + ${nextAmount}`,
-            remainingCents: sql`${invoice.remainingCents} + ${nextAmount}`,
-          })
-          .where(eq(invoice.id, invoiceRecord.id));
+        const cycle = getInvoiceCycleForDate(nextDate, newCard.closingDay, newCard.dueDay);
+        const invoiceRecord = await getOrCreateInvoiceForCycle(app.db, newCard, cycle);
+        newInvoiceRecordId = invoiceRecord.id;
 
         await app.db.update(creditCard)
           .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${nextAmount}` })
           .where(eq(creditCard.id, nextCardId));
+
+        await app.db.update(transaction)
+          .set({ invoiceId: invoiceRecord.id })
+          .where(eq(transaction.id, updatedTransaction.id));
+
+        await recalculateInvoice(app.db, invoiceRecord.id);
       }
+    } else if (existing.cardId && !nextCardId) {
+      await app.db.update(transaction)
+        .set({ invoiceId: null })
+        .where(eq(transaction.id, updatedTransaction.id));
+    }
+
+    if (existing.invoiceId && existing.invoiceId !== newInvoiceRecordId) {
+      await recalculateInvoice(app.db, existing.invoiceId);
     }
 
     if (body.splits !== undefined) {
@@ -1124,7 +988,7 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-const [existing] = await app.db.select()
+    const [existing] = await app.db.select()
       .from(transaction)
       .where(and(eq(transaction.id, request.params.id), eq(transaction.userId, request.authUser!.id)))
       .limit(1);
@@ -1152,34 +1016,18 @@ const [existing] = await app.db.select()
     }
 
     if (existing.cardId) {
-      const [card] = await app.db.select()
-        .from(creditCard)
-        .where(eq(creditCard.id, existing.cardId))
-        .limit(1);
-
-      if (card) {
-        const { periodStart, periodEnd } = getInvoiceForDate(new Date(existing.date), card.closingDay, card.dueDay);
-        const [linkedInvoice] = await app.db.select()
-          .from(invoice)
-          .where(and(eq(invoice.cardId, existing.cardId), eq(invoice.periodStart, periodStart), eq(invoice.periodEnd, periodEnd)))
-          .limit(1);
-
-        if (linkedInvoice) {
-          await app.db.update(invoice)
-            .set({
-              totalCents: sql`${invoice.totalCents} - ${amountCents}`,
-              remainingCents: sql`${invoice.remainingCents} - ${amountCents}`,
-            })
-            .where(eq(invoice.id, linkedInvoice.id));
-        }
-
-        await app.db.update(creditCard)
-          .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${amountCents}` })
-          .where(eq(creditCard.id, existing.cardId));
-      }
+      await app.db.update(creditCard)
+        .set({ availableLimitCents: sql`${creditCard.availableLimitCents} + ${amountCents}` })
+        .where(eq(creditCard.id, existing.cardId));
     }
 
+    const invoiceIdToRecalculate = existing.invoiceId;
+
     await app.db.delete(transaction).where(eq(transaction.id, request.params.id));
+
+    if (invoiceIdToRecalculate) {
+      await recalculateInvoice(app.db, invoiceIdToRecalculate);
+    }
 
     await app.auditLog({
       userId: request.authUser!.id,

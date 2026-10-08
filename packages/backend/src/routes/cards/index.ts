@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { eq, and, desc, gte, gt, lte, count, inArray } from 'drizzle-orm';
 import { createCardSchema, updateCardSchema, paginationSchema } from '../../types/schemas.js';
 import { creditCard, bankAccount, invoice, installment, installmentPlan, transaction, category } from '../../db/schema/index.js';
+import { resolveInvoiceStatus, getInvoiceCycleForDate, getOrCreateInvoiceForCycle } from '../../services/invoice.service.js';
 
 const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -29,14 +30,52 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
     ]);
 
     const total = totalResult[0]?.count || 0;
+    const cardIds = cards.map((c: any) => c.creditCard.id);
+    const invoicesByCard = new Map<string, any>();
+
+    if (cardIds.length > 0) {
+      const allInvoices = await app.db.select()
+        .from(invoice)
+        .where(inArray(invoice.cardId, cardIds))
+        .orderBy(desc(invoice.periodStart));
+
+      const now = new Date();
+      // First pass: find unpaid closed or open invoices
+      for (const inv of allInvoices) {
+        if (!invoicesByCard.has(inv.cardId)) {
+          const status = resolveInvoiceStatus(inv, now);
+          if (status !== 'PAID') {
+            invoicesByCard.set(inv.cardId, { ...inv, status });
+          }
+        }
+      }
+      // Second pass: if card only has paid invoices, take the most recent
+      for (const inv of allInvoices) {
+        if (!invoicesByCard.has(inv.cardId)) {
+          invoicesByCard.set(inv.cardId, { ...inv, status: resolveInvoiceStatus(inv, now) });
+        }
+      }
+    }
 
     return {
-      data: cards.map((c) => ({
-        ...c.creditCard,
-        account: c.account,
-        limit: { cents: Number(c.creditCard.limitCents), currency: 'BRL' as const },
-        availableLimit: { cents: Number(c.creditCard.availableLimitCents), currency: 'BRL' as const },
-      })),
+      data: cards.map((c: any) => {
+        const inv = invoicesByCard.get(c.creditCard.id);
+        return {
+          ...c.creditCard,
+          account: c.account,
+          limit: { cents: Number(c.creditCard.limitCents), currency: 'BRL' as const },
+          availableLimit: { cents: Number(c.creditCard.availableLimitCents), currency: 'BRL' as const },
+          currentInvoice: inv ? {
+            id: inv.id,
+            total: { cents: Number(inv.totalCents), currency: 'BRL' as const },
+            remaining: { cents: Number(inv.remainingCents), currency: 'BRL' as const },
+            paid: { cents: Number(inv.paidCents), currency: 'BRL' as const },
+            dueDate: inv.dueDate,
+            closingDate: inv.closingDate,
+            status: inv.status,
+          } : null,
+        };
+      }),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cleanJsonInput, AI_IMPORT_SYSTEM_PROMPT } from './ai-bulk-import-dialog';
+import { cleanJsonInput, AI_IMPORT_SYSTEM_PROMPT, getAiImportPrompt } from './ai-bulk-import-dialog';
 
 describe('AI Bulk Import Utilities', () => {
   it('cleans raw JSON without code blocks', () => {
@@ -35,5 +35,13 @@ describe('AI Bulk Import Utilities', () => {
     expect(AI_IMPORT_SYSTEM_PROMPT).toContain('bills');
     expect(AI_IMPORT_SYSTEM_PROMPT).toContain('debts');
     expect(AI_IMPORT_SYSTEM_PROMPT).toContain('JSON válido');
+    expect(AI_IMPORT_SYSTEM_PROMPT).toContain('NÃO GERAR PARCELAS RETROATIVAS');
+    expect(AI_IMPORT_SYSTEM_PROMPT).toContain('DATA DE REFERÊNCIA DE HOJE');
+  });
+
+  it('generates prompt with custom reference date', () => {
+    const prompt = getAiImportPrompt('2026-12-25');
+    expect(prompt).toContain('DATA DE REFERÊNCIA DE HOJE: 2026-12-25');
+    expect(prompt).toContain('NÃO GERAR PARCELAS RETROATIVAS');
   });
 });

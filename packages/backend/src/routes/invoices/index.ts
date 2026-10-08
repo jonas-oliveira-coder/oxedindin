@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { eq, and, gt, count, sql, desc, asc, inArray, lte } from 'drizzle-orm';
 import { paginationSchema } from '../../types/schemas.js';
 import { invoice, creditCard, transaction, category, installment, installmentPlan, bankAccount } from '../../db/schema/index.js';
+import { resolveInvoiceStatus } from '../../services/invoice.service.js';
 
 const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
   app.get('/', {
@@ -34,17 +35,13 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
     const conditions = [inArray(invoice.cardId, cardIds)];
     if (status) conditions.push(eq(invoice.status, status));
 
-    const [invoicesData, totalResult] = await Promise.all([
+    const [invoicesRows, totalResult] = await Promise.all([
       app.db.select({
         invoice,
         card: creditCard,
-        transaction,
-        category,
       })
         .from(invoice)
         .leftJoin(creditCard, eq(invoice.cardId, creditCard.id))
-        .leftJoin(transaction, eq(invoice.id, transaction.invoiceId))
-        .leftJoin(category, eq(transaction.categoryId, category.id))
         .where(and(...conditions))
         .orderBy(desc(invoice.periodStart))
         .limit(limit)
@@ -53,33 +50,45 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
     ]);
 
     const total = totalResult[0]?.count || 0;
+    const pageInvoiceIds = invoicesRows.map((r: any) => r.invoice.id);
 
-    // Group transactions by invoice
-    const invoiceMap = new Map<string, any>();
-    for (const i of invoicesData) {
-      if (!invoiceMap.has(i.invoice.id)) {
-        invoiceMap.set(i.invoice.id, {
-          ...i.invoice,
-          card: i.card,
-          transactions: [],
+    const txsByInvoice = new Map<string, any[]>();
+    if (pageInvoiceIds.length > 0) {
+      const txRows = await app.db.select({
+        transaction,
+        category,
+      })
+        .from(transaction)
+        .leftJoin(category, eq(transaction.categoryId, category.id))
+        .where(inArray(transaction.invoiceId, pageInvoiceIds));
+
+      for (const t of txRows) {
+        if (!t.transaction.invoiceId) continue;
+        const list = txsByInvoice.get(t.transaction.invoiceId) || [];
+        list.push({
+          ...t.transaction,
+          amount: { cents: Number(t.transaction.amountCents), currency: 'BRL' as const },
+          category: t.category,
         });
-      }
-      if (i.transaction?.id) {
-        invoiceMap.get(i.invoice.id).transactions.push({
-          ...i.transaction,
-          amount: { cents: Number(i.transaction.amountCents), currency: 'BRL' as const },
-          category: i.category,
-        });
+        txsByInvoice.set(t.transaction.invoiceId, list);
       }
     }
 
+    const now = new Date();
     return {
-      data: Array.from(invoiceMap.values()).map((i) => ({
-        ...i,
-        total: { cents: Number(i.totalCents), currency: 'BRL' as const },
-        paid: { cents: Number(i.paidCents), currency: 'BRL' as const },
-        remaining: { cents: Number(i.remainingCents), currency: 'BRL' as const },
-      })),
+      data: invoicesRows.map((r: any) => {
+        const inv = r.invoice;
+        const resolvedStatus = resolveInvoiceStatus(inv, now);
+        return {
+          ...inv,
+          status: resolvedStatus,
+          card: r.card,
+          transactions: txsByInvoice.get(inv.id) || [],
+          total: { cents: Number(inv.totalCents), currency: 'BRL' as const },
+          paid: { cents: Number(inv.paidCents), currency: 'BRL' as const },
+          remaining: { cents: Number(inv.remainingCents), currency: 'BRL' as const },
+        };
+      }),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   });
@@ -164,8 +173,11 @@ const invoicesRoutes: FastifyPluginAsyncZod = async (app) => {
       .leftJoin(installmentPlan, eq(installment.planId, installmentPlan.id))
       .where(eq(installment.invoiceId, invoiceData.invoice.id));
 
+    const status = resolveInvoiceStatus(invoiceData.invoice);
+
     return {
       ...invoiceData.invoice,
+      status,
       card: invoiceData.card,
       total: { cents: Number(invoiceData.invoice.totalCents), currency: 'BRL' as const },
       paid: { cents: Number(invoiceData.invoice.paidCents), currency: 'BRL' as const },

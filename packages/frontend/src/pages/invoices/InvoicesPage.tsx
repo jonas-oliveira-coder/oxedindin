@@ -175,12 +175,12 @@ export function InvoicesPage({ embedded }: { embedded?: boolean } = {}) {
             </div>
             <div className="space-y-2">
               {upcoming.map((u) => (
-                <div key={u.cardId} className="flex items-center justify-between p-3 rounded-lg border">
-                  <div>
-                    <p className="font-medium">{u.cardName} • final {u.cardLast4}</p>
-                    <p className="text-sm text-muted-foreground">Vence em {formatDate(u.dueDate)}</p>
+                <div key={u.cardId} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg border gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{u.cardName} • final {u.cardLast4}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground">Vence em {formatDate(u.dueDate)}</p>
                   </div>
-                  <p className="font-bold">{formatMoney(u.remaining.cents)}</p>
+                  <p className="font-bold shrink-0">{formatMoney(u.remaining.cents)}</p>
                 </div>
               ))}
             </div>
@@ -191,32 +191,33 @@ export function InvoicesPage({ embedded }: { embedded?: boolean } = {}) {
       {invoices && invoices.length > 0 ? (
         <div className="space-y-3">
           {invoices.map((invoice) => (
-            <Card key={invoice.id}>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+            <Card key={invoice.id} className="overflow-hidden">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 mt-0.5 sm:mt-0">
                       <CreditCard className="h-5 w-5 text-primary" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">{invoice.card?.name || 'Cartão'}</h3>
-                        <Badge variant="outline" className={getStatusColor(invoice.status)}>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold truncate">{invoice.card?.name || 'Cartão'}</h3>
+                        <Badge variant="outline" className={`shrink-0 ${getStatusColor(invoice.status)}`}>
                           {statusLabels[invoice.status] || invoice.status}
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
                         Fechamento {formatDate(invoice.closingDate)} · Vence {formatDate(invoice.dueDate)}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <p className="font-bold text-lg">{formatMoney(invoice.total.cents)}</p>
-                      <p className="text-sm text-muted-foreground">Restante: {formatMoney(invoice.remaining.cents)}</p>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-4 pt-3 border-t sm:border-0 sm:pt-0">
+                    <div className="text-left sm:text-right">
+                      <p className="font-bold text-base sm:text-lg">{formatMoney(invoice.total.cents)}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">Restante: {formatMoney(invoice.remaining.cents)}</p>
                     </div>
                     {invoice.status !== 'PAID' && (
-                      <Button size="sm" onClick={() => openPayDialog(invoice)}>Pagar</Button>
+                      <Button size="sm" className="shrink-0" onClick={() => openPayDialog(invoice)}>Pagar</Button>
                     )}
                   </div>
                 </div>

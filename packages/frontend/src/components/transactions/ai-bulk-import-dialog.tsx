@@ -26,8 +26,15 @@ import {
   RotateCcw,
 } from 'lucide-react';
 
-export const AI_IMPORT_SYSTEM_PROMPT = `Você é um assistente especialista em finanças pessoais para o aplicativo OxeDinDin.
-Sua tarefa é converter extratos bancários, faturas de cartão de crédito, anotações de gastos ou gerar uma massa completa de dados financeiros para popular o sistema.
+export function getAiImportPrompt(referenceDate?: string): string {
+  const today = referenceDate || new Date().toISOString().slice(0, 10);
+  const [year, month] = today.split('-');
+
+  return `Você é um assistente especialista em finanças pessoais para o aplicativo OxeDinDin.
+Sua tarefa é analisar faturas de cartão de crédito, extratos bancários, anotações de gastos ou recibos e convertê-los em um JSON estruturado para popular o sistema.
+
+DATA DE REFERÊNCIA DE HOJE: ${today} (Ano: ${year}, Mês: ${month})
+Todas as datas informadas ou inferidas devem tomar como base esta data de referência.
 
 Gere OBRIGATORIAMENTE uma resposta contendo APENAS o JSON válido (sem explicações antes ou depois). Você pode envolver em um bloco \`\`\`json \`\`\`.
 
@@ -66,7 +73,7 @@ Gere OBRIGATORIAMENTE uma resposta contendo APENAS o JSON válido (sem explicaç
       "description": "Salário Mensal",
       "amount": 5000.00,
       "type": "INCOME", // "INCOME", "EXPENSE", "TRANSFER"
-      "date": "2026-03-05", // Formato ISO: YYYY-MM-DD
+      "date": "${today}", // Formato ISO: YYYY-MM-DD
       "paymentMethod": "PIX", // "CASH", "DEBIT_CARD", "CREDIT_CARD", "PIX", "BANK_TRANSFER", "BOLETO", "OTHER"
       "accountName": "Nubank",
       "categoryName": "Salário"
@@ -75,31 +82,31 @@ Gere OBRIGATORIAMENTE uma resposta contendo APENAS o JSON válido (sem explicaç
       "description": "Supermercado Pão de Açúcar",
       "amount": 342.80,
       "type": "EXPENSE",
-      "date": "2026-03-08",
+      "date": "${today}",
       "paymentMethod": "CREDIT_CARD",
       "cardName": "Nubank Ultravioleta",
       "categoryName": "Alimentação"
     },
     {
-      "description": "Geladeira Frost Free",
-      "amount": 3600.00,
+      "description": "Geladeira Frost Free (restante 7x)",
+      "amount": 2100.00, // Valor total das parcelas que RESTAM a pagar a partir de hoje (7 x 300)
       "type": "EXPENSE",
-      "date": "2026-03-01",
+      "date": "${today}",
       "paymentMethod": "CREDIT_CARD",
       "cardName": "Nubank Ultravioleta",
       "categoryName": "Moradia",
-      "installmentsCount": 10 // Opcional: parcelar em 10x no cartão
+      "installmentsCount": 7 // Apenas as parcelas restantes a partir de hoje
     },
     {
       "description": "Almoço Compartilhado",
       "amount": 180.00,
       "type": "EXPENSE",
-      "date": "2026-03-02",
+      "date": "${today}",
       "paymentMethod": "PIX",
       "accountName": "Nubank",
       "categoryName": "Alimentação",
       "splits": [
-        { "personName": "Maria Silva", "amount": 90.00 } // Opcional: dividir com outras pessoas
+        { "personName": "Maria Silva", "amount": 90.00 } // Dividido com outras pessoas
       ]
     }
   ],
@@ -107,7 +114,7 @@ Gere OBRIGATORIAMENTE uma resposta contendo APENAS o JSON válido (sem explicaç
     {
       "description": "Aluguel Apartamento",
       "amount": 1800.00,
-      "dueDate": "2026-03-10", // Formato ISO: YYYY-MM-DD
+      "dueDate": "${today}", // Formato ISO: YYYY-MM-DD
       "status": "PENDING", // "PENDING", "PAID", "OVERDUE"
       "categoryName": "Moradia",
       "paymentMethod": "PIX"
@@ -117,19 +124,45 @@ Gere OBRIGATORIAMENTE uma resposta contendo APENAS o JSON válido (sem explicaç
     {
       "description": "Empréstimo para reforma",
       "totalAmount": 1200.00,
-      "dueDate": "2026-04-15", // Formato ISO: YYYY-MM-DD
+      "dueDate": "${today}",
       "type": "BORROWED_MONEY", // "BORROWED_MONEY" (eu devo) | "LENT_MONEY" (me devem)
       "personName": "Maria Silva"
     }
   ]
 }
 
-### REGRAS IMPORTANTES:
-1. Todos os valores podem ser informados como números decimais em reais (ex: 150.50).
-2. Para parcelamentos, inclua "installmentsCount" (ex: 10) em transações com cartão de crédito.
-3. Para dividir contas com amigos ou familiares, use a lista "splits" com "personName" e "amount".
-4. As referências por nome ("accountName", "cardName", "categoryName", "personName") devem bater com os nomes cadastrados.
-5. Não use valores nulos ou campos desconhecidos. Responda apenas com o JSON.`;
+### REGRAS CRÍTICAS E OBRIGATÓRIAS:
+1. NÃO GERAR PARCELAS RETROATIVAS NO PASSADO:
+   - O sistema gerencia as contas presentes e futuras. NUNCA crie parcelas em datas retroativas que já foram pagas em faturas anteriores.
+   - Se o extrato ou texto contiver uma compra parcelada EM ANDAMENTO (ex: "TV 03/10 de R$ 200,00" ou "Sofá 4/12 de R$ 150,00"):
+     a) As parcelas anteriores já foram quitadas no passado.
+     b) Conte apenas quantas parcelas AINDA FALTAM pagar da fatura atual em diante. (Exemplo: em 03/10, se a 3ª ainda é a fatura aberta do mês atual, faltam 8 parcelas da 3ª à 10ª).
+     c) Calcule o valor total restante: (parcelas restantes) × (valor de cada parcela).
+     d) Lance UMA ÚNICA transação com:
+        - "amount": valor total restante (ex: 8 × 200 = 1600.00)
+        - "installmentsCount": número de parcelas restantes (ex: 8)
+        - "date": data de referência de hoje (${today})
+        - "paymentMethod": "CREDIT_CARD"
+        - "cardName": nome do cartão
+     O sistema OxeDinDin criará a 1ª parcela restante na fatura atual e distribuirá as demais parcelas automaticamente nos meses seguintes!
+   - Para compras novas parceladas contratadas no mês corrente:
+     - "amount": valor total da compra
+     - "installmentsCount": total de parcelas
+     - "date": data da compra no mês atual
+
+2. DIVISÃO DE CONTAS (SPLITS):
+   - Se uma despesa foi dividida com alguém, adicione a pessoa na lista "people" e informe o array "splits" na transação com "personName" e "amount".
+   - Se for empréstimo direto sem gasto de consumo, use "debts" com "type": "LENT_MONEY" (se devem a você) ou "BORROWED_MONEY" (se você deve).
+
+3. CARTÕES E CONTAS:
+   - Sempre informe "closingDay" (dia de fechamento) e "dueDay" (dia de vencimento) nos cartões.
+   - As referências por nome ("accountName", "cardName", "categoryName", "personName") devem bater exatamente com os nomes cadastrados.
+   - Use valores numéricos decimais em reais (ex: 150.50).
+
+4. Não inclua comentários nem texto fora do bloco JSON. Responda apenas com o JSON válido.`;
+}
+
+export const AI_IMPORT_SYSTEM_PROMPT = getAiImportPrompt();
 
 const SAMPLE_PAYLOAD = {
   bankAccounts: [
@@ -229,9 +262,11 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
     };
   }, [parsedData]);
 
+  const promptText = useMemo(() => getAiImportPrompt(), []);
+
   const handleCopyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(AI_IMPORT_SYSTEM_PROMPT);
+      await navigator.clipboard.writeText(promptText);
       setCopied(true);
       toast({
         title: 'Prompt copiado!',
@@ -329,6 +364,17 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
               </ol>
             </div>
 
+            {/* Observação para parcelamentos */}
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+              <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+                <span>Observação importante: Compras parceladas sem cobranças retroativas</span>
+              </div>
+              <p className="text-muted-foreground leading-relaxed">
+                O prompt foi configurado para que a IA <strong>nunca gere parcelas passadas no histórico</strong>. Se o seu extrato contiver compras já em andamento (ex: &quot;3/10&quot;), a IA calculará e lançará apenas as parcelas restantes a partir de hoje. Isso mantém seu histórico limpo e evita gerar faturas retroativas vencidas!
+              </p>
+            </div>
+
             <div className="relative">
               <div className="flex items-center justify-between pb-2">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -341,7 +387,7 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
               </div>
 
               <div className="max-h-[300px] overflow-y-auto rounded-md border bg-muted/70 p-3 font-mono text-xs whitespace-pre-wrap text-foreground select-all">
-                {AI_IMPORT_SYSTEM_PROMPT}
+                {promptText}
               </div>
             </div>
 
