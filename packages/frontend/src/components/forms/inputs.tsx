@@ -89,10 +89,10 @@ export const PercentageInput = React.forwardRef<HTMLInputElement, PercentageInpu
 );
 PercentageInput.displayName = 'PercentageInput';
 
-interface DateInputProps extends Omit<React.ComponentProps<typeof Input>, 'type'> {}
+import { DatePicker, type DatePickerProps } from '@/components/ui/date-picker';
 
-export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
-  (props, ref) => <Input ref={ref} type="date" {...props} />,
+export const DateInput = React.forwardRef<HTMLButtonElement, DatePickerProps>(
+  (props, ref) => <DatePicker ref={ref} {...props} />,
 );
 DateInput.displayName = 'DateInput';
 

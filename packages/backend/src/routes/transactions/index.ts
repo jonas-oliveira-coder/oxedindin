@@ -57,17 +57,18 @@ async function createInstallmentPlan(app: any, input: {
   firstInvoiceDate: Date;
   cardId: string;
   categoryId?: string | null;
-}): Promise<{ plan: any; installments: any[] }> {
+}, db?: any): Promise<{ plan: any; installments: any[] }> {
+  const dbOrTx = db || app.db;
   const { userId, description, totalAmount, installmentsCount, startDate, firstInvoiceDate, cardId, categoryId } = input;
 
-  const [card] = await app.db.select()
+  const [card] = await dbOrTx.select()
     .from(creditCard)
     .where(and(eq(creditCard.id, cardId), eq(creditCard.userId, userId)))
     .limit(1);
   if (!card) throw app.httpErrors.badRequest('Cartão não encontrado.');
 
   if (categoryId) {
-    const [cat] = await app.db.select()
+    const [cat] = await dbOrTx.select()
       .from(category)
       .where(and(eq(category.id, categoryId), eq(category.userId, userId)))
       .limit(1);
@@ -81,7 +82,7 @@ async function createInstallmentPlan(app: any, input: {
   const installmentValues = calculateInstallmentValue(totalAmount, installmentsCount);
   const installmentValue = installmentValues[0];
 
-  const [plan] = await app.db.insert(installmentPlan).values({
+  const [plan] = await dbOrTx.insert(installmentPlan).values({
     userId,
     cardId,
     description,
@@ -100,14 +101,14 @@ async function createInstallmentPlan(app: any, input: {
 
     const invoiceInfo = getInvoiceForDate(dueDate, card.closingDay, card.dueDay);
 
-    const [existingInvoice] = await app.db.select()
+    const [existingInvoice] = await dbOrTx.select()
       .from(invoice)
       .where(and(eq(invoice.cardId, cardId), eq(invoice.periodStart, invoiceInfo.periodStart), eq(invoice.periodEnd, invoiceInfo.periodEnd)))
       .limit(1);
 
     let invoiceRecord = existingInvoice;
     if (!invoiceRecord) {
-      const [newInvoice] = await app.db.insert(invoice).values({
+      const [newInvoice] = await dbOrTx.insert(invoice).values({
         cardId,
         periodStart: invoiceInfo.periodStart,
         periodEnd: invoiceInfo.periodEnd,
@@ -121,7 +122,7 @@ async function createInstallmentPlan(app: any, input: {
       invoiceRecord = newInvoice;
     }
 
-    const [newInstallment] = await app.db.insert(installment).values({
+    const [newInstallment] = await dbOrTx.insert(installment).values({
       planId: plan.id,
       invoiceId: invoiceRecord.id,
       number: i + 1,
@@ -130,7 +131,7 @@ async function createInstallmentPlan(app: any, input: {
       status: 'PENDING',
     }).returning();
 
-    await app.db.update(invoice)
+    await dbOrTx.update(invoice)
       .set({
         totalCents: sql`${invoice.totalCents} + ${installmentValues[i]}`,
         remainingCents: sql`${invoice.remainingCents} + ${installmentValues[i]}`,
@@ -140,7 +141,7 @@ async function createInstallmentPlan(app: any, input: {
     createdInstallments.push(newInstallment);
   }
 
-  await app.db.update(creditCard)
+  await dbOrTx.update(creditCard)
     .set({ availableLimitCents: sql`${creditCard.availableLimitCents} - ${totalAmount}` })
     .where(eq(creditCard.id, cardId));
 
@@ -671,7 +672,10 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
       }
 
       // 5. Transações
+      // 5. Transações & Parcelamentos
       let createdTransactionsCount = 0;
+      let createdInstallmentPlansCount = 0;
+      let createdSplitsCount = 0;
       for (const t of body.transactions || []) {
         const amount = toCentsVal(t.amount, t.amountCents);
         if (amount <= 0) continue;
@@ -680,6 +684,26 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         const linkedCardId = t.cardName ? cardsMap.get(t.cardName.trim().toLowerCase()) || null : null;
         const linkedCategoryId = t.categoryName ? categoriesMap.get(t.categoryName.trim().toLowerCase()) || null : null;
         const tDate = parseDateVal(t.date);
+
+        // Se for compra parcelada no cartão de crédito
+        if (t.installmentsCount && t.installmentsCount > 1 && linkedCardId) {
+          const [cardForPlan] = await tx.select().from(creditCard).where(eq(creditCard.id, linkedCardId)).limit(1);
+          if (cardForPlan) {
+            const firstInvoiceDate = getInvoiceForDate(tDate, cardForPlan.closingDay, cardForPlan.dueDay).dueDate;
+            await createInstallmentPlan(app, {
+              userId,
+              description: t.description.trim(),
+              totalAmount: amount,
+              installmentsCount: t.installmentsCount,
+              startDate: tDate,
+              firstInvoiceDate,
+              cardId: linkedCardId,
+              categoryId: linkedCategoryId,
+            }, tx);
+            createdInstallmentPlansCount++;
+            continue;
+          }
+        }
 
         const [newTx] = await tx.insert(transaction).values({
           userId,
@@ -694,6 +718,34 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
           notes: t.notes || null,
         }).returning();
         createdTransactionsCount++;
+
+        // Splits / Divisão de contas com pessoas
+        if (t.splits && t.splits.length > 0) {
+          for (const s of t.splits) {
+            const sNameKey = s.personName.trim().toLowerCase();
+            let sPersonId = peopleMap.get(sNameKey);
+            if (!sPersonId) {
+              const [newP] = await tx.insert(person).values({
+                userId,
+                name: s.personName.trim(),
+                type: 'INDIVIDUAL',
+              }).returning();
+              sPersonId = newP.id;
+              peopleMap.set(sNameKey, sPersonId);
+              createdPeopleCount++;
+            }
+            const sAmount = toCentsVal(s.amount, s.amountCents);
+            if (sAmount > 0) {
+              await tx.insert(transactionSplit).values({
+                userId,
+                transactionId: newTx.id,
+                personId: sPersonId,
+                amountCents: sAmount,
+              });
+              createdSplitsCount++;
+            }
+          }
+        }
 
         // Atualizar saldo da conta bancária
         if (linkedAccountId && t.type === 'EXPENSE') {
@@ -807,6 +859,8 @@ const transactionsRoutes: FastifyPluginAsyncZod = async (app) => {
         categories: createdCategoriesCount,
         people: createdPeopleCount,
         transactions: createdTransactionsCount,
+        installmentPlans: createdInstallmentPlansCount,
+        splits: createdSplitsCount,
         bills: createdBillsCount,
         debts: createdDebtsCount,
       };

@@ -16,6 +16,7 @@ interface ConfirmDeleteDialogProps {
   confirmLabel?: string;
   loading?: boolean;
   onConfirm: () => void;
+  children?: React.ReactNode;
 }
 
 export function ConfirmDeleteDialog({
@@ -26,6 +27,7 @@ export function ConfirmDeleteDialog({
   confirmLabel = 'Excluir permanentemente',
   loading,
   onConfirm,
+  children,
 }: ConfirmDeleteDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -34,6 +36,7 @@ export function ConfirmDeleteDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        {children && <div className="py-2">{children}</div>}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar

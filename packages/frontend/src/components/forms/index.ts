@@ -12,3 +12,4 @@ export {
 export { CpfInput, CnpjInput, PhoneInput, CepInput } from './masked-inputs';
 export { CurrencyInput } from './currency-input';
 export { FormSelect } from './form-select';
+export { DatePicker } from '@/components/ui/date-picker';

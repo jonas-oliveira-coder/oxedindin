@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { SelectItem } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, getCardBrandLabel, cn } from '@/lib/utils';
 import { Plus, Edit, Trash2, CreditCard as CreditCardIcon } from 'lucide-react';
@@ -16,6 +15,7 @@ import { cardBrandSchema, cardStatusSchema, type CreateCardInput, type UpdateCar
 import { nameSchema, positiveMoneyCentsSchema, uuidSchema } from '@oxedindin/shared';
 import { FormField, TextInput, CurrencyInput, NumberInput, Textarea, FormSelect } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface CreditCard {
   id: string;
@@ -71,8 +71,8 @@ async function updateCard(id: string, data: UpdateCardInput): Promise<CreditCard
   return response.data;
 }
 
-async function deleteCard(id: string): Promise<void> {
-  await api.delete(`/cards/${id}`);
+async function deleteCard({ id, cascade }: { id: string; cascade?: boolean }): Promise<void> {
+  await api.delete(`/cards/${id}${cascade ? '?cascade=true' : ''}`);
 }
 
 export function CardsPage({ embedded }: { embedded?: boolean } = {}) {
@@ -80,6 +80,7 @@ export function CardsPage({ embedded }: { embedded?: boolean } = {}) {
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteCascade, setDeleteCascade] = useState(false);
 
   const { data: cards, isLoading } = useQuery({ queryKey: ['cards'], queryFn: fetchCards });
   const { data: fetchedAccounts } = useQuery({ queryKey: ['accounts', 'active'], queryFn: fetchAccounts });
@@ -109,8 +110,13 @@ export function CardsPage({ embedded }: { embedded?: boolean } = {}) {
     mutationFn: deleteCard,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cards'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['installments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast({ title: 'Cartão excluído', description: 'Cartão de crédito excluído com sucesso.' });
       setDeleteId(null);
+      setDeleteCascade(false);
     },
     onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
@@ -284,54 +290,121 @@ export function CardsPage({ embedded }: { embedded?: boolean } = {}) {
       {cards && cards.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {cards.map((card) => (
-            <Card key={card.id} className="relative">
-              <CardContent className="pt-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-primary/10">
-                      <CreditCardIcon className="h-6 w-6 text-primary" />
+            <Card key={card.id} className="relative overflow-hidden transition-all hover:border-primary/40 hover:shadow-md">
+              <CardContent className="p-5 sm:p-6 space-y-4">
+                {/* Header: Icon, Name, Badges on Left | Actions on Right */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className="p-2.5 rounded-xl bg-primary/10 text-primary shrink-0">
+                      <CreditCardIcon className="h-5 w-5" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">{card.name}</h3>
-                        <span className="px-2 py-0.5 text-xs rounded-full bg-muted text-muted-foreground">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <h3 className="font-semibold text-base truncate" title={card.name}>
+                          {card.name}
+                        </h3>
+                        <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-muted text-muted-foreground shrink-0">
                           {getCardBrandLabel(card.brand)}
                         </span>
-                        <span className={cn('px-2 py-0.5 text-xs rounded-full', card.status === 'ACTIVE' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground')}>
+                        <span
+                          className={cn(
+                            'px-2 py-0.5 text-[11px] font-medium rounded-full shrink-0',
+                            card.status === 'ACTIVE'
+                              ? 'bg-emerald-500/10 text-emerald-500'
+                              : 'bg-muted text-muted-foreground'
+                          )}
+                        >
                           {card.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
                         </span>
                       </div>
-                      <p className="text-sm text-muted-foreground">{card.institution} • Final {card.last4}</p>
-                      {card.account && <p className="text-sm text-muted-foreground">Conta: {card.account.name}</p>}
-                      <p className="text-sm text-muted-foreground">Fechamento: dia {card.closingDay} • Vencimento: dia {card.dueDay}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {card.institution}
+                        {card.last4 ? ` • Final ${card.last4}` : ''}
+                        {card.account ? ` • Conta: ${card.account.name}` : ''}
+                      </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <p className="font-bold text-lg">{formatMoney(card.availableLimit.cents)}</p>
-                      <p className="text-sm text-muted-foreground">Disponível de {formatMoney(card.limit.cents)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(card)} aria-label="Editar cartão">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(card.id)} aria-label="Excluir cartão">
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
+
+                  {/* Actions buttons */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => openEditDialog(card)}
+                      aria-label="Editar cartão"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => {
+                        setDeleteId(card.id);
+                        setDeleteCascade(false);
+                      }}
+                      aria-label="Excluir cartão"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-                <Separator className="my-4" />
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">Limite usado</div>
-                  <div className="flex-1 mx-4 h-2 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all"
-                      style={{ width: `${(Number(card.limit.cents) === 0 ? 0 : ((Number(card.limit.cents) - Number(card.availableLimit.cents)) / Number(card.limit.cents)) * 100)}%` }}
-                    />
+
+                {/* Sub-info: Invoice dates */}
+                <div className="flex items-center justify-between text-xs text-muted-foreground border-y py-2">
+                  <span>Fechamento: dia <strong>{card.closingDay}</strong></span>
+                  <span>Vencimento: dia <strong>{card.dueDay}</strong></span>
+                </div>
+
+                {/* Balance & Limits */}
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <div>
+                      <span className="text-xs text-muted-foreground block">Disponível</span>
+                      <span className="text-lg font-bold text-foreground">
+                        {formatMoney(card.availableLimit.cents)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-muted-foreground block">Limite total</span>
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {formatMoney(card.limit.cents)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-sm font-medium w-24 text-right">
-                    {(Number(card.limit.cents) === 0 ? 0 : ((Number(card.limit.cents) - Number(card.availableLimit.cents)) / Number(card.limit.cents)) * 100).toFixed(1)}%
+
+                  {/* Progress bar */}
+                  <div className="space-y-1">
+                    <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-300 rounded-full"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              0,
+                              Number(card.limit.cents) === 0
+                                ? 0
+                                : ((Number(card.limit.cents) - Number(card.availableLimit.cents)) /
+                                    Number(card.limit.cents)) *
+                                    100
+                            )
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] text-muted-foreground">
+                      <span>Limite usado</span>
+                      <span className="font-semibold text-foreground">
+                        {(Number(card.limit.cents) === 0
+                          ? 0
+                          : ((Number(card.limit.cents) - Number(card.availableLimit.cents)) /
+                              Number(card.limit.cents)) *
+                            100
+                        ).toFixed(1)}%
+                      </span>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -354,12 +427,34 @@ export function CardsPage({ embedded }: { embedded?: boolean } = {}) {
 
       <ConfirmDeleteDialog
         open={!!deleteId}
-        onOpenChange={(open) => !open && setDeleteId(null)}
-        title="Excluir cartão?"
-        description="Essa ação removerá permanentemente o cartão. Cartões com faturas, parcelas ou transações vinculadas não podem ser excluídos."
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteId(null);
+            setDeleteCascade(false);
+          }
+        }}
+        title="Excluir cartão de crédito?"
+        description="Essa ação removerá o cartão do sistema."
         loading={deleteMutation.isPending}
-        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
-      />
+        onConfirm={() => deleteId && deleteMutation.mutate({ id: deleteId, cascade: deleteCascade })}
+      >
+        <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-3 mt-2">
+          <Checkbox
+            id="cascade-delete-card"
+            checked={deleteCascade}
+            onCheckedChange={(checked) => setDeleteCascade(!!checked)}
+            className="mt-0.5"
+          />
+          <div className="grid gap-1 leading-none">
+            <label htmlFor="cascade-delete-card" className="text-xs font-medium cursor-pointer text-foreground">
+              Excluir também todas as movimentações vinculadas
+            </label>
+            <p className="text-[11px] text-muted-foreground">
+              Remove permanentemente as transações, parcelamentos e faturas deste cartão, permitindo a exclusão completa sem conflitos.
+            </p>
+          </div>
+        </div>
+      </ConfirmDeleteDialog>
     </div>
   );
 }

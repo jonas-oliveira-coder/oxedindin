@@ -370,10 +370,14 @@ const cardsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.delete('/:id', {
     schema: {
       params: z.object({ id: z.string().uuid() }),
+      querystring: z.object({
+        cascade: z.union([z.boolean(), z.enum(['true', 'false'])]).optional(),
+      }).optional(),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-const [existing] = await app.db.select()
+    const isCascade = request.query?.cascade === true || request.query?.cascade === 'true';
+    const [existing] = await app.db.select()
       .from(creditCard)
       .where(and(eq(creditCard.id, request.params.id), eq(creditCard.userId, request.authUser!.id)))
       .limit(1);
@@ -388,11 +392,28 @@ const [existing] = await app.db.select()
       app.db.select().from(transaction).where(and(eq(transaction.cardId, request.params.id), eq(transaction.userId, request.authUser!.id))).limit(1),
     ]);
 
-    if (cardInvoices.length > 0 || cardPlans.length > 0 || cardTransactions.length > 0) {
-      throw app.httpErrors.conflict('Não é possível excluir este cartão porque existem faturas, parcelas ou transações vinculadas a ele.');
+    const hasLinkedItems = cardInvoices.length > 0 || cardPlans.length > 0 || cardTransactions.length > 0;
+
+    if (hasLinkedItems && !isCascade) {
+      throw app.httpErrors.conflict('Não é possível excluir este cartão porque existem faturas, parcelas ou transações vinculadas a ele. Selecione a opção para remover os vínculos se desejar apagá-lo junto com suas movimentações.');
     }
 
-    await app.db.delete(creditCard).where(eq(creditCard.id, request.params.id));
+    if (isCascade) {
+      const runDeletion = async (dbOrTx: any) => {
+        await dbOrTx.delete(transaction).where(and(eq(transaction.cardId, request.params.id), eq(transaction.userId, request.authUser!.id)));
+        await dbOrTx.delete(installmentPlan).where(eq(installmentPlan.cardId, request.params.id));
+        await dbOrTx.delete(invoice).where(eq(invoice.cardId, request.params.id));
+        await dbOrTx.delete(creditCard).where(eq(creditCard.id, request.params.id));
+      };
+
+      if (typeof app.db.transaction === 'function') {
+        await app.db.transaction(runDeletion);
+      } else {
+        await runDeletion(app.db);
+      }
+    } else {
+      await app.db.delete(creditCard).where(eq(creditCard.id, request.params.id));
+    }
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -400,6 +421,7 @@ const [existing] = await app.db.select()
       entityType: 'CreditCard',
       entityId: request.params.id,
       oldData: existing,
+      newData: { cascade: isCascade },
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });

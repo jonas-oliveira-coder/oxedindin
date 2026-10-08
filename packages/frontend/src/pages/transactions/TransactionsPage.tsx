@@ -6,14 +6,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { formatMoney, formatDate, getTransactionTypeColor, cleanParams } from '@/lib/utils';
 import { Plus, Trash2, ChevronLeft, ChevronRight, Pencil, X, Sparkles } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createTransactionSchema, type CreateTransactionInput } from '@/lib/validation';
-import { FormField, TextInput, CurrencyInput, DateInput, Textarea, FormSelect, NumberInput } from '@/components/forms';
+import { FormField, TextInput, CurrencyInput, DateInput, Textarea, FormSelect, NumberInput, DatePicker } from '@/components/forms';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { AiBulkImportDialog } from '@/components/transactions/ai-bulk-import-dialog';
@@ -358,7 +357,13 @@ export function TransactionsPage() {
 
               <div className="grid gap-2 grid-cols-2">
                 <FormField id="date" label="Data" error={form.formState.errors.date?.message}>
-                  <DateInput id="date" {...form.register('date')} />
+                  <Controller
+                    name="date"
+                    control={form.control}
+                    render={({ field }) => (
+                      <DateInput id="date" value={field.value} onChange={(e: any) => field.onChange(e?.target ? e.target.value : e)} onBlur={field.onBlur} />
+                    )}
+                  />
                 </FormField>
                 <FormField id="paymentMethod" label="Forma de pagamento" error={form.formState.errors.paymentMethod?.message}>
                   <FormSelect control={form.control} name="paymentMethod" placeholder="Selecione">
@@ -392,10 +397,21 @@ export function TransactionsPage() {
                 </FormField>
               </div>
 
-              {watchedPaymentMethod === 'CREDIT_CARD' && watchedCardId && (
+              {watchedPaymentMethod === 'CREDIT_CARD' && (
                 <FormField id="installmentsCount" label="Parcelar em (opcional)" error={form.formState.errors.installmentsCount?.message}>
-                  <NumberInput id="installmentsCount" min={1} max={60} placeholder="1 = à vista" {...form.register('installmentsCount', { valueAsNumber: true })} />
-                  <p className="text-xs text-muted-foreground">Deixe 1 ou vazio para lançar à vista.</p>
+                  <NumberInput
+                    id="installmentsCount"
+                    min={1}
+                    max={60}
+                    placeholder="1 = à vista"
+                    disabled={!watchedCardId}
+                    {...form.register('installmentsCount', { valueAsNumber: true })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {!watchedCardId
+                      ? 'Selecione um cartão acima para parcelar esta compra.'
+                      : 'Deixe 1 ou vazio para lançar à vista.'}
+                  </p>
                 </FormField>
               )}
 
@@ -464,7 +480,13 @@ export function TransactionsPage() {
 
               <div className="grid gap-2 grid-cols-2">
                 <FormField id="edit-date" label="Data" error={editForm.formState.errors.date?.message}>
-                  <DateInput id="edit-date" {...editForm.register('date')} />
+                  <Controller
+                    name="date"
+                    control={editForm.control}
+                    render={({ field }) => (
+                      <DateInput id="edit-date" value={field.value} onChange={(e: any) => field.onChange(e?.target ? e.target.value : e)} onBlur={field.onBlur} />
+                    )}
+                  />
                 </FormField>
                 <FormField id="edit-paymentMethod" label="Forma de pagamento" error={editForm.formState.errors.paymentMethod?.message}>
                   <FormSelect control={editForm.control} name="paymentMethod" placeholder="Selecione">
@@ -528,11 +550,11 @@ export function TransactionsPage() {
           <div className="grid gap-4 md:grid-cols-6">
             <div className="space-y-2">
               <Label htmlFor="startDate">Data inicial</Label>
-              <Input id="startDate" type="date" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} />
+              <DatePicker id="startDate" value={filters.startDate} onChange={(e: any) => handleFilterChange('startDate', e?.target ? e.target.value : e)} placeholder="dd/mm/aaaa" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="endDate">Data final</Label>
-              <Input id="endDate" type="date" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} />
+              <DatePicker id="endDate" value={filters.endDate} onChange={(e: any) => handleFilterChange('endDate', e?.target ? e.target.value : e)} placeholder="dd/mm/aaaa" />
             </div>
             <div className="space-y-2">
               <Label>Categoria</Label>

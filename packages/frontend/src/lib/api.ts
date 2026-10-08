@@ -113,22 +113,52 @@ export function isApiError(error: unknown): error is AxiosError<ApiErrorBody> {
 }
 
 export function getErrorMessage(error: unknown): string {
-  if (isApiError(error)) {
-    const fields = error.response?.data?.error?.fields;
-    if (fields && Object.keys(fields).length > 0) {
-      return Object.values(fields).join(' ');
+  if (isApiError(error) || (typeof error === 'object' && error !== null && 'isAxiosError' in error)) {
+    const data: any = (error as any).response?.data;
+    if (data) {
+      if (typeof data === 'string' && data.trim()) {
+        return data;
+      }
+      // 1. Specific field validation errors
+      const fields = data.error?.fields || data.fields;
+      if (fields && typeof fields === 'object') {
+        const values = Object.values(fields).filter(Boolean);
+        if (values.length > 0) return values.join(' ');
+      }
+      // 2. Nested error object with message
+      if (data.error && typeof data.error === 'object' && typeof data.error.message === 'string' && data.error.message.trim()) {
+        return data.error.message;
+      }
+      // 3. Fastify direct message string (e.g. app.httpErrors.conflict("..."))
+      if (typeof data.message === 'string' && data.message.trim()) {
+        return data.message;
+      }
+      // 4. Direct error string
+      if (typeof data.error === 'string' && data.error.trim()) {
+        return data.error;
+      }
+      // 5. Details string
+      if (typeof data.details === 'string' && data.details.trim()) {
+        return data.details;
+      }
     }
-    return error.response?.data?.error?.message || 'Erro desconhecido.';
+    if ((error as any).response?.statusText) {
+      return (error as any).response.statusText;
+    }
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return 'Erro desconhecido.';
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+  return 'Ocorreu um erro inesperado. Tente novamente.';
 }
 
 export function getFieldErrors(error: unknown): Record<string, string> {
-  if (isApiError(error)) {
-    return error.response?.data?.error?.fields || {};
+  if (isApiError(error) || (typeof error === 'object' && error !== null && 'isAxiosError' in error)) {
+    const data: any = (error as any).response?.data;
+    return data?.error?.fields || data?.fields || {};
   }
   return {};
 }

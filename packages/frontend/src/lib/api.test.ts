@@ -24,6 +24,35 @@ describe('getErrorMessage', () => {
     expect(message).toBe('O valor deve ser maior que zero.');
   });
 
+  it('extracts direct Fastify message string when error is string (e.g. 409 conflict)', () => {
+    const error = {
+      isAxiosError: true,
+      response: {
+        data: {
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'Não é possível excluir este cartão porque existem faturas vinculadas.',
+        },
+      },
+    };
+
+    const message = getErrorMessage(error);
+    expect(message).toBe('Não é possível excluir este cartão porque existem faturas vinculadas.');
+  });
+
+  it('extracts error string when no message is present', () => {
+    const error = {
+      isAxiosError: true,
+      response: {
+        data: {
+          error: 'Serviço indisponível temporariamente',
+        },
+      },
+    };
+
+    expect(getErrorMessage(error)).toBe('Serviço indisponível temporariamente');
+  });
+
   it('removes Content-Type header for FormData requests so the browser boundary is preserved', async () => {
     setCsrfToken('mock-csrf-token');
     const { api } = await import('./api');

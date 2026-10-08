@@ -176,10 +176,14 @@ const accountsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.delete('/:id', {
     schema: {
       params: z.object({ id: z.string().uuid() }),
+      querystring: z.object({
+        cascade: z.union([z.boolean(), z.enum(['true', 'false'])]).optional(),
+      }).optional(),
     },
     preHandler: [app.authenticate],
   }, async (request: any, reply: any) => {
-const [existing] = await app.db.select()
+    const isCascade = request.query?.cascade === true || request.query?.cascade === 'true';
+    const [existing] = await app.db.select()
       .from(bankAccount)
       .where(and(eq(bankAccount.id, request.params.id), eq(bankAccount.userId, request.authUser!.id)))
       .limit(1);
@@ -195,11 +199,29 @@ const [existing] = await app.db.select()
       app.db.select().from(creditCard).where(and(eq(creditCard.accountId, request.params.id), eq(creditCard.userId, request.authUser!.id))).limit(1),
     ]);
 
-    if (accountsTransactions.length > 0 || accountsBills.length > 0 || accountsRecurring.length > 0 || accountsCards.length > 0) {
-      throw app.httpErrors.conflict('Não é possível excluir esta conta porque existem transações, contas recorrentes ou cartões vinculados a ela.');
+    const hasLinkedItems = accountsTransactions.length > 0 || accountsBills.length > 0 || accountsRecurring.length > 0 || accountsCards.length > 0;
+
+    if (hasLinkedItems && !isCascade) {
+      throw app.httpErrors.conflict('Não é possível excluir esta conta porque existem transações, contas recorrentes ou cartões vinculados a ela. Selecione a opção para remover os vínculos se desejar apagá-la junto com suas movimentações.');
     }
 
-    await app.db.delete(bankAccount).where(eq(bankAccount.id, request.params.id));
+    if (isCascade) {
+      const runDeletion = async (dbOrTx: any) => {
+        await dbOrTx.delete(transaction).where(and(eq(transaction.accountId, request.params.id), eq(transaction.userId, request.authUser!.id)));
+        await dbOrTx.update(creditCard).set({ accountId: null }).where(eq(creditCard.accountId, request.params.id));
+        await dbOrTx.update(bill).set({ accountId: null }).where(eq(bill.accountId, request.params.id));
+        await dbOrTx.update(recurringBill).set({ accountId: null }).where(eq(recurringBill.accountId, request.params.id));
+        await dbOrTx.delete(bankAccount).where(eq(bankAccount.id, request.params.id));
+      };
+
+      if (typeof app.db.transaction === 'function') {
+        await app.db.transaction(runDeletion);
+      } else {
+        await runDeletion(app.db);
+      }
+    } else {
+      await app.db.delete(bankAccount).where(eq(bankAccount.id, request.params.id));
+    }
 
     await app.auditLog({
       userId: request.authUser!.id,
@@ -207,6 +229,7 @@ const [existing] = await app.db.select()
       entityType: 'BankAccount',
       entityId: request.params.id,
       oldData: existing,
+      newData: { cascade: isCascade },
       ip: request.ip,
       userAgent: request.headers['user-agent'],
     });

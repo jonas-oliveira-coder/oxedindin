@@ -79,6 +79,28 @@ Gere OBRIGATORIAMENTE uma resposta contendo APENAS o JSON válido (sem explicaç
       "paymentMethod": "CREDIT_CARD",
       "cardName": "Nubank Ultravioleta",
       "categoryName": "Alimentação"
+    },
+    {
+      "description": "Geladeira Frost Free",
+      "amount": 3600.00,
+      "type": "EXPENSE",
+      "date": "2026-03-01",
+      "paymentMethod": "CREDIT_CARD",
+      "cardName": "Nubank Ultravioleta",
+      "categoryName": "Moradia",
+      "installmentsCount": 10 // Opcional: parcelar em 10x no cartão
+    },
+    {
+      "description": "Almoço Compartilhado",
+      "amount": 180.00,
+      "type": "EXPENSE",
+      "date": "2026-03-02",
+      "paymentMethod": "PIX",
+      "accountName": "Nubank",
+      "categoryName": "Alimentação",
+      "splits": [
+        { "personName": "Maria Silva", "amount": 90.00 } // Opcional: dividir com outras pessoas
+      ]
     }
   ],
   "bills": [
@@ -104,8 +126,10 @@ Gere OBRIGATORIAMENTE uma resposta contendo APENAS o JSON válido (sem explicaç
 
 ### REGRAS IMPORTANTES:
 1. Todos os valores podem ser informados como números decimais em reais (ex: 150.50).
-2. As referências por nome ("accountName", "cardName", "categoryName", "personName") devem bater exatamente com os nomes cadastrados nas listas acima.
-3. Não use valores nulos ou campos desconhecidos. Responda apenas com o JSON.`;
+2. Para parcelamentos, inclua "installmentsCount" (ex: 10) em transações com cartão de crédito.
+3. Para dividir contas com amigos ou familiares, use a lista "splits" com "personName" e "amount".
+4. As referências por nome ("accountName", "cardName", "categoryName", "personName") devem bater com os nomes cadastrados.
+5. Não use valores nulos ou campos desconhecidos. Responda apenas com o JSON.`;
 
 const SAMPLE_PAYLOAD = {
   bankAccounts: [
@@ -129,6 +153,8 @@ const SAMPLE_PAYLOAD = {
     { description: 'Salário Mensal', amount: 6500.0, type: 'INCOME', date: '2026-03-01', paymentMethod: 'PIX', accountName: 'Nubank Principal', categoryName: 'Salário' },
     { description: 'Supermercado Mensal', amount: 485.3, type: 'EXPENSE', date: '2026-03-04', paymentMethod: 'CREDIT_CARD', cardName: 'Nubank Ultravioleta', categoryName: 'Alimentação' },
     { description: 'Combustível Posto', amount: 160.0, type: 'EXPENSE', date: '2026-03-06', paymentMethod: 'DEBIT_CARD', accountName: 'Nubank Principal', categoryName: 'Transporte' },
+    { description: 'Smart TV Sala', amount: 2400.0, type: 'EXPENSE', date: '2026-03-05', paymentMethod: 'CREDIT_CARD', cardName: 'Nubank Ultravioleta', categoryName: 'Lazer', installmentsCount: 6 },
+    { description: 'Jantar Restaurante', amount: 220.0, type: 'EXPENSE', date: '2026-03-07', paymentMethod: 'DEBIT_CARD', accountName: 'Nubank Principal', categoryName: 'Alimentação', splits: [{ personName: 'Mariana Souza', amount: 110.0 }] },
   ],
   bills: [
     { description: 'Condomínio', amount: 450.0, dueDate: '2026-03-10', status: 'PENDING', categoryName: 'Moradia', paymentMethod: 'PIX' },
@@ -158,6 +184,8 @@ interface ImportSummary {
   categories: number;
   people: number;
   transactions: number;
+  installmentPlans?: number;
+  splits?: number;
   bills: number;
   debts: number;
 }
@@ -185,12 +213,17 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
   const counts = useMemo(() => {
     if (!parsedData?.data) return null;
     const d = parsedData.data;
+    const txs = Array.isArray(d.transactions) ? d.transactions : [];
+    const plansCount = txs.filter((t: any) => t.installmentsCount && t.installmentsCount > 1).length;
+    const splitsCount = txs.reduce((acc: number, t: any) => acc + (Array.isArray(t.splits) ? t.splits.length : 0), 0);
     return {
       accounts: Array.isArray(d.bankAccounts) ? d.bankAccounts.length : 0,
       cards: Array.isArray(d.creditCards) ? d.creditCards.length : 0,
       categories: Array.isArray(d.categories) ? d.categories.length : 0,
       people: Array.isArray(d.people) ? d.people.length : 0,
-      transactions: Array.isArray(d.transactions) ? d.transactions.length : 0,
+      transactions: txs.length,
+      plans: plansCount,
+      splits: splitsCount,
       bills: Array.isArray(d.bills) ? d.bills.length : 0,
       debts: Array.isArray(d.debts) ? d.debts.length : 0,
     };
@@ -352,6 +385,18 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
                     <span className="text-muted-foreground block">Transações</span>
                     <strong className="text-base">{lastResult.transactions}</strong>
                   </div>
+                  {typeof lastResult.installmentPlans === 'number' && lastResult.installmentPlans > 0 && (
+                    <div className="bg-background/80 p-2 rounded border">
+                      <span className="text-muted-foreground block">Parcelamentos</span>
+                      <strong className="text-base">{lastResult.installmentPlans}</strong>
+                    </div>
+                  )}
+                  {typeof lastResult.splits === 'number' && lastResult.splits > 0 && (
+                    <div className="bg-background/80 p-2 rounded border">
+                      <span className="text-muted-foreground block">Divisões</span>
+                      <strong className="text-base">{lastResult.splits}</strong>
+                    </div>
+                  )}
                   <div className="bg-background/80 p-2 rounded border">
                     <span className="text-muted-foreground block">Contas a Pagar</span>
                     <strong className="text-base">{lastResult.bills}</strong>
@@ -419,6 +464,8 @@ export function AiBulkImportDialog({ open, onOpenChange }: AiBulkImportDialogPro
                         {counts.categories > 0 && <Badge variant="secondary">{counts.categories} Categorias</Badge>}
                         {counts.people > 0 && <Badge variant="secondary">{counts.people} Pessoas</Badge>}
                         {counts.transactions > 0 && <Badge variant="secondary">{counts.transactions} Transações</Badge>}
+                        {counts.plans > 0 && <Badge variant="secondary">{counts.plans} Parcelamentos</Badge>}
+                        {counts.splits > 0 && <Badge variant="secondary">{counts.splits} Divisões</Badge>}
                         {counts.bills > 0 && <Badge variant="secondary">{counts.bills} Contas a Pagar</Badge>}
                         {counts.debts > 0 && <Badge variant="secondary">{counts.debts} Dívidas</Badge>}
                       </div>

@@ -157,4 +157,36 @@ describe('accounts routes', () => {
     expect(res.statusCode).toBe(409);
     expect(db.all(bankAccount)).toHaveLength(1);
   });
+
+  it('allows cascade deleting an account that has transactions', async () => {
+    db.seed(bankAccount, [{
+      id: '77777777-7777-4777-8777-777777777777',
+      userId: TEST_USER_ID,
+      name: 'Itaú Cascade',
+      institution: 'Itaú',
+      type: 'CHECKING',
+      balanceCents: 0,
+      initialBalanceCents: 0,
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(transaction, [{
+      id: '88888888-8888-4888-8888-888888888888',
+      userId: TEST_USER_ID,
+      accountId: '77777777-7777-4777-8777-777777777777',
+      description: 'Compra Cascade',
+      amountCents: 100,
+      type: 'EXPENSE',
+      date: new Date(),
+      paymentMethod: 'PIX',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/accounts/77777777-7777-4777-8777-777777777777?cascade=true' });
+    expect(res.statusCode).toBe(200);
+    expect(db.all(bankAccount)).toHaveLength(0);
+    expect(db.all(transaction)).toHaveLength(0);
+  });
 });

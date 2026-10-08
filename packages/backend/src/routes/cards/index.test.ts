@@ -172,4 +172,40 @@ describe('cards routes', () => {
     expect(res.statusCode).toBe(409);
     expect(db.all(creditCard)).toHaveLength(1);
   });
+
+  it('allows cascade deleting a card that has invoices and transactions', async () => {
+    db.seed(creditCard, [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      userId: TEST_USER_ID,
+      name: 'Visa Cascade',
+      institution: 'Nubank',
+      brand: 'VISA',
+      last4: '1111',
+      limitCents: 50000,
+      availableLimitCents: 50000,
+      closingDay: 5,
+      dueDay: 10,
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+    db.seed(invoice, [{
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      cardId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      periodStart: new Date(),
+      periodEnd: new Date(),
+      closingDate: new Date(),
+      dueDate: new Date(),
+      totalCents: 0,
+      paidCents: 0,
+      remainingCents: 0,
+      status: 'OPEN',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/cards/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa?cascade=true' });
+    expect(res.statusCode).toBe(200);
+    expect(db.all(creditCard)).toHaveLength(0);
+  });
 });

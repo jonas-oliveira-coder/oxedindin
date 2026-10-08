@@ -633,6 +633,12 @@ export const bulkImportSchema = z.object({
       accountName: z.string().optional().nullable(),
       cardName: z.string().optional().nullable(),
       categoryName: z.string().optional().nullable(),
+      installmentsCount: z.number().int().min(1).max(60).optional().nullable(),
+      splits: z.array(z.object({
+        personName: z.string().trim().min(1, 'Nome da pessoa obrigatório'),
+        amount: z.union([z.number(), z.string()]).optional(),
+        amountCents: z.number().int().positive().optional(),
+      })).optional().default([]),
       notes: z.string().max(500).optional().nullable(),
     })).optional().default([]),
 

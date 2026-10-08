@@ -17,6 +17,7 @@ import { accountTypeSchema, accountStatusSchema, type CreateAccountInput, type U
 import { nameSchema, moneyCentsSchema } from '@oxedindin/shared';
 import { FormField, TextInput, CurrencyInput, Textarea, FormSelect } from '@/components/forms';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CardsPage } from '@/pages/cards/CardsPage';
 import { InvoicesPage } from '@/pages/invoices/InvoicesPage';
 import { InstallmentsPage } from '@/pages/installments/InstallmentsPage';
@@ -64,8 +65,8 @@ async function updateAccount(id: string, data: UpdateAccountInput): Promise<Bank
   return response.data;
 }
 
-async function deleteAccount(id: string): Promise<void> {
-  await api.delete(`/accounts/${id}`);
+async function deleteAccount({ id, cascade }: { id: string; cascade?: boolean }): Promise<void> {
+  await api.delete(`/accounts/${id}${cascade ? '?cascade=true' : ''}`);
 }
 
 export function BankAccountsTab({ embedded }: { embedded?: boolean } = {}) {
@@ -73,6 +74,7 @@ export function BankAccountsTab({ embedded }: { embedded?: boolean } = {}) {
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteCascade, setDeleteCascade] = useState(false);
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts'],
@@ -104,8 +106,12 @@ export function BankAccountsTab({ embedded }: { embedded?: boolean } = {}) {
     mutationFn: deleteAccount,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['bills'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast({ title: 'Conta excluída', description: 'Conta bancária excluída com sucesso.' });
       setDeleteId(null);
+      setDeleteCascade(false);
     },
     onError: (error) => toast({ title: 'Não foi possível excluir', description: getErrorMessage(error), variant: 'destructive' }),
   });
@@ -339,12 +345,34 @@ export function BankAccountsTab({ embedded }: { embedded?: boolean } = {}) {
 
       <ConfirmDeleteDialog
         open={!!deleteId}
-        onOpenChange={(open) => !open && setDeleteId(null)}
-        title="Excluir conta?"
-        description="Essa ação removerá permanentemente a conta. Contas com transações, contas recorrentes ou cartões vinculados não podem ser excluídas."
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteId(null);
+            setDeleteCascade(false);
+          }
+        }}
+        title="Excluir conta bancária?"
+        description="Essa ação removerá a conta bancária do sistema."
         loading={deleteMutation.isPending}
-        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
-      />
+        onConfirm={() => deleteId && deleteMutation.mutate({ id: deleteId, cascade: deleteCascade })}
+      >
+        <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-3 mt-2">
+          <Checkbox
+            id="cascade-delete-account"
+            checked={deleteCascade}
+            onCheckedChange={(checked) => setDeleteCascade(!!checked)}
+            className="mt-0.5"
+          />
+          <div className="grid gap-1 leading-none">
+            <label htmlFor="cascade-delete-account" className="text-xs font-medium cursor-pointer text-foreground">
+              Excluir também todas as movimentações vinculadas
+            </label>
+            <p className="text-[11px] text-muted-foreground">
+              Remove automaticamente as transações desta conta e desvincula cartões ou contas a pagar, permitindo a exclusão completa sem conflitos.
+            </p>
+          </div>
+        </div>
+      </ConfirmDeleteDialog>
     </div>
   );
 }
