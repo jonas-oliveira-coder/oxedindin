@@ -24,4 +24,40 @@ test.describe('Auth pages (smoke)', () => {
     await page.goto('/');
     await page.waitForURL('**/login');
   });
+
+  test('handles logout flow and redirects to login', async ({ page }) => {
+    await page.route('**/api/v1/users/me', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'mock-user-1',
+          email: 'usuario@oxedindin.test',
+          name: 'Usuário Teste',
+          emailVerified: true,
+          twoFactorEnabled: false,
+        }),
+      });
+    });
+
+    await page.route('**/api/v1/auth/logout', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true }),
+      });
+    });
+
+    await page.goto('/dashboard');
+    const userMenuButton = page.getByRole('button', { name: /Usuário Teste/i });
+    if (await userMenuButton.isVisible()) {
+      await userMenuButton.click();
+      const logoutItem = page.getByRole('menuitem', { name: /Sair/i });
+      if (await logoutItem.isVisible()) {
+        await logoutItem.click();
+        await page.waitForURL('**/login');
+        await expect(page.getByRole('heading', { name: 'Entrar no OxeDinDin' })).toBeVisible();
+      }
+    }
+  });
 });

@@ -157,29 +157,29 @@ export function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="md:col-span-4">
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle>Faturas dos Cartões</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1">
             {summary.currentInvoices.length === 0 && summary.upcomingInvoices.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">Nenhum cartão cadastrado</p>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3 max-h-[380px] overflow-y-auto overflow-x-hidden pr-1.5 scrollbar-thin">
                 {summary.currentInvoices.map((invoice) => (
-                  <div key={invoice.cardId} className="flex items-center justify-between p-4 rounded-lg border">
-                    <div className="flex items-center gap-3">
-                      <CreditCard className="h-5 w-5 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium">{invoice.name}</p>
-                        <p className="text-sm text-muted-foreground">
+                  <div key={invoice.cardId} className="flex items-center justify-between p-3 sm:p-4 rounded-lg border gap-3 hover:bg-accent/30 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <CreditCard className="h-5 w-5 text-muted-foreground shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm sm:text-base truncate">{invoice.name}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground truncate">
                           Vence em {formatDateShort(invoice.dueDate)}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-lg">{formatMoney(invoice.total.cents)}</p>
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-base sm:text-lg whitespace-nowrap">{formatMoney(invoice.total.cents)}</p>
                       <Badge variant="outline" className={getStatusColor('OPEN')}>
                         Aberta
                       </Badge>
@@ -187,18 +187,18 @@ export function DashboardPage() {
                   </div>
                 ))}
                 {summary.upcomingInvoices.map((invoice) => (
-                  <div key={invoice.cardId} className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-                    <div className="flex items-center gap-3">
-                      <CreditCard className="h-5 w-5 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium">{invoice.name}</p>
-                        <p className="text-sm text-muted-foreground">
+                  <div key={invoice.cardId} className="flex items-center justify-between p-3 sm:p-4 rounded-lg border bg-muted/30 gap-3 hover:bg-accent/30 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <CreditCard className="h-5 w-5 text-muted-foreground shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm sm:text-base truncate">{invoice.name}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground truncate">
                           Próxima: {formatDateShort(invoice.dueDate)}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-lg">{formatMoney(invoice.estimatedTotal.cents)}</p>
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-base sm:text-lg whitespace-nowrap">{formatMoney(invoice.estimatedTotal.cents)}</p>
                       <Badge variant="secondary">Prévia</Badge>
                     </div>
                   </div>
@@ -208,12 +208,12 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-3">
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle>Próximos Vencimentos</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
+          <CardContent className="flex-1">
+            <div className="space-y-3 max-h-[380px] overflow-y-auto overflow-x-hidden pr-1.5 scrollbar-thin">
               {[
                 ...summary.upcomingBills.slice(0, 5).map((bill) => ({
                   ...bill,
@@ -231,17 +231,21 @@ export function DashboardPage() {
                 .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
                 .slice(0, 8)
                 .map((item, index) => (
-                  <div key={`${item.type}-${index}`} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50">
-                    <div className="flex items-center gap-3">
-                      <item.icon className={cn('h-5 w-5', item.color)} />
-                      <div>
-                        <p className="font-medium">{item.description}</p>
-                        <p className="text-sm text-muted-foreground">
+                  <div key={`${item.type}-${index}`} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 transition-colors gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <item.icon className={cn('h-5 w-5 shrink-0', item.color)} />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm sm:text-base truncate" title={item.description}>
+                          {item.description}
+                        </p>
+                        <p className="text-xs sm:text-sm text-muted-foreground truncate">
                           {formatDate(item.dueDate)}
                         </p>
                       </div>
                     </div>
-                    <p className="font-bold">{formatMoney(item.amount.cents)}</p>
+                    <p className="font-bold text-sm sm:text-base shrink-0 whitespace-nowrap text-right">
+                      {formatMoney(item.amount.cents)}
+                    </p>
                   </div>
                 ))}
               {summary.upcomingBills.length === 0 && summary.upcomingInstallments.length === 0 && (

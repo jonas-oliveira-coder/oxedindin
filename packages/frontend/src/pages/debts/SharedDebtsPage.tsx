@@ -9,6 +9,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -267,7 +268,7 @@ export function SharedDebtsPage({ embedded }: { embedded?: boolean } = {}) {
 
       {/* Detail dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-h-[90vh] w-full overflow-y-auto sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Detalhes da dívida compartilhada</DialogTitle>
             <DialogDescription className="flex items-center gap-2">
@@ -401,7 +402,7 @@ export function SharedDebtsPage({ embedded }: { embedded?: boolean } = {}) {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="pay-date">Data do pagamento</Label>
-              <Input id="pay-date" type="date" value={form.paymentDate} onChange={(e) => setForm({ ...form, paymentDate: e.target.value })} />
+              <DatePicker id="pay-date" value={form.paymentDate} onChange={(v: string) => setForm({ ...form, paymentDate: v })} />
             </div>
             <div className="grid gap-2">
               <Label>Método de pagamento</Label>
