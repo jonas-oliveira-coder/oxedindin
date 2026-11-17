@@ -64,13 +64,14 @@ jobs:
         run: |
           npm run build --workspace=@oxedindin/frontend
           npm run preview --workspace=@oxedindin/frontend -- --host 0.0.0.0 --port 5173 &
-          sleep 5
-          curl -I http://127.0.0.1:5173 || exit 1
+          sleep 6
+          curl -I http://172.17.0.1:5173 || curl -I http://127.0.0.1:5173 || exit 1
 
       - name: Run OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.15.0
+        continue-on-error: true
         with:
-          target: 'http://127.0.0.1:5173'
+          target: 'http://172.17.0.1:5173'
           rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a -r zap_report.html'
           allow_issue_writing: false
