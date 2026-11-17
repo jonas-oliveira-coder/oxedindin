@@ -195,7 +195,7 @@ export function LandingPage() {
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground leading-[1.15]">
               O controle do seu dindin.{' '}
-              <span className="block sm:inline bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-700 dark:from-sky-400 dark:via-cyan-300 dark:to-primary bg-clip-text text-transparent">
+              <span className="block sm:inline text-sky-600 dark:text-sky-400">
                 Sem planilhas chatas, sem complicação.
               </span>
             </h1>
