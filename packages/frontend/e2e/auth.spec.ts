@@ -8,7 +8,7 @@ test.describe('Auth pages (smoke)', () => {
     await expect(page.getByLabel('Senha', { exact: true })).toBeVisible();
   });
 
-  test('shows a validation error for an invalid email', async ({ page }) => {
+  test('shows a validation error for an invalid email on login', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('Email').fill('not-an-email');
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
@@ -18,11 +18,15 @@ test.describe('Auth pages (smoke)', () => {
   test('renders the register page', async ({ page }) => {
     await page.goto('/register');
     await expect(page.getByRole('heading', { name: 'Criar conta no OxeDinDin' })).toBeVisible();
+    await expect(page.getByLabel('Nome completo')).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeVisible();
+    await expect(page.getByLabel('Senha', { exact: true })).toBeVisible();
   });
 
-  test('redirects to login when unauthenticated', async ({ page }) => {
-    await page.goto('/');
+  test('redirects to login when unauthenticated user accesses protected dashboard', async ({ page }) => {
+    await page.goto('/dashboard');
     await page.waitForURL('**/login');
+    await expect(page.getByRole('heading', { name: 'Entrar no OxeDinDin' })).toBeVisible();
   });
 
   test('handles logout flow and redirects to login', async ({ page }) => {
@@ -59,5 +63,30 @@ test.describe('Auth pages (smoke)', () => {
         await expect(page.getByRole('heading', { name: 'Entrar no OxeDinDin' })).toBeVisible();
       }
     }
+  });
+
+  test('renders forgot password page and navigates back to login', async ({ page }) => {
+    await page.goto('/forgot-password');
+    await expect(page.getByRole('heading', { name: 'Recuperar senha' })).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeVisible();
+    await page.getByRole('link', { name: /Voltar para o login/i }).click();
+    await page.waitForURL('**/login');
+    await expect(page.getByRole('heading', { name: 'Entrar no OxeDinDin' })).toBeVisible();
+  });
+
+  test('shows validation error when register form is submitted empty', async ({ page }) => {
+    await page.goto('/register');
+    await page.getByRole('button', { name: 'Criar conta', exact: true }).click();
+    await expect(page.getByText('O nome é obrigatório.')).toBeVisible();
+    await expect(page.getByText('Informe um email.')).toBeVisible();
+  });
+
+  test('shows validation error for short password on register', async ({ page }) => {
+    await page.goto('/register');
+    await page.getByLabel('Nome completo').fill('Teste Silva');
+    await page.getByLabel('Email').fill('teste@exemplo.com');
+    await page.getByLabel('Senha', { exact: true }).fill('123');
+    await page.getByRole('button', { name: 'Criar conta', exact: true }).click();
+    await expect(page.getByText('A senha deve ter pelo menos 8 caracteres.')).toBeVisible();
   });
 });

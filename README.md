@@ -38,10 +38,47 @@ Repositorio publico: [github.com/jonas-oliveira-coder/oxedindin](https://github.
 | Dados | PostgreSQL, Drizzle ORM |
 | Autenticacao | JWT, sessoes persistidas, Argon2id e WebAuthn/Passkey |
 | Validacao | Zod, Fastify Type Provider e AJV |
+| Qualidade & Testes E2E | **Playwright + TypeScript** (20 testes automatizados cobrindo Auth, Dashboard, Contas e Landing) |
+| Segurança Dinâmica (DAST) | **OWASP ZAP** (Baseline Scan integrado no GitHub Actions) |
 | Infraestrutura | Docker, Nginx no container frontend, GHCR e Coolify |
 | CI/CD | GitHub Actions |
 
-## 3. Como executar localmente
+## 4. Testes de Qualidade (QA) e Segurança Automatizada
+
+### 4.1 Suíte de Testes E2E com Playwright & TypeScript
+
+O projeto possui uma suíte abrangente de testes ponta a ponta (**End-to-End**) desenvolvida em **Playwright** com **TypeScript**, superando o requisito mínimo de 15 testes (totalizando **20 testes automatizados**):
+
+- **Autenticação & Controle de Acesso (8 testes):**
+  - Renderização de formulários de Login, Cadastro e Recuperação de Senha;
+  - Validações de email inválido, campos obrigatórios vazios e regras mínimas de senha;
+  - Redirecionamento forçado de rotas protegidas para `/login` quando desautenticado;
+  - Fluxo completo de logout e revogação de sessão.
+- **Páginas Institucionais e Jurídicas (6 testes):**
+  - Carregamento da Landing Page, elementos do Hero e navegações principais;
+  - Interação dinâmica de expansão e colapso do FAQ de perguntas frequentes;
+  - Verificação de conteúdo estrutural de Termos de Uso e Política de Privacidade (conformidade LGPD).
+- **Módulos Financeiros & Dashboard (6 testes):**
+  - Renderização de indicadores de saldo, despesas, receitas e faturas no Dashboard;
+  - Sidebar e barra de navegação com todos os 6 hubs financeiros;
+  - Módulo de Contas Bancárias e cartões com alternância entre abas;
+  - Telas de Preferências e navegação para a aba de Segurança & Passkeys.
+
+```bash
+# Executar a suíte de testes E2E localmente:
+npm run test:e2e
+```
+
+### 4.2 Segurança Contínua com OWASP ZAP (DAST)
+
+O pipeline do GitHub Actions executa uma verificação automatizada de vulnerabilidades web via **OWASP ZAP** (Baseline Scan):
+- Análise passiva e ativa contra riscos do **OWASP Top 10**;
+- Verificação de cabeçalhos de segurança (`Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Cache-Control`);
+- Relatório de auditoria documentado no repositório: [docs/RELATORIO_SEGURANCA_OWASP_ZAP.md](docs/RELATORIO_SEGURANCA_OWASP_ZAP.md).
+
+---
+
+## 5. Como executar localmente
 
 ### Pre-requisitos
 

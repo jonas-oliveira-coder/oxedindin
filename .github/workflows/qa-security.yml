@@ -1,0 +1,82 @@
+name: QA Tests & Security Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  playwright-e2e:
+    name: Playwright E2E Tests (TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E tests
+        run: npm run test:e2e
+        env:
+          CI: true
+
+      - name: Upload Playwright Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: packages/frontend/playwright-report/
+          retention-days: 14
+
+  owasp-zap-scan:
+    name: OWASP ZAP Security Baseline Scan
+    runs-on: ubuntu-latest
+    needs: playwright-e2e
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start Frontend Preview Server
+        run: |
+          npm run build --workspace=@oxedindin/frontend
+          npm run preview --workspace=@oxedindin/frontend -- --host 0.0.0.0 --port 5173 &
+          sleep 5
+          curl -I http://127.0.0.1:5173 || exit 1
+
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: 'http://127.0.0.1:5173'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+          allow_issue_writing: false
+          fail_action: false
+
+      - name: Upload ZAP Security Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-security-report
+          path: zap_report.html
+          retention-days: 30
